@@ -1,5 +1,7 @@
 import asyncio
 import copy
+import hashlib
+import json
 import logging
 import os
 import threading
@@ -21,10 +23,13 @@ from jvagent.action.pageindex.config import (
     initialize_pageindex_database,
 )
 from jvagent.action.pageindex.documents import (
+    PAGEINDEX_TEXT_LIKE_EXTENSIONS,
     PAGEINDEX_UPLOAD_EXTENSIONS,
     _get_app_id_from_node,
     assimilate_document,
     delete_document,
+    get_document_root,
+    get_document_roots,
     list_documents,
 )
 from jvagent.action.pageindex.jvforge_assimilate import (
@@ -33,6 +38,12 @@ from jvagent.action.pageindex.jvforge_assimilate import (
 )
 from jvagent.action.pageindex.pageindex_action import (
     ensure_ingestion_config_for_agent,
+)
+from jvagent.core.execution_owner import (
+    native_harness_action,
+    native_worker_metadata,
+    require_dead_native_owner,
+    require_native_local_ownership,
 )
 from jvagent.core.public_url import get_public_base_url
 from jvagent.env import get_jvagent_jvforge_base_url
@@ -154,6 +165,23 @@ def _queue_item_file_id(item: Any, queue_key: str) -> str:
     if "new" in item and isinstance(item.get("new"), dict):
         return str(item.get("new", {}).get("id", item.get("id", "")))
     return str(item.get("id", ""))
+
+
+def _refresh_native_queued_additions(
+    node: Any, changes: Dict[str, List[Dict[str, Any]]]
+) -> None:
+    """Keep the latest listing in the original added bucket, including failed work."""
+    latest = {item["id"]: item["new"] for item in changes["modified"]}
+    refreshed: set[str] = set()
+    for queues in (node.ingesting_documents, node.failed_documents):
+        for index, item in enumerate(queues["added"]):
+            file_id = _queue_item_file_id(item, "added")
+            if file_id in latest:
+                queues["added"][index] = latest[file_id]
+                refreshed.add(file_id)
+    changes["modified"] = [
+        item for item in changes["modified"] if item["id"] not in refreshed
+    ]
 
 
 def _find_file_dict_in_tree(
@@ -291,6 +319,7 @@ class DriveIngestConfig:
     doc_description: Optional[str] = None
     add_doc_description: Optional[bool] = None
     enable_all_chunks: bool = False
+    native_action: Any = None
 
 
 # Per-folder locks to prevent duplicate GoogleDriveDocuments on concurrent requests
@@ -355,6 +384,7 @@ async def _pop_skip_head(
         if docs["modified"]:
             docs["modified"].pop(0)
     node.active_document = ""
+    node.active_worker = {}
     _sync_drive_node_status_from_queues(node)
     await node.save()
     return {
@@ -418,7 +448,7 @@ async def _drive_added_fname_matches_indexed(fname: str, collection_name: str) -
     """True if ``fname`` should be skipped as already present in PageIndex (same rules as prune)."""
     if not (fname or "").strip():
         return False
-    docs = await list_documents(collection_name=collection_name)
+    docs = await list_documents(collection_name=collection_name, complete_only=True)
     full, first = _build_skip_existing_indexes(docs)
     return _drive_fname_matches_indexed(fname, full, first)
 
@@ -439,7 +469,7 @@ async def _prune_added_queue_skip_existing(
     added = list(node.ingesting_documents.get("added") or [])
     if not added:
         return
-    docs = await list_documents(collection_name=collection_name)
+    docs = await list_documents(collection_name=collection_name, complete_only=True)
     indexed_full, indexed_first = _build_skip_existing_indexes(docs)
 
     kept = [
@@ -500,16 +530,12 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         *,
         source: str,
         doc_type: str,
-        file_info: Dict[str, Any],
     ) -> None:
-        docs = getattr(google_drive_documents_node, source)
-        if doc_type == "added":
-            docs["added"].pop(0)
-            google_drive_documents_node.failed_documents["added"].append(file_info)
-        else:
-            docs["modified"].pop(0)
-            google_drive_documents_node.failed_documents["modified"].append(file_info)
+        queue = getattr(google_drive_documents_node, source)[doc_type]
+        failed_item = queue.pop(0)
+        google_drive_documents_node.failed_documents[doc_type].append(failed_item)
         google_drive_documents_node.active_document = ""
+        google_drive_documents_node.active_worker = {}
         _sync_drive_node_status_from_queues(google_drive_documents_node)
         await google_drive_documents_node.save()
 
@@ -523,12 +549,41 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         cfg: DriveIngestConfig,
         cancel_event: threading.Event,
         mime_type: str = "",
+        queued_version: Any = None,
+        old_file: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        async def verify_version() -> None:
+            if (
+                not isinstance(queued_version, str)
+                or not queued_version.isascii()
+                or not queued_version.isdecimal()
+            ):
+                raise ValidationError(
+                    "Native Drive ingestion requires a queued file version"
+                )
+            current = await google_drive_action.get_file_metadata(
+                file_id, fields="id,version,mimeType,trashed"
+            )
+            if current.get("mimeType") == "application/vnd.google-apps.shortcut":
+                raise ValidationError(
+                    "Native Drive ingestion requires a versioned shortcut target"
+                )
+            if (
+                current.get("id") != file_id
+                or current.get("version") != queued_version
+                or current.get("trashed") is True
+            ):
+                raise ValidationError("Drive file changed since it was queued")
+
+        if cfg.native_action is not None:
+            await verify_version()
         try:
             file_bytes = await google_drive_action.get_media(file_id=file_id)
         except ValueError as exc:
             logger.warning("Skipping non-exportable Drive file %s: %s", doc_name, exc)
             raise ValidationError(str(exc)) from exc
+        if cfg.native_action is not None:
+            await verify_version()
         forge_base = (get_jvagent_jvforge_base_url() or "").strip()
         effective_forge = resolve_effective_jvforge_base(
             forge_base, use_jvforge=cfg.use_jvforge
@@ -547,6 +602,17 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 guessed = guess_pageindex_extension(doc_name, mime_type)
                 if guessed:
                     forge_filename = f"{doc_name}{guessed}"
+        if cfg.native_action is not None:
+            return await self._ingest_native_drive_document(
+                file_bytes,
+                Path(forge_filename).suffix.lower(),
+                doc_name=doc_name,
+                doc_url=doc_url,
+                file_id=file_id,
+                version=queued_version,
+                old_file=old_file,
+                cfg=cfg,
+            )
         strategy = (cfg.chunking_strategy or "").strip().lower() or None
         if strategy == "flash" and not effective_forge:
             raise ValidationError(
@@ -647,6 +713,237 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         )
         return {"doc_name": doc_name}
 
+    async def _ingest_native_drive_document(
+        self,
+        content: bytes,
+        ext: str,
+        *,
+        doc_name: str,
+        doc_url: str,
+        file_id: str,
+        version: str,
+        cfg: DriveIngestConfig,
+        old_file: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Index a new Drive document with the host's admitted completion service."""
+        from jvagent.harness.completion_tool import CompleteText
+        from jvagent.memory.interaction import Interaction
+
+        from ..endpoints import _do_assimilate
+        from ..native_ingest import (
+            CHANNEL,
+            PDF_CHANNEL,
+            run_native_markdown_ingest,
+            run_native_pdf_ingest,
+            settle_interrupted_publication,
+        )
+        from ..native_search import Complete
+
+        if not file_id:
+            raise ValidationError("Native Drive ingestion requires a source file ID")
+        source_facts = [self.id, file_id, hashlib.sha256(content).hexdigest()]
+        source_key = hashlib.sha256(json.dumps(source_facts).encode()).hexdigest()
+        revision_key = hashlib.sha256(
+            json.dumps([self.id, file_id, version]).encode()
+        ).hexdigest()
+        name = strip_redundant_md_suffix(doc_name)
+        prior = None
+        if old_file is None:
+            root = await get_document_root(name, cfg.collection_name)
+        else:
+            old_version = old_file.get("version")
+            old_name = strip_redundant_md_suffix(str(old_file.get("name") or ""))
+            if (
+                old_file.get("id") != file_id
+                or not old_name
+                or not isinstance(old_version, str)
+                or not old_version.isascii()
+                or not old_version.isdecimal()
+                or int(old_version) >= int(version)
+            ):
+                raise ValidationError(
+                    "Native Drive replacement requires revision ownership"
+                )
+            old_key = hashlib.sha256(
+                json.dumps([self.id, file_id, old_version]).encode()
+            ).hexdigest()
+            roots = await get_document_roots(
+                cfg.collection_name, doc_names={old_name, name}
+            )
+            root = None
+            for candidate in roots:
+                if (
+                    candidate.doc_name == old_name
+                    and candidate.drive_revision_key == old_key
+                    and prior is None
+                ):
+                    if (
+                        candidate.chunks or 0
+                    ) <= 0 or candidate.metadata != cfg.metadata:
+                        raise ValidationError(
+                            "Native Drive prior root requires reconciliation"
+                        )
+                    prior = candidate
+                elif (
+                    candidate.doc_name == name
+                    and candidate.drive_revision_key == revision_key
+                    and root is None
+                ):
+                    root = candidate
+                else:
+                    raise ValidationError(
+                        "Native Drive replacement has an ambiguous document root"
+                    )
+            if prior is not None:
+                prior_receipt = (
+                    await Interaction.get(prior.drive_operation_id)
+                    if prior.drive_operation_id
+                    else None
+                )
+                if (
+                    prior_receipt is None
+                    or prior_receipt.user_id != self.id
+                    or prior_receipt.channel not in {CHANNEL, PDF_CHANNEL}
+                    or not prior_receipt.closed
+                    or prior_receipt.native_run.get("status") != "completed"
+                    or prior_receipt.native_run.get("usage_complete") is not True
+                    or prior_receipt.usage.get("unknown_cost_call_count", 0)
+                    or (json.loads(prior_receipt.response or "null") or {}).get(
+                        "_root_id"
+                    )
+                    != prior.id
+                ):
+                    raise ValidationError(
+                        "Native Drive prior root requires reconciliation"
+                    )
+            if prior is None and root is None:
+                raise ValidationError(
+                    "Native Drive replacement requires a bound prior root"
+                )
+
+        async def finish(result: dict[str, Any]) -> dict[str, Any]:
+            if prior is not None:
+                if not result.get("_root_id") or result["_root_id"] == prior.id:
+                    raise ValidationError(
+                        "Native Drive replacement did not publish a successor"
+                    )
+                if not await delete_document(
+                    prior.doc_name, cfg.collection_name, root_id=prior.id
+                ):
+                    raise ValidationError(
+                        "Native Drive prior root could not be retired"
+                    )
+            return result
+
+        if root is not None:
+            receipt = (
+                await Interaction.get(root.drive_operation_id)
+                if root.drive_operation_id and root.drive_source_key == source_key
+                else None
+            )
+            if (
+                receipt is not None
+                and receipt.user_id == self.id
+                and receipt.channel in {CHANNEL, PDF_CHANNEL}
+                and root.drive_revision_key in {None, revision_key}
+                and root.metadata == cfg.metadata
+                and root.doc_url == doc_url
+                and (root.chunks or 0) > 0
+            ):
+                if not receipt.closed and receipt.native_run.get("status") == "running":
+                    try:
+                        await settle_interrupted_publication(
+                            receipt,
+                            agent_id=cfg.agent_id,
+                            model=cfg.native_action.model,
+                            publication={
+                                "doc_name": root.doc_name,
+                                "_root_id": root.id,
+                            },
+                        )
+                    except ValueError as exc:
+                        raise ValidationError(
+                            f"Native Drive publication requires reconciliation: {exc}"
+                        ) from exc
+                if (
+                    not receipt.closed
+                    or receipt.native_run.get("status") != "completed"
+                    or receipt.native_run.get("usage_complete") is not True
+                    or receipt.usage.get("unknown_cost_call_count", 0)
+                ):
+                    raise ValidationError(
+                        "Native Drive publication conflicts with an existing root"
+                    )
+                publication = json.loads(receipt.response or "null")
+                if (
+                    isinstance(publication, dict)
+                    and publication.get("_root_id") == root.id
+                ):
+                    return await finish(
+                        {
+                            "doc_name": doc_name,
+                            "_root_id": root.id,
+                            "reconciled": True,
+                        }
+                    )
+            raise ValidationError(
+                "Native Drive publication conflicts with an existing root"
+            )
+
+        options: dict[str, Any] = {
+            "drive_source_key": source_key,
+            "drive_revision_key": revision_key,
+            "doc_name": doc_name,
+            "doc_url": doc_url,
+            "collection_name": cfg.collection_name,
+            "metadata": cfg.metadata,
+            "if_add_node_summary": cfg.node_summary,
+            "if_add_doc_description": cfg.add_doc_description,
+            "doc_description": cfg.doc_description,
+        }
+
+        def bind_operation(interaction_id: str) -> None:
+            options["drive_operation_id"] = interaction_id
+
+        operation: dict[str, Any] = {
+            "on_started": bind_operation,
+            "agent_id": cfg.agent_id,
+            "actor": self.id,
+            "doc_name": doc_name,
+            "requested_model": cfg.model,
+            "configured_model": cfg.page_index_action.native_ingestion_model,
+        }
+        if ext == ".pdf" and cfg.page_index_action.native_pdf_ingestion is True:
+            if Path(doc_name).suffix.lower() not in {"", ".pdf"}:
+                raise ValidationError("Native Drive PDF requires a PDF filename")
+
+            async def pdf(complete: Complete) -> dict[str, Any]:
+                return await _do_assimilate(
+                    content, ext, pdf_complete=complete, **options
+                )
+
+            return await finish(
+                await run_native_pdf_ingest(
+                    cfg.native_action, assimilate=pdf, **operation
+                )
+            )
+        if (
+            ext in PAGEINDEX_TEXT_LIKE_EXTENSIONS
+            and cfg.page_index_action.native_markdown_ingestion is True
+        ):
+
+            async def markdown(complete: CompleteText) -> dict[str, Any]:
+                return await _do_assimilate(content, ext, complete=complete, **options)
+
+            return await finish(
+                await run_native_markdown_ingest(
+                    cfg.native_action, assimilate=markdown, **operation
+                )
+            )
+        raise ValidationError(
+            "This document format is not enabled for native Drive ingestion"
+        )
+
     async def _process_single_document(
         self,
         google_drive_documents_node: Any,
@@ -675,6 +972,9 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         )
 
         google_drive_documents_node.active_document = doc_name
+        google_drive_documents_node.active_worker = (
+            native_worker_metadata() if cfg.native_action is not None else {}
+        )
         google_drive_documents_node.status = "processing"
         await google_drive_documents_node.save()
 
@@ -715,6 +1015,15 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 )
 
             try:
+                if cfg.native_action is not None:
+                    if doc_type != "added" and not (
+                        old_file
+                        and old_file.get("version")
+                        and old_file.get("id") == file_id
+                    ):
+                        raise ValidationError(
+                            "Native Drive replacement requires revision ownership"
+                        )
                 result = await asyncio.wait_for(
                     self._execute_drive_document_ingest(
                         google_drive_action=google_drive_action,
@@ -722,6 +1031,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         file_id=file_id,
                         doc_url=doc_url,
                         mime_type=ingest_mime,
+                        queued_version=file_info.get("version"),
+                        old_file=old_file if doc_type == "modified" else None,
                         cfg=cfg,
                         cancel_event=cancel_event,
                     ),
@@ -733,7 +1044,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
-                    file_info=file_info,
                 )
                 logger.warning(
                     "Document %s timed out after %ss", doc_name, timeout_seconds
@@ -763,7 +1073,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
-                    file_info=file_info,
                 )
                 logger.exception("ValidationError ingesting document %s", doc_name)
                 return {
@@ -777,7 +1086,6 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
-                    file_info=file_info,
                 )
                 logger.exception("Error ingesting document %s", doc_name)
                 return {
@@ -791,14 +1099,17 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     ),
                 }
 
-            if not result.get("doc_name"):
+            if not result.get("doc_name") or (
+                cfg.native_action is not None and not result.get("_root_id")
+            ):
                 await self._mark_drive_ingest_failed(
                     google_drive_documents_node,
                     source=source,
                     doc_type=doc_type,
-                    file_info=file_info,
                 )
-                logger.error("Ingestion returned no doc_name for %s", doc_name)
+                logger.error(
+                    "Ingestion returned no publication result for %s", doc_name
+                )
                 return {
                     "success": False,
                     "skipped": False,
@@ -816,12 +1127,13 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                     docs["added"].pop(0)
                 else:
                     docs["modified"].pop(0)
-                    if old_file:
+                    if old_file and cfg.native_action is None:
                         await delete_document(
                             old_file.get("name", ""),
                             collection_name=cfg.collection_name,
                         )
                 google_drive_documents_node.active_document = ""
+                google_drive_documents_node.active_worker = {}
                 _sync_drive_node_status_from_queues(google_drive_documents_node)
                 await google_drive_documents_node.save()
             except Exception:
@@ -846,6 +1158,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 }
 
             msg = f"Added {doc_name}" if doc_type == "added" else f"Updated {doc_name}"
+            if result.get("reconciled"):
+                msg = f"Recovered publication for {doc_name}"
             jid = result.get("jvforge_job_id")
             if jid:
                 msg = f"{msg} (jvforge job {jid})"
@@ -860,6 +1174,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             # Ensure active_document is always cleared
             if google_drive_documents_node.active_document:
                 google_drive_documents_node.active_document = ""
+                google_drive_documents_node.active_worker = {}
                 await google_drive_documents_node.save()
 
     async def ingest_documents_from_google_drive(
@@ -958,6 +1273,8 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         collection_name: str,
         skip_existing_documents: bool,
         remove_deleted_documents: bool = False,
+        *,
+        include_version: bool = False,
     ) -> None:
         """Phase A: list Drive trees, merge queues, persist ``GoogleDriveDocuments`` nodes.
 
@@ -1031,7 +1348,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 drive_id = google_drive_folder_id
 
             files = await google_drive_action.list_files(
-                with_link=True, folder_id=google_drive_folder_id, drive_id=drive_id
+                with_link=True,
+                folder_id=google_drive_folder_id,
+                drive_id=drive_id,
+                **({"include_version": True} if include_version else {}),
             )
             metadata = google_drive_folder.get("metadata", {})
 
@@ -1091,6 +1411,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                         # the removals run and the queue drains normally.
                         _filter_doc_queues_for_disabled(
                             ingesting_documents, excluded_stale_ids
+                        )
+                    if include_version:
+                        _refresh_native_queued_additions(
+                            google_drive_documents_node, ingesting_documents
                         )
                     google_drive_documents_node.files = files
                     google_drive_documents_node.folder_name = folder_name
@@ -1166,8 +1490,10 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         self,
         google_drive_folders: list,
         document_ingested: Dict[str, List[str]],
+        *,
+        native: bool = False,
     ) -> Optional[dict]:
-        """Phase B: if any folder has ``active_document``, return early response."""
+        """Resume native queue admission only after proving the former worker is dead."""
         for google_drive_folder in google_drive_folders:
             google_drive_folder_id = google_drive_folder.get("folder_id")
             google_drive_documents_node = await self.node(
@@ -1177,6 +1503,19 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
                 google_drive_documents_node
                 and google_drive_documents_node.active_document
             ):
+                if native:
+                    try:
+                        require_dead_native_owner(
+                            google_drive_documents_node.active_worker
+                        )
+                    except ValueError:
+                        pass
+                    else:
+                        google_drive_documents_node.active_document = ""
+                        google_drive_documents_node.active_worker = {}
+                        _sync_drive_node_status_from_queues(google_drive_documents_node)
+                        await google_drive_documents_node.save()
+                        continue
                 return {
                     "status": "completed",
                     "message": (
@@ -1435,7 +1774,30 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
         }
 
         collection_name = page_index_action.resolve_collection()
-        model_action = await page_index_action.get_model_action()
+        native = await native_harness_action(await self.get_agent())
+        if native is not None:
+            require_native_local_ownership()
+            if not page_index_action.enabled or collection_name != agent_id:
+                raise ValidationError(
+                    "Native Drive ingestion requires this agent's PageIndex collection"
+                )
+            if (
+                convert_to_markdown
+                or remove_deleted_documents
+                or normalize_bold_headings
+                or chunking_strategy
+                or resolve_effective_jvforge_base(
+                    (get_jvagent_jvforge_base_url() or "").strip(),
+                    use_jvforge=use_jvforge,
+                )
+            ):
+                raise ValidationError(
+                    "Native Drive ingestion requires local indexing of new documents"
+                )
+            skip_existing_documents = False
+        model_action = (
+            None if native is not None else await page_index_action.get_model_action()
+        )
         node_summary = page_index_action.config.get("node_summary")
         model = page_index_action.config.get("model")
 
@@ -1457,7 +1819,15 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             doc_description=doc_description,
             add_doc_description=add_doc_description,
             enable_all_chunks=enable_all_chunks,
+            native_action=native,
         )
+
+        if native is not None:
+            busy = await self._check_active_google_drive_document(
+                google_drive_folders, document_ingested, native=True
+            )
+            if busy is not None:
+                return busy
 
         await self._phase_sync_google_drive_folders(
             google_drive_folders,
@@ -1465,13 +1835,15 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             collection_name,
             skip_existing_documents,
             remove_deleted_documents=remove_deleted_documents,
+            **({"include_version": True} if native is not None else {}),
         )
 
-        busy = await self._check_active_google_drive_document(
-            google_drive_folders, document_ingested
-        )
-        if busy is not None:
-            return busy
+        if native is None:
+            busy = await self._check_active_google_drive_document(
+                google_drive_folders, document_ingested
+            )
+            if busy is not None:
+                return busy
 
         return await self._phase_pick_and_process_google_drive_document(
             google_drive_folders=google_drive_folders,
@@ -1521,6 +1893,7 @@ class PageIndexGoogleDriveSyncAction(GoogleAction):
             queues_touched = True
         if active_document is not None:
             node.active_document = active_document
+            node.active_worker = {}
 
         if status is not None:
             s = str(status).strip()

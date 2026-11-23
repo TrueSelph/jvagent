@@ -50,3 +50,8 @@ class GoogleDriveDocuments(Node):
         default="",
         description="Document which is currently being processed",
     )
+
+    active_worker: Dict[str, str] = attribute(
+        default_factory=dict,
+        description="Server-owned process identity for a native Drive ingest claim",
+    )

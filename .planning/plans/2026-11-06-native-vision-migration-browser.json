@@ -1,0 +1,69 @@
+{
+  "attachment_preview": {
+    "content": [
+      {
+        "type": "text",
+        "text": "## Latest page snapshot\nuid=1074_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3140/chat/n.Agent.bb2deecf5cae404d9494469e\"\n  uid=1075_0 StaticText \"jvchat\"\n  uid=1075_1 StaticText \"AGENT TESTING\"\n  uid=1075_2 button \"New Conversation\"\n  uid=1075_3 StaticText \"No conversations yet.\"\n  uid=1075_4 button \"Logout\"\n  uid=1075_5 button \"Collapse sidebar\"\n  uid=1075_6 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=1075_7 button \"Native Attachment Inspector AGENT\" expandable haspopup=\"listbox\"\n  uid=1075_8 button \"Copy session ID\" description=\"No active session\" disableable disabled\n  uid=1075_9 button \"Copy token\" description=\"Copy access token\"\n  uid=1075_10 button \"Switch to light mode\"\n  uid=1075_11 heading \"Hello there!\" level=\"1\"\n  uid=1075_12 StaticText \"How can I help you today?\"\n  uid=1075_13 form\n    uid=1076_0 button \"Image attachment\" expandable haspopup=\"dialog\"\n    uid=1076_1 button \"Remove file\"\n    uid=1075_14 textbox \"Message input\" multiline value=\"What is the background color and the large code on the attached image? Reply only with those two details.\"\n    uid=1075_15 button \"Add Attachment\" focusable focused\n    uid=1075_16 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=1075_17 button \"Send message\"\n"
+      }
+    ]
+  },
+  "first_reply": {
+    "content": [
+      {
+        "type": "text",
+        "text": "## Latest page snapshot\nuid=1074_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3140/chat/n.Agent.bb2deecf5cae404d9494469e\"\n  uid=1075_0 StaticText \"jvchat\"\n  uid=1075_1 StaticText \"AGENT TESTING\"\n  uid=1075_2 button \"New Conversation\"\n  uid=1078_0 StaticText \"1\"\n  uid=1078_1 StaticText \" conversation\"\n  uid=1078_2 StaticText \"What is the background color and the large code on the attached image? Reply only with those two details.\"\n  uid=1078_3 button \"Delete conversation\"\n  uid=1075_4 button \"Logout\"\n  uid=1075_5 button \"Collapse sidebar\"\n  uid=1075_6 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=1075_7 button \"Native Attachment Inspector AGENT\" expandable haspopup=\"listbox\"\n  uid=1075_8 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=1075_9 button \"Copy token\" description=\"Copy access token\"\n  uid=1075_10 button \"Switch to light mode\"\n  uid=1078_4 button \"Image attachment\" expandable haspopup=\"dialog\"\n  uid=1078_5 StaticText \"What is the background color and the large code on the attached image? Reply only with those two details.\"\n  uid=1078_6 StaticText \"Background color: Yellow Large code: VECTOR-73\"\n  uid=1078_7 button \"gpt-4.1-2025-04-14 · 1 attempt · 754 tokens · 2.1s · 6.1 tok/s\"\n  uid=1078_8 button \"Copy\"\n  uid=1078_9 button \"Refresh\"\n  uid=1078_10 button \"Debug\"\n  uid=1078_11 button \"More\" expandable haspopup=\"menu\"\n  uid=1075_13 form\n    uid=1075_14 textbox \"Message input\" focusable focused multiline\n    uid=1075_15 button \"Add Attachment\"\n    uid=1075_16 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=1078_12 button \"Send message\" disableable disabled\n"
+      }
+    ]
+  },
+  "suppressed_request": {
+    "status": 200,
+    "response": "Image interpretation is disabled for this request. No model work was performed. Start a new conversation without the image, or enable image interpretation.",
+    "interaction_id": "n.Interaction.de235908a5bd4c28bfa554a5",
+    "session_id": "sess_775051759ade4a17",
+    "usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "cached_prompt_tokens": 0,
+      "cache_write_tokens": 0,
+      "model_call_count": 0,
+      "model_attempt_count": 0,
+      "failed_model_attempt_count": 0,
+      "cancelled_model_attempt_count": 0,
+      "model_attempt_duration_seconds": 0,
+      "unmeasured_model_attempt_count": 0,
+      "estimated_cost_usd": 0,
+      "reported_cost_usd": 0,
+      "litellm_cost_usd": 0,
+      "unknown_cost_call_count": 0,
+      "total_cost_usd": 0,
+      "total_duration_seconds": 0,
+      "last_updated": "2026-11-07T01:36:44.013054+00:00"
+    },
+    "session_credential_omitted": true
+  },
+  "after_cold_restart": {
+    "content": [
+      {
+        "type": "text",
+        "text": "## Latest page snapshot\nuid=1080_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3140/chat/n.Agent.bb2deecf5cae404d9494469e\"\n  uid=1081_0 StaticText \"jvchat\"\n  uid=1081_1 StaticText \"AGENT TESTING\"\n  uid=1081_2 button \"New Conversation\"\n  uid=1081_3 StaticText \"1\"\n  uid=1081_4 StaticText \" conversation\"\n  uid=1081_5 StaticText \"What is the background color and the large code on the attached image? Reply only with those two details.\"\n  uid=1081_6 button \"Delete conversation\"\n  uid=1081_7 button \"Logout\"\n  uid=1081_8 button \"Collapse sidebar\"\n  uid=1081_9 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=1081_10 button \"Native Attachment Inspector AGENT\" expandable haspopup=\"listbox\"\n  uid=1081_11 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=1081_12 button \"Copy token\" description=\"Copy access token\"\n  uid=1081_13 button \"Switch to light mode\"\n  uid=1082_0 button \"Image attachment\" expandable haspopup=\"dialog\"\n  uid=1082_1 StaticText \"What is the background color and the large code on the attached image? Reply only with those two details.\"\n  uid=1082_2 StaticText \"Background color: Yellow Large code: VECTOR-73\"\n  uid=1082_3 button \"gpt-4.1-2025-04-14 · 1 attempt · 754 tokens · 2.1s · 6.1 tok/s\"\n  uid=1082_4 button \"Copy\"\n  uid=1082_5 button \"Refresh\"\n  uid=1082_6 button \"More\" expandable haspopup=\"menu\"\n  uid=1081_16 form\n    uid=1081_17 textbox \"Message input\" multiline value=\"What is the smaller label at the bottom of the original image? Reply only with that label.\"\n    uid=1081_18 button \"Add Attachment\"\n    uid=1081_19 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=1081_20 button \"Send message\"\n"
+      }
+    ]
+  },
+  "followup_reply": {
+    "content": [
+      {
+        "type": "text",
+        "text": "## Latest page snapshot\nuid=1080_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3140/chat/n.Agent.bb2deecf5cae404d9494469e\"\n  uid=1081_0 StaticText \"jvchat\"\n  uid=1081_1 StaticText \"AGENT TESTING\"\n  uid=1081_2 button \"New Conversation\"\n  uid=1081_3 StaticText \"1\"\n  uid=1081_4 StaticText \" conversation\"\n  uid=1081_5 StaticText \"What is the smaller label at the bottom of the original image? Reply only with that label.\"\n  uid=1081_6 button \"Delete conversation\"\n  uid=1081_7 button \"Logout\"\n  uid=1081_8 button \"Collapse sidebar\"\n  uid=1081_9 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=1081_10 button \"Native Attachment Inspector AGENT\" expandable haspopup=\"listbox\"\n  uid=1081_11 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=1081_12 button \"Copy token\" description=\"Copy access token\"\n  uid=1081_13 button \"Switch to light mode\"\n  uid=1082_0 button \"Image attachment\" expandable haspopup=\"dialog\"\n  uid=1082_1 StaticText \"What is the background color and the large code on the attached image? Reply only with those two details.\"\n  uid=1082_2 StaticText \"Background color: Yellow Large code: VECTOR-73\"\n  uid=1082_3 button \"gpt-4.1-2025-04-14 · 1 attempt · 754 tokens · 2.1s · 6.1 tok/s\"\n  uid=1084_0 StaticText \"What is the smaller label at the bottom of the original image? Reply only with that label.\"\n  uid=1084_1 StaticText \"DOCK 28\"\n  uid=1084_2 button \"gpt-4.1-2025-04-14 · 1 attempt · 785 tokens · 1.4s · 4.4 tok/s\"\n  uid=1084_3 button \"Copy\"\n  uid=1084_4 button \"Refresh\"\n  uid=1084_5 button \"Debug\"\n  uid=1084_6 button \"More\" expandable haspopup=\"menu\"\n  uid=1081_16 form\n    uid=1081_17 textbox \"Message input\" focusable focused multiline\n    uid=1081_18 button \"Add Attachment\"\n    uid=1081_19 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=1084_7 button \"Send message\" disableable disabled\n"
+      }
+    ]
+  },
+  "final_reload": {
+    "content": [
+      {
+        "type": "text",
+        "text": "## Latest page snapshot\nuid=1086_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3140/chat/n.Agent.bb2deecf5cae404d9494469e\"\n  uid=1086_1 StaticText \"jvchat\"\n  uid=1086_2 StaticText \"AGENT TESTING\"\n  uid=1086_3 button \"New Conversation\"\n  uid=1086_4 StaticText \"1\"\n  uid=1086_5 StaticText \" conversation\"\n  uid=1086_6 StaticText \"What is the smaller label at the bottom of the original image? Reply only with that label.\"\n  uid=1086_7 button \"Delete conversation\"\n  uid=1086_8 button \"Logout\"\n  uid=1086_9 button \"Collapse sidebar\"\n  uid=1086_10 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=1086_11 button \"Native Attachment Inspector AGENT\" expandable haspopup=\"listbox\"\n  uid=1086_12 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=1086_13 button \"Copy token\" description=\"Copy access token\"\n  uid=1086_14 button \"Switch to light mode\"\n  uid=1087_0 button \"Image attachment\" expandable haspopup=\"dialog\"\n  uid=1087_1 StaticText \"What is the background color and the large code on the attached image? Reply only with those two details.\"\n  uid=1087_2 StaticText \"Background color: Yellow Large code: VECTOR-73\"\n  uid=1087_3 button \"gpt-4.1-2025-04-14 · 1 attempt · 754 tokens · 2.1s · 6.1 tok/s\"\n  uid=1087_4 StaticText \"What is the smaller label at the bottom of the original image? Reply only with that label.\"\n  uid=1087_5 StaticText \"DOCK 28\"\n  uid=1087_6 button \"gpt-4.1-2025-04-14 · 1 attempt · 785 tokens · 1.4s · 4.4 tok/s\"\n  uid=1087_7 button \"Copy\"\n  uid=1087_8 button \"Refresh\"\n  uid=1087_9 button \"More\" expandable haspopup=\"menu\"\n  uid=1086_17 form\n    uid=1086_18 textbox \"Message input\" multiline\n    uid=1086_19 button \"Add Attachment\"\n    uid=1086_20 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=1086_21 button \"Send message\" disableable disabled\n"
+      }
+    ]
+  }
+}

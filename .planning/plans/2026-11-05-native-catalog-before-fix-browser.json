@@ -1,0 +1,26 @@
+{
+  "observed_at": "2026-11-06T01:41:24.437Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nNATIVE-CATALOG-CHECK: Thanks. Now just say good night, without doing any further research.\n\nLogout\nNA\nNative Catalog Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-CATALOG-CHECK: Hello. Please reply with a short greeting.\n\n1 tool call\nUsed tool: load_capability\n\nHello! How can I assist you today?\n\ngpt-4.1-2025-04-14 · 2 attempts · 578 tokens · 4.4s · 6.1 tok/s\n\nNATIVE-CATALOG-CHECK: Look up REHEARSAL-47 and tell me its room and start time.\n\n2 tool calls\nUsed tool: load_capability\nUsed tool: mcp_records__lookup_record\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 3 attempts · 1.5k tokens · 3.6s · 18.3 tok/s\n\nNATIVE-CATALOG-CHECK: Research https://www.python.org/doc/essays/blurb/ and give one sourced finding about how Python is described. Use the research skill and cite the fetched page.\n\n2 tool calls\nUsed tool: load_capability\nUsed tool: web_fetch__fetch\n\nPython is an interpreted, object-oriented, high-level programming language with dynamic semantics.\n\nPython is described as an interpreted, object-oriented, high-level programming language with dynamic semantics. Source 1, observed 2026-11-06 01:38 UTC\ngpt-4.1-2025-04-14 · 3 attempts · 4.7k tokens · 4.3s · 48.4 tok/s\n\nNATIVE-CATALOG-CHECK: Thanks. Now just say good night, without doing any further research.\n\nThe model request could not complete. Please check the service configuration.\n\ngpt-4.1-2025-04-14 · 2 attempts · 5.2k tokens · 1.6s · 6.2 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "resources": [
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 6357.5,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 5079.5,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 6347.4000000059605,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8140/api/agents/n.Agent.d921ea440b324d8db29b86d3/interact",
+      "duration_ms": 3277.699999988079,
+      "initiator": "fetch"
+    }
+  ]
+}

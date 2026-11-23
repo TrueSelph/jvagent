@@ -10,23 +10,257 @@ so a tool cannot escape the ``<agent_id>/<user_id>/`` sandbox.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
-from typing import Annotated, Optional
+from dataclasses import dataclass, replace
+from typing import Annotated, Any, Optional
+
+from jvspatial.core.annotations import attribute
+from jvspatial.storage.exceptions import StorageError
 
 from jvagent.action.base import Action
 from jvagent.action.file_interface import _core
 from jvagent.harness.contracts import IdempotencyClass
+from jvagent.harness.mutation_tools import NativeMutationTool
+from jvagent.tooling.context import get_tool_visitor, require_tool_visitor
+from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_decorator import tool
-from jvagent.tooling.tool_executor import get_tool_visitor
 
 logger = logging.getLogger(__name__)
 
 _NO_CONTEXT = "(no execution context)"
 
 
+class FileShareTool(NativeMutationTool):
+    """Issuing a bearer capability is a non-retryable host-authorized mutation."""
+
+    effect_summary = "jv:mutation:file-share:v1"
+
+
+@dataclass
+class FileWriteTool(NativeMutationTool):
+    """Reviewed local text write; failures never imply rollback."""
+
+    effect_summary = "jv:mutation:file-write:v1"
+    recovery_max_bytes: int = 262_144
+
+    async def recovery_scope(self) -> str | None:
+        from jvspatial.storage.interfaces.local import LocalFileInterface
+
+        fi = await _core._get_file_interface(None)
+        if not isinstance(fi, LocalFileInterface):
+            return None
+        stat = fi.root_dir.stat()
+        facts = ["local-file-scope-v1", str(fi.root_dir), stat.st_dev, stat.st_ino]
+        return "sha256:" + hashlib.sha256(json.dumps(facts).encode()).hexdigest()
+
+    async def verify_recovery(self, *, visitor: Any, arguments: dict[str, Any]) -> Any:
+        from jvspatial.storage.interfaces.local import LocalFileInterface
+        from pydantic_ai import ToolReturn
+
+        if (
+            set(arguments) != {"path", "content"}
+            or not isinstance(arguments["content"], str)
+            or not isinstance(arguments["path"], str)
+        ):
+            raise ValueError("Recorded write intent is malformed")
+        content, path = arguments["content"], arguments["path"]
+        if (
+            len(content) > self.recovery_max_bytes
+            or len(content.encode("utf-8")) > self.recovery_max_bytes
+        ):
+            raise ValueError("Recorded write exceeds the current verification limit")
+        fi = await _core._get_file_interface(visitor)
+        if not isinstance(fi, LocalFileInterface):
+            raise ValueError("Only local text write recovery is qualified")
+        try:
+            agent_id, user_id = await _core.resolve_agent_user(visitor)
+            path = _core.validate_relative_path(path)
+            scoped = _core._local_user_storage(fi, agent_id, user_id, path)
+            before = await scoped.get_metadata(path)
+            actual = await _core.read_bounded_text_file(
+                visitor, path, max_bytes=self.recovery_max_bytes
+            )
+            after = await scoped.get_metadata(path)
+        except (ValueError, OSError, StorageError):
+            raise ValueError("The recorded file cannot be safely verified") from None
+        if actual != content or before is None or before != after:
+            raise ValueError("Current file does not match the recorded write intent")
+        return ToolReturn(
+            return_value={
+                "ok": True,
+                "path": path,
+                "bytes": len(content.encode("utf-8")),
+                "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                "operator_verified": True,
+                "verification": "Current file matches recorded intent; original completion was not observed.",
+            },
+            metadata={"jv_resource_version": before},
+        )
+
+
 class FileInterfaceAction(Action):
     """Sandboxed per-user file I/O tools backed by the jvspatial file interface."""
+
+    native_read_max_bytes: int = attribute(default=262_144)
+    native_write_max_bytes: int = attribute(default=262_144)
+    native_share_max_bytes: int = attribute(default=8 * 1024 * 1024)
+
+    async def get_native_tools(self) -> list[Tool]:
+        """Expose bounded reads and an explicitly authorized, journaled local write."""
+        limit = self.native_read_max_bytes
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("native_read_max_bytes must be a positive integer")
+        write_limit = self.native_write_max_bytes
+        if (
+            isinstance(write_limit, bool)
+            or not isinstance(write_limit, int)
+            or write_limit <= 0
+        ):
+            raise ValueError("native_write_max_bytes must be a positive integer")
+        from .sharing import MAX_BYTES, share_file
+
+        if (
+            isinstance(self.native_share_max_bytes, bool)
+            or not isinstance(self.native_share_max_bytes, int)
+            or not 1 <= self.native_share_max_bytes <= MAX_BYTES
+        ):
+            raise ValueError("native_share_max_bytes must be between 1 and 8 MiB")
+        original = next(
+            tool
+            for tool in await self.get_tools()
+            if tool.name == "file_interface__read_file"
+        )
+
+        async def read(
+            *,
+            visitor: Any,
+            path: str,
+            head: Optional[int] = None,
+            tail: Optional[int] = None,
+        ) -> str:
+            if visitor is not require_tool_visitor():
+                raise ValueError("File read requires the admitted host visitor")
+            try:
+                content = await _core.read_bounded_text_file(
+                    visitor, path, head=head, tail=tail, max_bytes=limit
+                )
+                result = {"ok": True, "path": path, "content": content}
+            except (ValueError, OSError, StorageError):
+                # Provider errors can contain host paths or bucket details.
+                result = {
+                    "ok": False,
+                    "error": "File unavailable, unsafe path, invalid line limits, or read byte limit exceeded",
+                    "max_bytes": limit,
+                }
+            require_tool_visitor()
+            return json.dumps(result)
+
+        async def write(*, visitor: Any, path: str, content: str) -> str:
+            if visitor is not require_tool_visitor():
+                raise ValueError("File write requires the admitted host visitor")
+            try:
+                await _core.write_bounded_text_file(
+                    visitor, path, content, max_bytes=write_limit
+                )
+                require_tool_visitor()
+                observed = await _core.read_bounded_text_file(
+                    visitor, path, max_bytes=write_limit
+                )
+                if observed != content:
+                    raise RuntimeError("File write acknowledgement mismatch")
+            except (ValueError, OSError, StorageError):
+                raise RuntimeError("File write requires reconciliation") from None
+            require_tool_visitor()
+            data = content.encode("utf-8")
+            return json.dumps(
+                {
+                    "ok": True,
+                    "path": path,
+                    "bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+
+        legacy_write = next(
+            t for t in await self.get_tools() if t.name == "file_interface__write_file"
+        )
+        legacy_share = next(
+            t for t in await self.get_tools() if t.name == "file_interface__share_file"
+        )
+
+        async def share(*, visitor: Any, path: str, expires_in: int = 600) -> str:
+            try:
+                return json.dumps(
+                    await share_file(
+                        self, visitor, path, expires_in, self.native_share_max_bytes
+                    )
+                )
+            except (ValueError, OSError, StorageError):
+                raise RuntimeError(
+                    "Artifact sharing did not complete; reconciliation is required"
+                ) from None
+
+        return [
+            replace(
+                original,
+                execute=read,
+                binds_visitor=True,
+                effect_class="read",
+                description=(
+                    "Read UTF-8 text at an explicit path relative to the current "
+                    "agent/user sandbox. Optional head or tail selects positive line "
+                    f"counts. Full/tail reads above {limit} bytes fail explicitly; "
+                    "head may finish early. No directory creation or discovery is needed."
+                ),
+            ),
+            FileWriteTool(
+                name=legacy_write.name,
+                description=(
+                    f"Write UTF-8 text at an explicit caller sandbox path, up to {write_limit} bytes. "
+                    "Requires a named host permission. Returns verified bytes/digest; failures need operator reconciliation."
+                ),
+                parameters_schema=legacy_write.parameters_schema,
+                execute=write,
+                binds_visitor=True,
+                effect_class="write",
+                idempotency_class=IdempotencyClass.NON_RETRYABLE,
+                requires_tool_permission=True,
+                recovery_max_bytes=write_limit,
+            ),
+            FileShareTool(
+                name=legacy_share.name,
+                description=legacy_share.description,
+                parameters_schema=legacy_share.parameters_schema,
+                execute=share,
+                binds_visitor=True,
+                effect_class="write",
+                idempotency_class=IdempotencyClass.NON_RETRYABLE,
+                requires_tool_permission=True,
+            ),
+        ]
+
+    @tool(
+        name="file_interface__share_file",
+        idempotency_class=IdempotencyClass.NON_RETRYABLE,
+        effect_class="write",
+        requires_tool_permission=True,
+    )
+    async def _t_share_file(
+        self,
+        path: Annotated[str, "Existing path relative to the current user's workspace."],
+        expires_in: Annotated[int, "Link lifetime in seconds, from 1 to 3600."] = 600,
+    ) -> str:
+        """Issue a temporary bearer download link for a bounded immutable file snapshot. Anyone with the link can download it until expiry. Requires named host permission and a configured public base URL; never returns a raw storage URL."""  # noqa: E501
+        from .sharing import share_file
+
+        visitor = require_tool_visitor()
+        return json.dumps(
+            await share_file(
+                self, visitor, path, expires_in, self.native_share_max_bytes
+            )
+        )
 
     @tool(name="file_interface__describe_write_workspace")
     async def _t_describe_write_workspace(self) -> str:

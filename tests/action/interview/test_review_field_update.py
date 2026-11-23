@@ -33,7 +33,7 @@ def signup_action():
 @pytest.mark.asyncio
 async def test_review_email_update_from_correction_utterance(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.status = InterviewStatus.REVIEW
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
@@ -60,7 +60,7 @@ async def test_review_slot_correction_accepts_validated_correction_without_utter
 ):
     """Cross-turn ack: model may apply a validated slot correction without re-stating the slot."""
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.status = InterviewStatus.REVIEW
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
@@ -88,7 +88,7 @@ async def test_review_pivot_stores_training_format_from_followup_utterance(
     signup_action,
 ):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.status = InterviewStatus.ACTIVE
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Saturday 9:00 AM - 12:00 PM")

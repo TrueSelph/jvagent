@@ -29,15 +29,48 @@ async def test_same_agent_id_returns_same_bus():
     assert a is b
 
 
-async def test_agent_get_response_bus_uses_registry(monkeypatch):
-    agent = Agent.__new__(Agent)
-    object.__setattr__(agent, "id", "agent-xyz")
-    object.__setattr__(agent, "_response_bus", None)
+async def test_agent_get_response_bus_uses_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Agent, "get_actions", AsyncMock(return_value=[]))
+    agent = Agent(
+        id="agent-xyz",
+        namespace="test",
+        name="registry",
+        alias="Registry",
+        description="",
+    )
 
     bus1 = await agent.get_response_bus()
     # Simulate rematerialize: fresh instance, same id
-    agent2 = Agent.__new__(Agent)
-    object.__setattr__(agent2, "id", "agent-xyz")
-    object.__setattr__(agent2, "_response_bus", None)
+    agent2 = Agent(
+        id="agent-xyz",
+        namespace="test",
+        name="registry",
+        alias="Registry",
+        description="",
+    )
     bus2 = await agent2.get_response_bus()
     assert bus1 is bus2
+    assert bus1 is not None
+
+
+async def test_existing_bus_refreshes_native_owner_from_enabled_actions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jvagent.action.native_harness import NativeHarnessAction
+
+    actions = AsyncMock(return_value=[NativeHarnessAction()])
+    monkeypatch.setattr(Agent, "get_actions", actions)
+    agent = Agent(
+        id="agent-owner-change",
+        namespace="test",
+        name="owner",
+        alias="Owner",
+        description="",
+    )
+    bus = await agent.get_response_bus()
+    assert bus.native_execution is True
+    actions.return_value = []
+    assert await agent.get_response_bus() is bus
+    assert bus.native_execution is False

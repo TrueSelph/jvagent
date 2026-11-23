@@ -1,0 +1,212 @@
+[
+  {
+    "implementation": "legacy",
+    "replicate": 1,
+    "case_id": "chat-exact",
+    "interaction_id": "n.Interaction.5d53bffe926b4952aa3f26e1",
+    "visible": "StaticText \"READY.\"\nbutton \"gpt-4.1 \u00b7 2.1k tokens \u00b7 2.5s \u00b7 5.6 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 1,
+    "case_id": "chat-exact",
+    "visible": "StaticText \"READY\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 246 tokens\"",
+    "interaction_id": "n.Interaction.8ea89fbf806a432080a1b799"
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 1,
+    "case_id": "remember-facts",
+    "interaction_id": "n.Interaction.152222674e654a43a31ab18d",
+    "visible": "StaticText \"Noted: CEDAR-47 is the coordinati\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 4.2k tokens \u00b7 3.6s \u00b7 13.9 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 1,
+    "case_id": "remember-facts",
+    "interaction_id": "n.Interaction.dbc7de9674e14852b9c40cf9",
+    "visible": "StaticText \"Noted: CEDAR-47, rehearsal date 18 November 2026.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 309 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 1,
+    "case_id": "recall-facts",
+    "interaction_id": "n.Interaction.cfdac9b5f4be44b3961d5920",
+    "visible": "StaticText \"You gave me the coordination label\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 4.3k tokens \u00b7 2.4s \u00b7 19.9 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 1,
+    "case_id": "recall-facts",
+    "interaction_id": "n.Interaction.7c84c3c2fa9a47f699fe60f8",
+    "visible": "StaticText \"You gave me the coordination label CEDAR-47 and the rehearsal date 18 Novemb\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 355 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 1,
+    "case_id": "missing-fact",
+    "interaction_id": "n.Interaction.4921a6c6b5764991baada442",
+    "visible": "StaticText \"The approved budget for the CE\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 927ms \u00b7 30.2 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 1,
+    "case_id": "missing-fact",
+    "interaction_id": "n.Interaction.fdc23f67b39f4f46a4e9eabf",
+    "visible": "StaticText \"The approved budget for that rehearsal has not been provided.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 398 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 1,
+    "case_id": "json-format",
+    "interaction_id": "n.Interaction.67a7811ed2b34d0d862f104a",
+    "visible": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}\"\nbutton \"gpt-4.1 \u00b7 2.3k tokens \u00b7 1.3s \u00b7 25.6 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 1,
+    "case_id": "json-format",
+    "interaction_id": "n.Interaction.fe751b4edc5a4952ade6f412",
+    "visible": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 449 tokens\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 2,
+    "case_id": "chat-exact",
+    "interaction_id": "n.Interaction.3e6f2b60cbdf4182a0437844",
+    "visible": "StaticText \"READY\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 246 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 2,
+    "case_id": "chat-exact",
+    "interaction_id": "n.Interaction.d99e43e8223c46919012a527",
+    "visible": "StaticText \"READY.\"\nbutton \"gpt-4.1 \u00b7 4.1k tokens \u00b7 2.0s \u00b7 14.0 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 2,
+    "case_id": "remember-facts",
+    "interaction_id": "n.Interaction.af5162b52cb942db9d134dd3",
+    "visible": "StaticText \"Noted: CEDAR-47 is the coordination label and the rehearsal date is 18 November 2026.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 315 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 2,
+    "case_id": "remember-facts",
+    "interaction_id": "n.Interaction.70c8f2a3bcc74da4bccd3f41",
+    "visible": "StaticText \"Noted: coordination label is CEDAR-47 and rehearsal date is 18 November 2026.\"\nbutton \"gpt-4.1 \u00b7 4.2k tokens \u00b7 1.5s \u00b7 31.9 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 2,
+    "case_id": "recall-facts",
+    "interaction_id": "n.Interaction.d2f9de0fd89b42a1acfa4718",
+    "visible": "StaticText \"You gave me the coordination label CEDA\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 361 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 2,
+    "case_id": "recall-facts",
+    "interaction_id": "n.Interaction.c6982b5a4e274ec8ac61d0c8",
+    "visible": "StaticText \"You gave me the coordination label CEDAR-\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 4.3k tokens \u00b7 2.4s \u00b7 20.1 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 2,
+    "case_id": "missing-fact",
+    "interaction_id": "n.Interaction.177bf2ab1f2f4e9bb821f51f",
+    "visible": "StaticText \"The approved budget for that rehears\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 404 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 2,
+    "case_id": "missing-fact",
+    "interaction_id": "n.Interaction.0b5d4e0075734d7eb6ac0212",
+    "visible": "StaticText \"The approved budget for that rehearsa\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 861ms \u00b7 26.7 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 2,
+    "case_id": "json-format",
+    "interaction_id": "n.Interaction.184e38a67cd247d0b8c580c4",
+    "visible": "StaticText \"json\"\nStaticText \"{\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 463 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 2,
+    "case_id": "json-format",
+    "interaction_id": "n.Interaction.b2e58223cf28442989d22224",
+    "visible": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 841ms \u00b7 39.2 tok/s\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 3,
+    "case_id": "chat-exact",
+    "interaction_id": "n.Interaction.090fe82c9f4f409c95ad5726",
+    "visible": "StaticText \"READY.\"\nbutton \"gpt-4.1 \u00b7 4.1k tokens \u00b7 1.4s \u00b7 19.6 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 3,
+    "case_id": "chat-exact",
+    "interaction_id": "n.Interaction.5c17d372d2d54b07b1a47d83",
+    "visible": "StaticText \"READY\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 246 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 3,
+    "case_id": "remember-facts",
+    "interaction_id": "n.Interaction.36c25e74bb504befa67105e1",
+    "visible": "StaticText \"Noted: coordination label is CEDAR-47 and rehearsal date is 18 November 2026.\"\nbutton \"gpt-4.1 \u00b7 4.2k tokens \u00b7 1.7s \u00b7 28.6 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 3,
+    "case_id": "remember-facts",
+    "interaction_id": "n.Interaction.6a317237523a414ea78710bc",
+    "visible": "StaticText \"Noted: CEDAR-47, rehearsal date 18 November 2026.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 309 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 3,
+    "case_id": "recall-facts",
+    "interaction_id": "n.Interaction.935fc2d6399341c598ab3222",
+    "visible": "StaticText \"You gave me the coordination label CEDAR-47 and the rehearsal date 18 November 2026.\"\nbutton \"gpt-4.1 \u00b7 4.3k tokens \u00b7 1.5s \u00b7 31.1 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 3,
+    "case_id": "recall-facts",
+    "interaction_id": "n.Interaction.8375907e0d7e4cd582edf8a1",
+    "visible": "StaticText \"You gave me the coordination label CEDAR-47\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 355 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 3,
+    "case_id": "missing-fact",
+    "interaction_id": "n.Interaction.7512d280a6c540c48b562f04",
+    "visible": "StaticText \"The approved budget for the rehearsal h\"\nStaticText \"\u25cf\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 832ms \u00b7 27.6 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 3,
+    "case_id": "missing-fact",
+    "interaction_id": "n.Interaction.c7dd16b81222433d893c2c9f",
+    "visible": "StaticText \"The approved budget for that rehearsal has not been provided.\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 398 tokens\""
+  },
+  {
+    "implementation": "legacy",
+    "replicate": 3,
+    "case_id": "json-format",
+    "interaction_id": "n.Interaction.b8666e1237e8424aaa0690cc",
+    "visible": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}\"\nbutton \"gpt-4.1 \u00b7 2.2k tokens \u00b7 773ms \u00b7 42.7 tok/s\""
+  },
+  {
+    "implementation": "native",
+    "replicate": 3,
+    "case_id": "json-format",
+    "interaction_id": "n.Interaction.ef10c8d82bbf4406a22ecf51",
+    "visible": "StaticText \"{\"label\": \"CEDAR-47\", \"date\": \"2026-11-18\"}\"\nbutton \"gpt-4.1-2025-04-14 \u00b7 449 tokens\""
+  }
+]

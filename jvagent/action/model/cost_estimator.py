@@ -6,6 +6,7 @@ per-call cost estimation from observability event data.
 """
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,13 @@ _LLM_PRICING_BY_PROVIDER: Dict[str, Dict[str, Dict[str, float]]] = {
         "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
         "claude-3-7-sonnet": {"input": 3.00, "output": 15.00},
     },
-    "ollama": {},
+    # Ollama Cloud's metered token prices from https://ollama.com/pricing
+    # (verified 2026-10-05). Local IDs without ``:cloud`` remain free here.
+    "ollama": {
+        "glm-5.3": {"input": 1.40, "output": 4.40, "cached_input": 0.26},
+        "glm-5.3-flash": {"input": 0.15, "output": 0.50, "cached_input": 0.03},
+        "glm-5.2": {"input": 1.40, "output": 4.40, "cached_input": 0.26},
+    },
 }
 
 # Embedding models: single rate per 1M tokens
@@ -48,6 +55,69 @@ _DEFAULT_INPUT_RATE = 1.0
 _DEFAULT_OUTPUT_RATE = 2.0
 _DEFAULT_EMBEDDING_RATE = 0.10
 _UNKNOWN_PROVIDER_WARNED: set[str] = set()
+
+
+def is_valid_cost_usd(value: Any) -> bool:
+    """Whether *value* is a finite, non-negative USD amount (including zero)."""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and float(value) >= 0.0
+    )
+
+
+def reported_cost_record(metrics: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Build the provider-neutral record for an explicit cost receipt."""
+    if "cost_usd" not in metrics or not is_valid_cost_usd(metrics.get("cost_usd")):
+        return None
+    source = str(metrics.get("cost_source") or "provider_reported")[:128]
+    estimated = bool(metrics.get("cost_estimated")) or source == "jv_cost_estimator"
+    return {
+        "amount": float(metrics["cost_usd"]),
+        "currency": "USD",
+        "source": source,
+        "estimated": estimated,
+        "pricing_version": metrics.get("pricing_version"),
+    }
+
+
+def estimated_cost_record(
+    model: str, provider: str, usage: Dict[str, Any], event_type: str
+) -> Dict[str, Any]:
+    """Estimate cost and retain the pricing provenance or unknown state."""
+    estimate = estimate_cost(model, provider, usage, event_type)
+    pricing = pricing_for(provider, model)
+    if pricing is not None:
+        source = "jv_cost_estimator"
+        version = f"{pricing.source}-pricing-v1"
+        amount: Optional[float] = estimate
+    elif (provider or "").strip().lower() in {
+        "openai",
+        "openrouter",
+        "anthropic",
+        "ollama",
+        "litellm",
+        "",
+    }:
+        # estimate_cost deliberately applies its conservative fallback for
+        # unknown model IDs on supported providers.
+        source = "jv_cost_estimator"
+        version = "conservative-fallback-v1"
+        amount = estimate
+    else:
+        # An unknown provider's zero estimate is not evidence of free usage.
+        source = "unavailable_pricing"
+        version = None
+        amount = None
+    return {
+        "amount": amount,
+        "currency": "USD",
+        "source": source,
+        "estimated": True,
+        "pricing_version": version,
+    }
+
 
 # Prompt-cache token rates, as multipliers on a model's normal input rate.
 # Cached input is not free and not full price, and an agentic loop resends a
@@ -78,9 +148,9 @@ def split_cached_prompt_tokens(usage: Dict[str, Any]) -> tuple:
 
     Both providers report cached counts as a *subset* of the prompt tokens
     (jvagent's Anthropic action folds its separately-reported cache counters in),
-    so these are carved out of the total rather than added to it. Reads are
-    ``cached_tokens`` (OpenAI, flattened) or ``prompt_tokens_details.cached_tokens``
-    (OpenAI, raw) or ``cache_read_input_tokens`` (Anthropic).
+    so these are carved out of the total rather than added to it. Reads accept
+    jvagent's normalized ``cached_read_tokens`` plus provider spellings such as
+    ``cached_tokens`` (OpenAI) and ``cache_read_input_tokens`` (Anthropic).
     """
 
     def _int(key: str) -> int:
@@ -98,10 +168,19 @@ def split_cached_prompt_tokens(usage: Dict[str, Any]) -> tuple:
         except (TypeError, ValueError):
             nested = 0
     read = min(
-        _int("cached_tokens") or _int("cache_read_input_tokens") or nested,
+        _int("cached_read_tokens")
+        or _int("cached_prompt_tokens")
+        or _int("cached_tokens")
+        or _int("cache_read_input_tokens")
+        or nested,
         prompt_tokens,
     )
-    write = min(_int("cache_creation_input_tokens"), prompt_tokens - read)
+    write = min(
+        _int("cached_write_tokens")
+        or _int("cache_write_tokens")
+        or _int("cache_creation_input_tokens"),
+        prompt_tokens - read,
+    )
     return prompt_tokens - read - write, read, write
 
 
@@ -158,6 +237,8 @@ def _bundled_pricing(provider: str, model: str) -> Optional["Pricing"]:
 
     provider_key = (provider or "").strip().lower()
     lookup_model = model.split("/")[-1] if "/" in model else model
+    if provider_key == "ollama" and lookup_model.endswith(":cloud"):
+        lookup_model = lookup_model[: -len(":cloud")]
     table = _LLM_PRICING_BY_PROVIDER.get(provider_key) or (
         _LLM_PRICING if provider_key in ("", "litellm") else {}
     )
@@ -170,10 +251,15 @@ def _bundled_pricing(provider: str, model: str) -> Optional["Pricing"]:
     if not entry:
         return None
     rates = cache_rates_for_provider(provider)
+    cached_read_multiplier = float(rates.get("read", 1.0))
+    if provider_key == "ollama" and model.endswith(":cloud"):
+        cached_input = entry.get("cached_input")
+        if cached_input is not None and entry.get("input"):
+            cached_read_multiplier = float(cached_input) / float(entry["input"])
     return Pricing(
         input_per_million=float(entry.get("input", 0.0)),
         output_per_million=float(entry.get("output", 0.0)),
-        cached_read_multiplier=float(rates.get("read", 1.0)),
+        cached_read_multiplier=cached_read_multiplier,
         cached_write_multiplier=float(rates.get("write", 1.0)),
         source="bundled",
     )
@@ -183,7 +269,66 @@ def pricing_for(provider: str, model: str) -> Optional["Pricing"]:
     """Effective pricing for ``model`` on ``provider``: LiteLLM metadata when
     available (maintained upstream for hundreds of models), else the bundled
     table, else ``None`` (the caller decides on a conservative default)."""
+    if (provider or "").strip().lower() == "ollama":
+        if model.endswith(":cloud"):
+            return _bundled_pricing(provider, model)
+        from jvagent.action.model.contract import Pricing
+
+        # Local monetary cost is defined here, not discovered by a synchronous
+        # provider metadata request. Offline fallback must not apply cloud rates.
+        return Pricing(input_per_million=0.0, output_per_million=0.0, source="local")
     return _litellm_pricing(provider, model) or _bundled_pricing(provider, model)
+
+
+def request_cost_reservation_usd(
+    provider: str,
+    model: str,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    safety_multiplier: float = 1.25,
+) -> Optional[float]:
+    """Estimate a pessimistic request reservation from known model pricing.
+
+    This is an application-side admission estimate, not a provider-enforced
+    spend cap. Unknown prices return ``None`` so callers with a configured
+    dollar ceiling can stop before sending a request rather than assume it is
+    free. The input side uses the uncached rate or the larger cache-write rate;
+    cache-read discounts are deliberately ignored.
+    """
+    if (
+        isinstance(input_tokens, bool)
+        or not isinstance(input_tokens, int)
+        or input_tokens < 0
+        or isinstance(output_tokens, bool)
+        or not isinstance(output_tokens, int)
+        or output_tokens < 0
+        or isinstance(safety_multiplier, bool)
+        or not isinstance(safety_multiplier, (int, float))
+        or not math.isfinite(float(safety_multiplier))
+        or safety_multiplier < 1.0
+    ):
+        raise ValueError(
+            "request reservation limits must be finite non-negative values"
+        )
+    pricing = pricing_for(provider, model)
+    if pricing is None:
+        return None
+    input_rate = float(pricing.input_per_million) * max(
+        1.0, float(pricing.cached_write_multiplier)
+    )
+    output_rate = float(pricing.output_per_million)
+    if (
+        not math.isfinite(input_rate)
+        or not math.isfinite(output_rate)
+        or input_rate < 0
+        or output_rate < 0
+    ):
+        return None
+    estimated = (
+        (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
+    ) * float(safety_multiplier)
+    return estimated if math.isfinite(estimated) else None
 
 
 def clear_pricing_cache() -> None:
@@ -214,6 +359,33 @@ def estimate_cost(
     lookup_model = model.split("/")[-1] if "/" in model else model
 
     provider_key = (provider or "").strip().lower()
+
+    # A cloud-suffixed Ollama ID is a metered hosted model. LiteLLM may
+    # identify Ollama IDs as local/free, so deliberately use Ollama's own
+    # published cloud table before consulting its model metadata.
+    if provider_key == "ollama" and model.endswith(":cloud"):
+        priced = _bundled_pricing(provider_key, model)
+        if priced is not None:
+            prompt_tokens = usage.get("prompt_tokens", 0) or 0
+            completion_tokens = usage.get("completion_tokens", 0) or 0
+            uncached, cache_read, cache_write = split_cached_prompt_tokens(usage)
+            prompt_cost = (
+                (
+                    uncached
+                    + cache_read * priced.cached_read_multiplier
+                    + cache_write * priced.cached_write_multiplier
+                )
+                / 1_000_000
+                * priced.input_per_million
+            )
+            if prompt_tokens == 0 and completion_tokens == 0:
+                prompt_cost = (
+                    usage.get("total_tokens", 0) / 1_000_000
+                ) * priced.input_per_million
+            return (
+                prompt_cost
+                + (completion_tokens / 1_000_000) * priced.output_per_million
+            )
 
     if event_type == "embedding_call":
         rate = _EMBEDDING_PRICING.get(lookup_model, _DEFAULT_EMBEDDING_RATE)

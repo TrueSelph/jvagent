@@ -1,0 +1,2679 @@
+{
+  "baseline": "7d689e4d",
+  "status": "baseline name inventory with incremental partial qualification; release gates remain open",
+  "actions": [
+    {
+      "path": "jvagent/action/access_control/info.yaml",
+      "name": "jvagent/access_control_action",
+      "archetype": "AccessControlAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/agent_utils/info.yaml",
+      "name": "jvagent/agent_utils",
+      "archetype": "AgentUtils",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/artifact_handler_interact_action/info.yaml",
+      "name": "jvagent/artifact_handler_interact_action",
+      "archetype": "ArtifactHandlerInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/avatar_action/info.yaml",
+      "name": "jvagent/avatar_action",
+      "archetype": "AvatarAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/code_execution/info.yaml",
+      "name": "jvagent/code_execution",
+      "archetype": "CodeExecutionAction",
+      "disposition": "Preserve Action and bash declaration; replace execution/staging with official SDK Docker/Shell; retire old executor after file/artifact/state migration",
+      "qualification": "partial local profile: SDK Docker/Shell, existing per-user storage, authenticated Messenger isolation and bounded web artifact publication; broader recovery/deployment remain open",
+      "qualification_evidence": "2026-11-06-native-artifact-downloads.md"
+    },
+    {
+      "path": "jvagent/action/email_action/info.yaml",
+      "name": "jvagent/email_action",
+      "archetype": "EmailAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/facebook_action/info.yaml",
+      "name": "jvagent/facebook_action",
+      "archetype": "FacebookAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/file_interface/info.yaml",
+      "name": "jvagent/file_interface",
+      "archetype": "FileInterfaceAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "partial: bounded local native reads, granted text writes, immutable expiring artifact publication, and verified single-write continuation with known or explicitly reserved unknown billing",
+      "evidence": "2026-11-06-native-effect-reserve.md",
+      "native_tools": [
+        "file_interface__read_file",
+        "file_interface__write_file",
+        "file_interface__share_file"
+      ],
+      "remaining": [
+        "other write/effect classes and distributed ownership",
+        "live S3",
+        "directory discovery",
+        "binary writes and other file operations",
+        "scripts and skill workflow migration",
+        "atomic hostile-filesystem race protection",
+        "hard storage worker cancellation deadline"
+      ]
+    },
+    {
+      "path": "jvagent/action/google/google_calendar_action/info.yaml",
+      "name": "jvagent/google_calendar_action",
+      "archetype": "GoogleCalendarAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_docs_action/info.yaml",
+      "name": "jvagent/google_docs_action",
+      "archetype": "GoogleDocsAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_drive_action/info.yaml",
+      "name": "jvagent/google_drive_action",
+      "archetype": "GoogleDriveAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_gmail_action/info.yaml",
+      "name": "jvagent/google_gmail_action",
+      "archetype": "GoogleGmailAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/google/google_sheets_action/info.yaml",
+      "name": "jvagent/google_sheets_action",
+      "archetype": "GoogleSheetsAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/handoff_interact_action/info.yaml",
+      "name": "jvagent/handoff_interact_action",
+      "archetype": "HandoffInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/interview/info.yaml",
+      "name": "jvagent/interview",
+      "archetype": "InterviewAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/intro/info.yaml",
+      "name": "jvagent/intro_interact_action",
+      "archetype": "IntroInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/leadgen/info.yaml",
+      "name": "jvagent/leadgen",
+      "archetype": "LeadGenAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/mcp/info.yaml",
+      "name": "jvagent/mcp",
+      "archetype": "MCPAction",
+      "disposition": "Preserve connection/auth services; adapt to native MCP tools; qualify per-user isolation",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/mcp_oauth/info.yaml",
+      "name": "jvagent/mcp_oauth",
+      "archetype": "MCPOAuthAction",
+      "disposition": "Preserve connection/auth services; adapt to native MCP tools; qualify per-user isolation",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/microsoft/microsoft_excel_action/info.yaml",
+      "name": "jvagent/microsoft_excel_action",
+      "archetype": "MicrosoftExcelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/microsoft/microsoft_onedrive_action/info.yaml",
+      "name": "jvagent/microsoft_onedrive_action",
+      "archetype": "MicrosoftOneDriveAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/microsoft/microsoft_outlook_calendar_action/info.yaml",
+      "name": "jvagent/microsoft_outlook_calendar_action",
+      "archetype": "MicrosoftOutlookCalendarAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/microsoft/microsoft_outlook_mail_action/info.yaml",
+      "name": "jvagent/microsoft_outlook_mail_action",
+      "archetype": "MicrosoftOutlookMailAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/generic/info.yaml",
+      "name": "jvagent/generic_embedding",
+      "archetype": "GenericEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/huggingface/info.yaml",
+      "name": "jvagent/huggingface_embedding",
+      "archetype": "HuggingFaceEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/ollama/info.yaml",
+      "name": "jvagent/ollama_embedding",
+      "archetype": "OllamaEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/openai/info.yaml",
+      "name": "jvagent/openai_embedding",
+      "archetype": "OpenAIEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/embedding/openrouter/info.yaml",
+      "name": "jvagent/openrouter_embedding",
+      "archetype": "OpenRouterEmbeddingModelAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/anthropic/info.yaml",
+      "name": "jvagent/anthropic_lm",
+      "archetype": "AnthropicLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/groq/info.yaml",
+      "name": "jvagent/groq_lm",
+      "archetype": "GroqLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/litellm/info.yaml",
+      "name": "jvagent/litellm_lm",
+      "archetype": "LiteLLMLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/ollama/info.yaml",
+      "name": "jvagent/ollama_lm",
+      "archetype": "OllamaLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/openai/info.yaml",
+      "name": "jvagent/openai_lm",
+      "archetype": "OpenAILanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/model/language/openrouter/info.yaml",
+      "name": "jvagent/openrouter_lm",
+      "archetype": "OpenRouterLanguageModelAction",
+      "disposition": "Adapt configuration to native provider; retire duplicate language transport after import/config migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/orchestrator/info.yaml",
+      "name": "jvagent/orchestrator",
+      "archetype": "OrchestratorInteractAction",
+      "disposition": "Retire execution implementation; preserve canonical-name facade only if required by migration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/page_context/info.yaml",
+      "name": "jvagent/page_context",
+      "archetype": "PageContextInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/pageindex/pageindex_action/info.yaml",
+      "name": "jvagent/pageindex_action",
+      "archetype": "PageIndexAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "partial: inherited direct search via PageIndexReadAction; model strategies, indexing and administrative endpoints pending",
+      "evidence": "2026-11-04-harness-rebuild-progress.md#populated-retrieval-and-identity-boundaries"
+    },
+    {
+      "path": "jvagent/action/pageindex/pageindex_google_drive_sync_action/info.yaml",
+      "name": "jvagent/pageindex_google_drive_sync_action",
+      "archetype": "PageIndexGoogleDriveSyncAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/postiz_action/info.yaml",
+      "name": "jvagent/postiz_action",
+      "archetype": "PostizAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/reply/info.yaml",
+      "name": "jvagent/reply",
+      "archetype": "ReplyAction",
+      "disposition": "Preserve literal delivery/channels; retire any duplicate final-answer generation",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/sentdm_broadcast/info.yaml",
+      "name": "jvagent/sentdm_broadcast_action",
+      "archetype": "SentDMBroadcastAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/skill_hub/info.yaml",
+      "name": "jvagent/skill_hub",
+      "archetype": "SkillHubAction",
+      "disposition": "Preserve skill asset installation; adapt metadata to official Skills",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/stt_action/deepgram/info.yaml",
+      "name": "jvagent/deepgram_stt",
+      "archetype": "DeepgramSTTAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/suggestions/info.yaml",
+      "name": "jvagent/suggestions",
+      "archetype": "SuggestionsInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/task_creation_interact_action/info.yaml",
+      "name": "jvagent/task_creation_interact_action",
+      "archetype": "TaskCreationInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/task_monitor/info.yaml",
+      "name": "jvagent/task_monitor",
+      "archetype": "TaskMonitor",
+      "disposition": "Preserve scheduling; route execution into the same native factory",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/task_trigger_interact_action/info.yaml",
+      "name": "jvagent/task_trigger_interact_action",
+      "archetype": "TaskTriggerInteractAction",
+      "disposition": "Preserve domain/module contract; adapt interaction/skill hooks; remove embedded model orchestration",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/tts_action/elevenlabs/info.yaml",
+      "name": "jvagent/elevenlabs_tts",
+      "archetype": "ElevenLabsTTSAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/ui/info.yaml",
+      "name": "jvagent/ui",
+      "archetype": "UiAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/vectorstore/typesense/info.yaml",
+      "name": "jvagent/typesense_vectorstore",
+      "archetype": "TypesenseVectorStore",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/video_generation/info.yaml",
+      "name": "jvagent/heygen_video_action",
+      "archetype": "HeygenVideoAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/vision/info.yaml",
+      "name": "jvagent/vision",
+      "archetype": "VisionAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/web_fetch/info.yaml",
+      "name": "jvagent/web_fetch",
+      "archetype": "WebFetchAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/web_search/brave/info.yaml",
+      "name": "jvagent/brave_web_search",
+      "archetype": "BraveWebSearchAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/web_search/serpapi/info.yaml",
+      "name": "jvagent/serpapi_web_search",
+      "archetype": "SerpAPIWebSearchAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/web_search/serper/info.yaml",
+      "name": "jvagent/serper_web_search",
+      "archetype": "SerperWebSearchAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/whatsapp/info.yaml",
+      "name": "jvagent/whatsapp_action",
+      "archetype": "WhatsAppAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    },
+    {
+      "path": "jvagent/action/whatsapp_voice/info.yaml",
+      "name": "jvagent/whatsapp_voice_action",
+      "archetype": "WhatsAppVoiceAction",
+      "disposition": "Preserve service/Action contract; qualify native tool or lifecycle adapter before cutover",
+      "qualification": "pending"
+    }
+  ],
+  "orchestrator_settings": [
+    {
+      "name": "weight",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:454",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "description",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:458",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "model",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:468",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "model_action_type",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:469",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "model_temperature",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:470",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "model_max_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:471",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "model_max_tokens_ceiling",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:489",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_protocol",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:499",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "skill_runtime",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:513",
+      "disposition": "Retire driver selector; migrate selected skill into native skill configuration",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "pilot_skill",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:521",
+      "disposition": "Retire driver selector; migrate selected skill into native skill configuration",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "pilot_max_model_requests",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:530",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "pilot_max_tool_calls",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:536",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "pilot_max_total_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:542",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "pilot_max_output_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:548",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "pilot_max_runtime_seconds",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:554",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "enforce_json_mode",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:560",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "model_unavailable_text",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:569",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "light_model",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:584",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "light_model_action_type",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:589",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "light_model_temperature",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:594",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "light_model_max_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:595",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "reasoning_enabled",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:602",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "reasoning_effort",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:607",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "reasoning_budget_tokens",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:612",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "reasoning_extra",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:617",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "stream_internal_progress",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:623",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "stream_reasoning_trace",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:628",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "activation_budget",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:635",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "max_duration_seconds",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:639",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "max_statement_length",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:644",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "model_fallbacks",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:652",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "light_model_fallbacks",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:662",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "circuit_breaker_failures",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:666",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "circuit_breaker_cooldown_seconds",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:673",
+      "disposition": "Translate to native model settings/provider or official selection/fallback capability; retire Action transport dependency",
+      "migration_implemented": false
+    },
+    {
+      "name": "max_turn_cost_usd",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:680",
+      "disposition": "Migrate ceiling and historical totals to official SpendLimits graph store",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "max_conversation_cost_usd",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:691",
+      "disposition": "Migrate ceiling and historical totals to official SpendLimits graph store",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "budget_exhausted_text",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:701",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "structured_decisions",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:708",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "repeat_guard_window",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:718",
+      "disposition": "Replace generic behavior with official optional capability",
+      "migration_implemented": false
+    },
+    {
+      "name": "history_limit",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:728",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "history_statement_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:729",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "with_event",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:738",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "safeguards_reminder",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:755",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_listing_position",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:770",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "grounding_max_deflections",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:784",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "max_observations_in_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:792",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "observation_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:799",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "stale_observation_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:804",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "observation_full_recent",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:810",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "thought_replay_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:815",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "observation_args_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:822",
+      "disposition": "Replace with official history/context/tool-output capability; preserve explicit retention intent and reject silent clipping",
+      "migration_implemented": false
+    },
+    {
+      "name": "clarify_text",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:828",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "system_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:835",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "parameters",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:850",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "system_prompt_extra",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:858",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "configuration_candidate_mapping": "implemented; see 2026-11-05-native-migration.md; literal declarations and qualified boundaries only",
+      "graph_migration_status": "unimplemented; no historical state or production cutover claim"
+    },
+    {
+      "name": "user_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:866",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "flow_in_progress_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:874",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "finalize_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:878",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "no_skills_text",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:882",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "planning_prompt",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:886",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "plan_completion_max_deflections",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:891",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "lock_active_flow",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:903",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "auto_start_skills_on_new_user",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:912",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "planning",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:921",
+      "disposition": "Replace generic behavior with official optional Planning capability and public graph-backed PlanStore",
+      "migration_implemented": true,
+      "migration_status": "Boolean configuration and fresh graph qualified; retained legacy plan/task state not migrated",
+      "migration_evidence": "2026-11-06-native-planning.md"
+    },
+    {
+      "name": "planning_heavy_first_tick",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:932",
+      "disposition": "Retire legacy loop/prompt control; migrate any user-authored policy into instructions or skill assets",
+      "migration_implemented": false
+    },
+    {
+      "name": "proactive_tasks_enabled",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:942",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "default_max_attempts",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:946",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "vision",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:950",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "ingest_uploads",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:963",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "upload_data_keys",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:977",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "skills_source",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:983",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "migration_status": "Finite selections and app/library precedence implemented; dynamic selectors, aliases and unqualified assets remain blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "skills",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:984",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "migration_status": "Finite selections and app/library precedence implemented; dynamic selectors, aliases and unqualified assets remain blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "denied_skills",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:985",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "enable_transient_ack",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:988",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "first_emit_timeout_ms",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:993",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "ack_interval_ms",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:999",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "ack_statements",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1004",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "ack_on_first_tool_call",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1010",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "ack_spoken_channels",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1019",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "channel_overrides",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1027",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "block_raw_tool_invocation",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1042",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed booleans retire explicitly; native SDK/host permission remains mandatory",
+      "qualification_evidence": "2026-11-06-native-controls.md"
+    },
+    {
+      "name": "tool_tier",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1051",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "tool_call_timeout",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1055",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "tool_thought_max_chars",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1063",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "lean_tool_threshold",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1072",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "lean_presurface_k",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1080",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": true,
+      "migration_status": "Typed explicit engine-control retirement proposal; requires review, no graph migration",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "pinned_tools",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1086",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "denied_tools",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1095",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false
+    },
+    {
+      "name": "skill_only_tools",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1105",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "migration_status": "Empty/disabled controls can retire; active policy remains blocked",
+      "migration_evidence": "2026-11-05-native-config-cutover.md"
+    },
+    {
+      "name": "tool_servers",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1120",
+      "disposition": "Preserve declarative intent in JV policy/service adapter; exact mapping must be reviewed before removal",
+      "migration_implemented": false,
+      "migration_status": "Partial: all-enabled selector retires after enabled MCP native review; restricted/empty/invalid selectors block",
+      "qualification_evidence": "2026-11-06-native-controls.md"
+    },
+    {
+      "name": "max_concurrent_tools",
+      "source": "jvagent/action/orchestrator/orchestrator_interact_action.py:1125",
+      "disposition": "Translate to native UsageLimits, timeout or concurrency settings",
+      "migration_implemented": false,
+      "qualification_evidence": "2026-11-06-native-tool-mode.md",
+      "migration_status": "partial: zero/one and omitted default use SDK sequential execution; wider numeric ceilings remain blocked"
+    }
+  ],
+  "skills": [
+    {
+      "path": "jvagent/action/interview/SKILL.md",
+      "metadata": {
+        "name": "interview_base",
+        "description": "Framework-standard interview tool-loop procedure. Not a discoverable skill \u2014 inherited by action-backed interview skills via extends: action:jvagent/interview.",
+        "task-lock": true,
+        "allowed-tools": [
+          "interview__set_fields",
+          "interview__skip_field",
+          "interview__field_unavailable",
+          "interview__next_field",
+          "interview__get_status",
+          "interview__review",
+          "interview__complete",
+          "interview__cancel",
+          "interview__reset"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/interview/examples/example_account_gating/example_booking_interview/SKILL.md",
+      "metadata": {
+        "name": "example_booking_interview",
+        "description": "Reference GATED service skill (ADR-0026). Books an appointment, but only once the visitor has an active session. Demonstrates declarative requires-tasks: when the `signed_in` precondition is unmet, the harness pushes a sign-in prerequisite that blocks this skill and resumes it on completion \u2014 no rail, no per-field guard, no model-mediated resume. Copy to <action>/skills/ and bind the precondition with register_precondition (see ../README.md).",
+        "spec": "jv",
+        "task-lock": true,
+        "requires-actions": [
+          "InterviewAction"
+        ],
+        "extends": "action:jvagent/interview",
+        "requires-tasks": [
+          {
+            "when": "signed_in",
+            "push": "example_signin_interview",
+            "seed_from": [
+              "utterance"
+            ]
+          }
+        ],
+        "tags": [
+          "example",
+          "gating",
+          "reference"
+        ],
+        "interview": {
+          "title": "Appointment Booking",
+          "summary": "Collects the service type and a preferred date to book an appointment. Gated on an active session via requires-tasks; the booking only runs once the visitor is signed in.",
+          "confirm": "manual",
+          "fields": [
+            {
+              "key": "service_type",
+              "prompt": "What would you like to book?",
+              "required": true,
+              "guidance": "A service name (e.g. \"haircut\", \"consultation\"). Not filler.",
+              "validator": "text"
+            },
+            {
+              "key": "preferred_date",
+              "prompt": "What date would you like?",
+              "required": true,
+              "guidance": "A date or day. Not an acknowledgement.",
+              "validator": "text"
+            }
+          ],
+          "completion": {
+            "message": "You're booked for {service_type} on {preferred_date}. See you then!"
+          }
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/interview/examples/example_account_gating/example_signin_interview/SKILL.md",
+      "metadata": {
+        "name": "example_signin_interview",
+        "description": "Reference PREREQUISITE skill (ADR-0026). Collects an email to establish a session. Pushed automatically as a blocking prerequisite when a gated skill's `signed_in` precondition is unmet (see example_booking_interview). On its own it is just an ordinary task-lock interview \u2014 the work graph is what makes it a gate.",
+        "spec": "jv",
+        "task-lock": true,
+        "requires-actions": [
+          "InterviewAction"
+        ],
+        "extends": "action:jvagent/interview",
+        "tags": [
+          "example",
+          "gating",
+          "reference"
+        ],
+        "interview": {
+          "title": "Sign In",
+          "summary": "Establishes a session by collecting the visitor's email. When complete, the consumer marks the visitor signed in so the gated skill that pushed this one becomes runnable and resumes.",
+          "confirm": "auto",
+          "fields": [
+            {
+              "key": "email",
+              "prompt": "What is your email address?",
+              "required": true,
+              "guidance": "A valid email address.",
+              "validator": "email"
+            }
+          ]
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/interview/examples/example_for_each_interview/SKILL.md",
+      "metadata": {
+        "name": "example_for_each_interview",
+        "description": "Reference interview demonstrating for_each per-item subpart fields. Collects comma-separated item IDs, then asks title and quantity for each item.",
+        "spec": "jv",
+        "task-lock": true,
+        "requires-actions": [
+          "InterviewAction"
+        ],
+        "extends": "action:jvagent/interview",
+        "tags": [
+          "example",
+          "interview",
+          "for_each"
+        ],
+        "interview": {
+          "title": "Item registration",
+          "summary": "Reference for_each expansion \u2014 parent item_ids expands into per-item subparts.",
+          "confirm": "manual",
+          "fields": [
+            {
+              "key": "item_ids",
+              "prompt": "What item IDs would you like to register? (comma-separated)",
+              "required": true,
+              "guidance": "One or more short alphanumeric IDs separated by commas.",
+              "validator": "validate_item_ids",
+              "post_processor": "expand_item_ids",
+              "for_each_prefix": "item_id_prefix",
+              "for_each": {
+                "fields": [
+                  {
+                    "key": "title",
+                    "prompt": "What is the title for this item?",
+                    "required": true,
+                    "validator": "text",
+                    "validator_args": {
+                      "min_length": 2,
+                      "max_length": 200
+                    }
+                  },
+                  {
+                    "key": "quantity",
+                    "prompt": "How many units?",
+                    "required": true,
+                    "validator": "validate_quantity"
+                  },
+                  {
+                    "key": "notes",
+                    "prompt": "Any optional notes?",
+                    "required": false,
+                    "pre_processor": [
+                      "skip_notes_if_declined"
+                    ],
+                    "validator": "text",
+                    "validator_args": {
+                      "min_length": 2,
+                      "max_length": 500
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "handlers": {
+            "review": "for_each_review",
+            "complete": "for_each_complete"
+          }
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/interview/examples/example_interview/SKILL.md",
+      "metadata": {
+        "name": "example_interview",
+        "description": "Reference product feedback interview. Collects customer name, product rating, optional comments, and follow-up email. Demonstrates all InterviewAction patterns: validators, pre_processor, post_processor, custom tools, review, and completion. Copy to <action>/skills/<your_skill_name>/ to create a live skill.",
+        "spec": "jv",
+        "task-lock": true,
+        "requires-actions": [
+          "InterviewAction"
+        ],
+        "extends": "action:jvagent/interview",
+        "allowed-tools": [
+          "example_interview__send_followup_reminder"
+        ],
+        "tags": [
+          "example",
+          "feedback",
+          "interview",
+          "reference"
+        ],
+        "interview": {
+          "title": "Product Feedback",
+          "summary": "Reference interview skill that collects product feedback (name, rating, optional comments, follow-up email). Demonstrates InterviewAction frontmatter: validators, pre_processor, post_processor, LLM-callable skill_tools, custom review, and completion handlers. Copy this folder to skills/<your_skill_name>/ to create a live skill under the action skills/ folder.",
+          "confirm": "manual",
+          "fields": [
+            {
+              "key": "customer_name",
+              "prompt": "What is your name?",
+              "required": true,
+              "guidance": "Customer's full name for the feedback record.",
+              "validator": "name"
+            },
+            {
+              "key": "product_rating",
+              "prompt": "On a scale of 1 to 5, how would you rate the product?",
+              "required": true,
+              "guidance": "Integer rating from 1 (poor) to 5 (excellent). post_processor runs check_low_rating automatically after save \u2014 read post_tools_results before advancing.",
+              "post_processor": "check_low_rating",
+              "validator": "validate_rating"
+            },
+            {
+              "key": "feedback_comments",
+              "prompt": "Would you like to share any additional comments? (You can skip this)",
+              "required": false,
+              "guidance": "Optional free-text feedback. Call interview__skip_field if the user declines.",
+              "validator": "description",
+              "validator_args": {
+                "min_length": 3,
+                "max_length": 500
+              }
+            },
+            {
+              "key": "follow_up_email",
+              "prompt": "What email address should we use for follow-up?",
+              "required": true,
+              "guidance": "Email for follow-up. pre_processor may suggest an address from conversation context \u2014 ask the user to confirm before saving.",
+              "pre_processor": "suggest_email",
+              "validator": "email"
+            }
+          ],
+          "handlers": {
+            "review": "example_review",
+            "complete": "example_complete",
+            "reset": "reset_example_interview"
+          },
+          "skill_tools": [
+            {
+              "name": "send_followup_reminder",
+              "function": "send_followup_reminder",
+              "description": "Optional LLM-callable tool after follow_up_email is saved \u2014 records that a follow-up reminder was queued (demo stub)."
+            }
+          ]
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/leadgen/SKILL.md",
+      "metadata": {
+        "name": "leadgen_base",
+        "description": "Framework-standard leadgen capture procedure. Not a discoverable skill \u2014 inherited by action-backed leadgen skills via extends: action:jvagent/leadgen.",
+        "always-active": false,
+        "allowed-tools": [
+          "leadgen__capture",
+          "leadgen__retrieve",
+          "leadgen__status",
+          "leadgen__sync"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/action/leadgen/examples/example_leadgen/SKILL.md",
+      "metadata": {
+        "name": "example_leadgen",
+        "description": "Reference lead capture skill. Collects name, organization, contact info, and product interest. Demonstrates leadgen frontmatter, validators, hooks, and MCP sync.",
+        "extends": "action:jvagent/leadgen",
+        "requires-actions": [
+          "LeadGenAction",
+          "MCPAction"
+        ],
+        "always-active": true,
+        "allowed-tools": [],
+        "tags": [
+          "example",
+          "leadgen",
+          "reference"
+        ],
+        "leadgen": {
+          "title": "Product Inquiry Leads",
+          "summary": "Reference leadgen skill for product inquiries. Copy to agents/.../skills/<name>/ and register in agent.yaml orchestrator skills.",
+          "fields": [
+            {
+              "key": "name",
+              "required": true,
+              "guidance": "Full name of the contact",
+              "validator": "person_name",
+              "aliases": [
+                "full_name",
+                "contact_name"
+              ]
+            },
+            {
+              "key": "organization",
+              "required": false,
+              "guidance": "Company or organization name",
+              "decline_value": "Personal"
+            },
+            {
+              "key": "email",
+              "required": true,
+              "guidance": "Email address",
+              "validator": "email",
+              "decline_value": "N/A"
+            },
+            {
+              "key": "phone",
+              "required": false,
+              "guidance": "Phone number with country code if possible",
+              "validator": "phone",
+              "phone_locale": "E164"
+            },
+            {
+              "key": "interested_products",
+              "required": false,
+              "guidance": "Products or services the lead is interested in",
+              "merge": true
+            },
+            {
+              "key": "project_description",
+              "required": false,
+              "guidance": "Brief description of their project or need"
+            }
+          ],
+          "gap_fill": {
+            "batch": true,
+            "priority": [
+              "name",
+              "phone",
+              "email",
+              "organization"
+            ]
+          },
+          "sync": {
+            "mode": "on_capture",
+            "min_fields": [
+              "name"
+            ],
+            "require_any": [
+              "phone",
+              "email"
+            ],
+            "destinations": [
+              {
+                "server": "leadfile",
+                "mode": "mcp",
+                "tool": "write_file",
+                "arguments": {
+                  "path": "lead.json",
+                  "content": "Lead profile: {profile_json}"
+                }
+              }
+            ]
+          },
+          "handlers": {
+            "post_capture": "enrich_from_channel"
+          }
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/answer/SKILL.md",
+      "metadata": {
+        "name": "answer",
+        "description": "Answer knowledge questions with a structured retrieval cascade: search internal sources first, then the web, then synthesize a cited answer. Signal uncertainty when relying on parametric knowledge. Say \"I don't know\" when nothing is found.",
+        "allowed-tools": [
+          "pageindex__search",
+          "web_search__search",
+          "web_fetch__fetch"
+        ],
+        "requires-actions": [
+          "PageIndexAction",
+          "SerperWebSearchAction"
+        ],
+        "version": 2,
+        "tags": [
+          "rag",
+          "retrieval",
+          "knowledge",
+          "informational"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution",
+      "qualification": "partial: unchanged skill, empty-index web fallback and populated public retrieval in real GPT-4.1 browser; restricted denial; representative quality evaluation pending",
+      "evidence": "2026-11-04-harness-rebuild-progress.md#populated-retrieval-and-identity-boundaries"
+    },
+    {
+      "path": "jvagent/skills/artifact_handler/SKILL.md",
+      "metadata": {
+        "name": "artifact_handler",
+        "description": "Ingest user-submitted documents and URLs into a private vault, list saved documents, delete expired or unwanted documents, and check ingest processing status. Handles URL-based ingest via ingest_document (media attachments are auto-detected by the action layer) and proactive ready notification via jvforge cron callback. Use for saving, listing, deleting, and status-checking user documents \u2014 not for content Q&A on saved documents (use faq with pageindex__search \u2014 provide query and doc_name when known; if unknown, faq selects via doc_description / Active document / unscoped search \u2014 do not ask which file first) or live web lookup (use web_search). Call check_ingest_status with no arguments (no doc_name, no url).",
+        "spec": "jv",
+        "requires-actions": [
+          "PageIndexAction",
+          "AccessControlAction",
+          "ArtifactHandlerInteractAction"
+        ],
+        "allowed-tools": [
+          "artifact_handler__ingest_document",
+          "artifact_handler__list_my_documents",
+          "artifact_handler__delete_document",
+          "artifact_handler__check_ingest_status",
+          "artifact_handler__check_pending_attachments",
+          "pageindex__search"
+        ],
+        "tags": [
+          "vault",
+          "ingest",
+          "documents",
+          "private",
+          "retention"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/google/google_calendar/SKILL.md",
+      "metadata": {
+        "name": "google_calendar",
+        "description": "List, create, and delete Google Calendar events. Use when the user asks about upcoming events, to schedule something, or to cancel a calendar event.",
+        "requires-actions": [
+          "GoogleCalendarAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "calendar__list_events",
+          "calendar__create_event",
+          "calendar__delete_event"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/google/google_drive/SKILL.md",
+      "metadata": {
+        "name": "google_drive",
+        "description": "Manage Google Drive files. Use when the user asks to list, upload, download, share, or delete Drive files, or inspect file metadata.",
+        "requires-actions": [
+          "GoogleDriveAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "google_drive__list_files",
+          "google_drive__upload_file",
+          "google_drive__get_file_metadata",
+          "google_drive__get_shared_drive_metadata",
+          "google_drive__get_media",
+          "google_drive__share_file",
+          "google_drive__delete_file"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/google/google_gmail/SKILL.md",
+      "metadata": {
+        "name": "google_gmail",
+        "description": "Send and read Gmail. Use when the user asks to send mail, list inbox messages, open a message, mark mail read, or check the mailbox profile.",
+        "requires-actions": [
+          "GoogleGmailAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "gmail__send_email",
+          "gmail__list_messages",
+          "gmail__get_message",
+          "gmail__mark_read",
+          "gmail__get_profile"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/google/google_sheets/SKILL.md",
+      "metadata": {
+        "name": "google_sheets",
+        "description": "Read and update Google Sheets. Use when the user asks to look up, append, format, merge, share, or change spreadsheet data.",
+        "requires-actions": [
+          "GoogleSheetsAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "google_sheets__read_spreadsheet",
+          "google_sheets__update_spreadsheet",
+          "google_sheets__append_spreadsheet",
+          "google_sheets__create_spreadsheet",
+          "google_sheets__delete_spreadsheet",
+          "google_sheets__create_worksheet",
+          "google_sheets__update_worksheet",
+          "google_sheets__delete_worksheet",
+          "google_sheets__merge_cells",
+          "google_sheets__unmerge_cells",
+          "google_sheets__format_cells",
+          "google_sheets__last_filled_row",
+          "google_sheets__batch_clear",
+          "google_sheets__share_spreadsheet"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/knowledge_ingest/SKILL.md",
+      "metadata": {
+        "name": "knowledge_ingest",
+        "description": "Capture content from one or more URLs (or pasted text), produce a structured report, and assimilate that report into the internal PageIndex knowledge base. Use when the user asks to go online / fetch a site / crawl a page, summarize or report on it, and save or ingest it into memory / knowledge / the KB.",
+        "allowed-tools": [
+          "web_fetch__fetch",
+          "web_search__search",
+          "pageindex__assimilate",
+          "pageindex__list"
+        ],
+        "requires-actions": [
+          "WebFetchAction",
+          "PageIndexAction"
+        ],
+        "version": 1,
+        "tags": [
+          "knowledge",
+          "ingest",
+          "pageindex",
+          "research",
+          "report",
+          "capture",
+          "assimilate"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/microsoft/excel/SKILL.md",
+      "metadata": {
+        "name": "excel",
+        "description": "Read and update Excel workbooks on OneDrive. Use when the user asks to look up, append, share, or change spreadsheet data.",
+        "requires-actions": [
+          "MicrosoftExcelAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "excel__read_spreadsheet",
+          "excel__update_spreadsheet",
+          "excel__append_spreadsheet",
+          "excel__create_spreadsheet",
+          "excel__delete_spreadsheet",
+          "excel__create_worksheet",
+          "excel__update_worksheet",
+          "excel__delete_worksheet",
+          "excel__batch_clear",
+          "excel__share_spreadsheet"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/microsoft/onedrive/SKILL.md",
+      "metadata": {
+        "name": "onedrive",
+        "description": "Manage OneDrive files. Use when the user asks to list, upload, share, or delete OneDrive files.",
+        "requires-actions": [
+          "MicrosoftOneDriveAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "onedrive__list_files",
+          "onedrive__upload_file",
+          "onedrive__share_file",
+          "onedrive__delete_file"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/microsoft/outlook_calendar/SKILL.md",
+      "metadata": {
+        "name": "outlook_calendar",
+        "description": "List, create, and delete Outlook Calendar events. Use when the user asks about upcoming events, to schedule something, or to cancel a calendar event.",
+        "requires-actions": [
+          "MicrosoftOutlookCalendarAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "outlook_calendar__list_events",
+          "outlook_calendar__create_event",
+          "outlook_calendar__delete_event"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/microsoft/outlook_mail/SKILL.md",
+      "metadata": {
+        "name": "outlook_mail",
+        "description": "Send and read Outlook mail. Use when the user asks to send mail, list inbox messages, open a message, mark mail read, or check the mailbox profile.",
+        "requires-actions": [
+          "MicrosoftOutlookMailAction",
+          "MCPAction",
+          "MCPOAuthAction"
+        ],
+        "allowed-tools": [
+          "outlook__send_email",
+          "outlook__list_messages",
+          "outlook__list_inbox_messages",
+          "outlook__get_message",
+          "outlook__mark_read",
+          "outlook__get_profile"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/pageindex_search_with_references/SKILL.md",
+      "metadata": {
+        "name": "pageindex_search_with_references",
+        "description": "Search the internal knowledge base with PageIndex and format responses with proper citations and a Sources section containing clickable links to the original documents. Use for policies, documentation, FAQs, and general knowledge base questions - not live catalog/inventory SKU lookup or real-time database queries.",
+        "requires-actions": [
+          "PageIndexAction"
+        ],
+        "allowed-tools": [
+          "pageindex__search"
+        ],
+        "tags": [
+          "knowledge",
+          "documentation",
+          "retrieval",
+          "rag",
+          "pageindex",
+          "indexed",
+          "internal",
+          "faq",
+          "help",
+          "policies",
+          "info",
+          "references"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/pdf_generation/SKILL.md",
+      "metadata": {
+        "name": "pdf-generation",
+        "description": "Render a Markdown or plain-text document into a polished PDF. Use when the user asks to create, generate, export, or produce a PDF from text or Markdown content (reports, letters, memos, documents). Runs a bundled script in your sandbox.",
+        "spec": "claude",
+        "allowed-tools": [
+          "code_execution__bash"
+        ],
+        "requires-actions": [
+          "CodeExecutionAction"
+        ],
+        "license": "Apache-2.0",
+        "metadata": {
+          "version": "3",
+          "tags": [
+            "pdf",
+            "document",
+            "export",
+            "publishing"
+          ]
+        }
+      },
+      "disposition": "preserve-assets-review-execution",
+      "migrated_path": "jvagent/skills/pdf-generation/SKILL.md",
+      "qualification": "partial: native official loading, reviewed local WeasyPrint image, actual browser PDF/download, restart/re-share and immutable readback",
+      "qualification_evidence": "2026-11-06-native-pdf.md"
+    },
+    {
+      "path": "jvagent/skills/research/SKILL.md",
+      "metadata": {
+        "name": "research",
+        "description": "Investigate a topic with evidence-first synthesis and citations.",
+        "output-contract": "evidence_required",
+        "allowed-tools": [
+          "web_search__search",
+          "web_fetch__fetch"
+        ],
+        "requires-actions": [
+          "SerperWebSearchAction",
+          "WebFetchAction"
+        ],
+        "version": 2,
+        "tags": [
+          "research",
+          "synthesis"
+        ]
+      },
+      "disposition": "preserve-assets-review-execution"
+    },
+    {
+      "path": "jvagent/skills/triage/SKILL.md",
+      "metadata": {
+        "name": "triage",
+        "description": "Rapidly triage issues by severity, impact, and next action. Use when given a set of problems, alerts, bugs, or incidents to rank and act on. Includes a bundled script that sorts findings by severity deterministically.",
+        "spec": "claude",
+        "allowed-tools": [
+          "code_execution__bash"
+        ],
+        "requires-actions": [
+          "CodeExecutionAction"
+        ],
+        "license": "Apache-2.0",
+        "metadata": {
+          "version": "2",
+          "tags": [
+            "triage",
+            "incident"
+          ]
+        }
+      },
+      "disposition": "preserve-assets-review-execution"
+    }
+  ],
+  "native_additions": [
+    {
+      "path": "jvagent/action/native_harness/info.yaml",
+      "name": "jvagent/native_harness",
+      "qualification": "development: explicit native execution; not release migration"
+    },
+    {
+      "path": "jvagent/action/pageindex_read/info.yaml",
+      "name": "jvagent/pageindex_read",
+      "qualification": "partial: direct read tools, populated/public retrieval and restricted denial"
+    },
+    {
+      "path": "jvagent/skills/delegate/SKILL.md",
+      "name": "delegate",
+      "qualification": "partial: bounded foreground native child skills; shared limits, graph linkage and browser events; citation quality, background and recovery pending"
+    }
+  ],
+  "upstream_reconciliation": {
+    "revision": "43cbc885",
+    "status": "merged with native host policy adapters; compatibility gates remain open",
+    "action_additions": [
+      {
+        "path": "jvagent/action/handoff_action/info.yaml",
+        "name": "jvagent/handoff_action",
+        "archetype": "HandoffAction",
+        "disposition": "Preserve domain Action; qualify visitor, external-message and staff-write boundaries before native admission",
+        "qualification": "pending"
+      }
+    ],
+    "tool_metadata": [
+      "requires_tool_permission",
+      "permission_denied_message"
+    ],
+    "native_tool_policy": "Action and configured named-tool authorization are both required; explicit named permission without a rule denies",
+    "skill_metadata": {
+      "access-action": "native admission rejects pending group-policy adapter",
+      "allowed-groups": "native admission rejects pending group-policy adapter",
+      "denied-groups": "native admission rejects pending group-policy adapter"
+    },
+    "excluded_vendor_auth": "Integral-specific OAuth/service-key modules and wiring are not part of the domain-neutral rebuild"
+  },
+  "native_visitor_qualification": {
+    "status": "partial",
+    "reviewed_tools": [
+      "leadgen__status"
+    ],
+    "host_adapter": "Caller-bound visitor, authority rejection, native sequential dispatch, immutable admission identity",
+    "profile_semantics": "Status does not create or migrate profiles; conflicting legacy ownership edges fail closed",
+    "unqualified": [
+      "leadgen__retrieve",
+      "leadgen__capture",
+      "leadgen__sync",
+      "other visitor Actions",
+      "write/flow/external effects",
+      "ordinary-member browser permissions"
+    ],
+    "skill_admission": "Official Skills.load catalog checked for root and all configured children before model requests",
+    "evidence": "2026-11-05-native-visitor-smoke.json"
+  },
+  "native_configuration_delta": {
+    "model_settings": {
+      "owner": "Public Pydantic AI ModelSettings schema and Agent/compaction interfaces",
+      "validation": "Strict common SDK keys/types at startup and factory; provider ranges remain provider-specific",
+      "scope": [
+        "root",
+        "delegated child",
+        "compaction summary"
+      ],
+      "legacy_migration": "Explicit native declaration; old Orchestrator fields are not silently renamed",
+      "limits": {
+        "model_settings.max_tokens": "Per-request generated output ceiling",
+        "max_tokens": "Aggregate run usage ceiling"
+      }
+    },
+    "completion": "Reject normalized length-limited final candidates through public output lifecycle; preserve receipts",
+    "workload_protocol": "../fixtures/harness-workload-v1.yaml",
+    "qualification": "179 native/profile cases each on Python 3.11/3.12; measured conversation slice incomplete; other compatibility pending"
+  },
+  "native_mcp_read_increment": {
+    "parent_revision": "952079a5",
+    "evidence": "2026-11-05-native-mcp.md",
+    "status": "functional plain-stdio read cohort; release qualification pending",
+    "keep": [
+      "MCPAction server declarations and existing names",
+      "per-call authenticated scope and named access policy"
+    ],
+    "replace": [
+      "native use of MCPClientWrapper/fulfill with public Pydantic MCPToolset lifecycle"
+    ],
+    "dependencies": {
+      "mcp": "2.3.0",
+      "optional_native_mcp_fastmcp_slim_client": "4.1.6"
+    },
+    "remaining": [
+      "HTTP/auth",
+      "per-user filesystem profiles",
+      "sampling/elicitation",
+      "background tasks",
+      "writes/effect idempotency",
+      "delegated MCP",
+      "MCP research provenance",
+      "ordinary-member browser isolation",
+      "timeout/cancel deployment faults"
+    ]
+  },
+  "interview_hosting_increment": {
+    "parent_revision": "749ccf28",
+    "evidence": "2026-11-05-interview-host.md",
+    "status": "module hosting/import compatibility only; interview execution unqualified",
+    "cold_import_old_loop_executor": "absent after shared context and lazy archetype extraction",
+    "live_legacy_host_runtime_isolation": "FAIL: HarnessRuntime still instantiated by shared ingress and outbox",
+    "next_required_plan": "2026-11-05-shared-host-extraction.md",
+    "preserve": [
+      "Action loader explicit archetype and endpoint registration",
+      "signed host context and replay protection",
+      "graph caller identity and conversation locking",
+      "provider receipts and uncertain delivery outcomes"
+    ],
+    "remaining": [
+      "shared ingress/embed legacy-runtime removal",
+      "response journaling/cursor cutover",
+      "auth/run identity binding",
+      "interview SOP activation/session/hook/continuation adapters",
+      "migration/deletion/release qualification"
+    ]
+  },
+  "shared_host_extraction_increment": {
+    "parent_revision": "d4f67b99",
+    "evidence": "2026-11-05-shared-host-results.md",
+    "status": "native local admission/transport extracted; release gates remain open",
+    "native_http_runtime_probe": "PASS: legacy runtime/executor/loop absent through real model/tool publication and finalization",
+    "signed_context": "core service plus temporary same-module legacy alias; nonce/caller/expiry tests retained; server correlation used for native SDK identity",
+    "embedded": "native cancellation avoids legacy recovery journal; fast-response scoped replay has deterministic coverage",
+    "unsupported": "native durable cursor replay and declared distributed topology are visibly refused",
+    "removed_from_native_path": [
+      "legacy caller identity mirrors, session leases and admission spans",
+      "legacy response outbox and cursor interpretation",
+      "embedded legacy lease binding and recovery marks"
+    ],
+    "remaining": [
+      "actual-provider signed-host/embed/popup/member/cancellation browser matrix",
+      "native distributed fencing and durable delivery recovery",
+      "interview/flow/proactive/write adapters",
+      "persisted configuration migration and legacy/pilot deletion",
+      "complete representative workload and release evaluation"
+    ]
+  },
+  "native_host_context_validation_increment": {
+    "parent_revision": "5739cf5d",
+    "evidence": "2026-11-05-native-host-context.md",
+    "confirmed_defect": "Non-empty native turn ran after an explicitly supplied invalid host envelope was discarded; confirmed with actual browser/model call.",
+    "change": "Reject explicit invalid/unconsumed context before Interaction creation or native execution; ordinary requests omit the field; null is rejected.",
+    "browser_qualified": "Administrator, auth=required: valid signed policy, unexpired replay, foreign signed agent/user/session, expiry, signature, request mismatch, null/malformed; nonstreaming 422; ordinary MCP remains functional.",
+    "embedded": "Specific error outcome, immediate completed-admission failure, and active-task-based queued admission; actual 5.3-second regression mutation-checked against old deadline.",
+    "open": [
+      "ordinary-member and foreign bearer/session isolation",
+      "actual-provider embedded/popup/cancellation transport",
+      "development/unknown public auth modes and migration",
+      "distributed recovery and durable delivery",
+      "interview/flow/proactive/write adapters",
+      "migration, legacy deletion and full workload/release qualification"
+    ],
+    "durability": "Strict jvspatial flush under the conversation lock before policy promotion; fresh-context on/off and flush-failure regressions, plus actual-provider deferred-mode success and unexpired replay rejection.",
+    "egress_privacy": "Actual signed replies echoed host envelopes before the privacy fix; ResponseBus and interaction logging use one shared projection to remove reserved host data and associated request IDs. Final provider/browser replies have clean metadata; unrelated app metadata preserved."
+  },
+  "native_public_identity_increment": {
+    "parent_revision": "git-commit:8673299c",
+    "evidence": "2026-11-05-public-identity-binding.md",
+    "status": "local public caller binding qualified; member API and anonymous popup only; release migration incomplete",
+    "remaining": [
+      "authenticated member UI",
+      "operator recovery",
+      "legacy auth/state migration"
+    ]
+  },
+  "native_http_cancellation_increment": {
+    "parent_revision": "git-commit:9a056a1f",
+    "evidence": "2026-11-05-native-cancellation.md",
+    "status": "local HTTP Stop persists SDK terminal event and unknown billing; recovery release gate remains open",
+    "removed_responsibilities": [
+      "unshielded repeated cancellation of SDK cleanup",
+      "treating empty/interrupted native pricing snapshots as known free calls"
+    ],
+    "runtime_ownership": "Official SDK error hooks write graph-backed terminal state; JV supplies HTTP teardown and telemetry only",
+    "migration_requirements": [
+      "reconcile or reject historical native false-zero receipts",
+      "do not invent missing historical terminal events"
+    ],
+    "remaining": [
+      "embedded/tool/delegate/write/publication cancellation",
+      "operator settlement and explicit recovery",
+      "distributed ownership and outage behavior",
+      "legacy/pilot deletion after supported workflows qualify"
+    ]
+  },
+  "embedded_cancellation_increment": {
+    "parent_revision": "git-commit:3cecca98",
+    "evidence": "2026-11-05-embedded-cancellation.md",
+    "status": "basic local embedded disconnect qualified; enterprise recovery remains open",
+    "removed_responsibilities": [
+      "returning and removing live task registry entries before SDK cancellation cleanup",
+      "separate HTTP teardown implementation",
+      "repeated task cancellation through alias keys or replacement requests"
+    ],
+    "replacement": "One shared host task-cleanup helper; official SDK and graph adapters own terminal records",
+    "browser_qualified": [
+      "authenticated administrator host MCP read and visible events",
+      "Stop with durable run_failed and unknown cost",
+      "refused follow-up without paid execution",
+      "fresh ordinary HTTP conversation afterward"
+    ],
+    "remaining": [
+      "operator reconciliation and historical receipt migration",
+      "child/tool/write/publication cancellation",
+      "arbitrary host identity and distributed recovery",
+      "interview/flow/proactive adapters",
+      "legacy/pilot removal and release qualification"
+    ]
+  },
+  "interview_platform_state_increment": {
+    "parent_revision": "git-commit:d664e4db",
+    "evidence": "2026-11-05-interview-platform-state.md",
+    "status": "confirmed replay-state deletion repaired; native interview execution remains unqualified",
+    "preserved": [
+      "existing authored SKILL.md assets unchanged",
+      "domain scratch cleanup and explicit retain lists",
+      "platform replay ledger independent of skill retain metadata"
+    ],
+    "removed_responsibilities": [
+      "domain teardown deleting core replay protection"
+    ],
+    "remaining": [
+      "native SOP inheritance projection and explicit activation",
+      "reviewed graph mutation effect boundaries",
+      "domain task/session separation and continuation",
+      "trusted hook/custom-tool effect qualification",
+      "legacy execution/config migration and deletion"
+    ],
+    "migration": "Historical lost nonces cannot be inferred; retire old in-flight envelopes at cutover."
+  },
+  "native_sop_projection_increment": {
+    "evidence": "2026-11-05-native-sop-projection.md",
+    "status": "inherited SOP/read prerequisites qualified; full interview execution pending",
+    "preserved": [
+      "authored SKILL.md files",
+      "additive declared tools",
+      "disabled tools",
+      "inherited prerequisites/channel restrictions",
+      "official Skills catalog/loading"
+    ],
+    "remaining": [
+      "native action base SOP",
+      "explicit domain activation",
+      "reviewed tool effects",
+      "domain task continuation",
+      "hooks",
+      "resource/script compatibility",
+      "migration and legacy deletion"
+    ]
+  },
+  "native_interview_increment": {
+    "evidence": "2026-11-05-native-interview.md",
+    "qualified_scope": "built-in activation, validation and manual review/confirmation, reset/cancel; bounded by recorded evidence",
+    "preserved": [
+      "existing domain handlers",
+      "SKILL.md extends",
+      "TaskStore domain records",
+      "caller scope",
+      "official SDK execution and effects"
+    ],
+    "retired": [
+      "legacy activation grammar on native path",
+      "duplicate data.state on touched native interview tasks"
+    ],
+    "remaining": [
+      "complex field extensions",
+      "trusted hooks/custom tools",
+      "external callbacks",
+      "operator reconciliation",
+      "client reset",
+      "unused prompt-parameter injection",
+      "migration and legacy execution deletion"
+    ]
+  },
+  "client_reset_increment": {
+    "evidence": "2026-11-05-jvchat-reset.md",
+    "status": "completed-stream reset/sidebar/reload isolation qualified in disposable native fixture",
+    "retired": [
+      "untargeted boolean transcript preservation hint",
+      "stale completion-closure comparison"
+    ],
+    "remaining": [
+      "in-flight transition ownership/cancellation",
+      "fresh packaged client qualification",
+      "broader migration and release gates"
+    ]
+  },
+  "client_inflight_ownership_increment": {
+    "evidence": "2026-11-05-jvchat-ownership.md",
+    "status": "live model-attempt reset/new-session success/refusal qualified to recorded scope",
+    "retired": [
+      "unowned request callback/finally updates",
+      "abandoned completion session rebinding",
+      "duplicated sidebar record construction"
+    ],
+    "preserved": [
+      "first live transcript",
+      "partial interrupted history",
+      "sidebar session identity",
+      "native SDK cancellation/billing boundaries"
+    ],
+    "remaining": [
+      "other live transition and deployment profiles",
+      "generic cancellation lifecycle/timing normalization",
+      "operator reconciliation",
+      "complex extension compatibility",
+      "migration and single runtime release"
+    ]
+  },
+  "native_repeated_items_increment": {
+    "evidence": "2026-11-05-native-repeats.md",
+    "qualified_scope": "ID-scoped built-in repeated children; browser/provider and persistence evidence bounded by linked record",
+    "preserved": [
+      "existing for_each declarations and records",
+      "built-in field validators",
+      "manual review and domain tasks",
+      "official SDK scheduling/effect receipts"
+    ],
+    "retired": [
+      "completed-record restaging that duplicated or reordered records",
+      "native generic/staged bypass for repeated values",
+      "review fingerprints omitting repeated child values"
+    ],
+    "compatibility_adjustments": [
+      "use interview__set_items and interview__set_item_fields for native repeated values",
+      "unique child names across the spec; no nested repeats or child branches/hooks",
+      "finish one active collection before declaring another",
+      "missing historical review fingerprint requires a fresh review"
+    ],
+    "remaining": [
+      "custom validators/processors/hooks and external callbacks",
+      "historical state migration and recovery of interrupted writes",
+      "other extension classes and provider/deployment qualification",
+      "legacy/pilot execution deletion and release qualification"
+    ]
+  },
+  "native_scheduled_tasks_increment": {
+    "evidence": "2026-11-05-native-proactive.md",
+    "qualified_scope": "local scheduled domain tasks through the same NativeHarnessAction; actual browser/provider/SQL evidence bounded by record",
+    "preserved": [
+      "PROACTIVE TaskStore envelope and domain claim",
+      "Action lifecycle and existing ingress/response bus",
+      "installed sibling SKILL.md selection",
+      "native policy, SDK persistence and shared budgets"
+    ],
+    "retired": [
+      "native scheduled objectives dependent on legacy prompt assembly",
+      "nonempty native notices interpreted as successful task output",
+      "automatic native queue retry after uncertain run/effect/delivery",
+      "native programmatic dispatch omitting Interaction closure",
+      "server-local clock labelled UTC for scheduling"
+    ],
+    "compatibility_adjustments": [
+      "native callbacks require external-effect qualification",
+      "pinned tools cannot expand selected skill permissions",
+      "native failure requires reconciliation instead of legacy automatic max_attempts requeue"
+    ],
+    "remaining": [
+      "live background jvchat profile qualified separately; durable server replay remains open",
+      "event-trigger attachment and other channel/effect classes",
+      "abandoned/distributed ownership and deployment recovery",
+      "migration and legacy/pilot execution deletion"
+    ]
+  },
+  "native_background_channel_increment": {
+    "evidence": "2026-11-05-native-channel.md",
+    "qualified_scope": "local actual-model jvchat foreground and scheduled MCP delivery, aggregate usage, revocation and client-history reload",
+    "preserved": [
+      "existing ResponseBus subscription and channel ownership",
+      "official SDK execution and graph records",
+      "existing caller-scoped client history"
+    ],
+    "retired": [
+      "native reply endpoint capability checks independent of current conversation secret",
+      "unbounded streaming subscriber queue",
+      "aggregate usage projected as invented per-call metrics",
+      "background tool grouping across distinct Interactions"
+    ],
+    "remaining": [
+      "durable native cursor replay and restart delivery reconciliation",
+      "transparent credential recovery after backend restart",
+      "other channels, providers, deployments and extension classes",
+      "migration and legacy/pilot engine deletion"
+    ]
+  },
+  "native_completed_reply_readback_increment": {
+    "evidence": "2026-11-05-native-replay.md",
+    "qualified_scope": "bounded completed native reply/tool/usage readback through existing subscription after abrupt local backend restart and assistant-cache loss",
+    "preserved": [
+      "existing graph Interaction response, trace and native receipt",
+      "official SDK root/event validation",
+      "existing authorization, response stream and caller-scoped client cache"
+    ],
+    "retired": [
+      "completed native reply recovery dependent on process-local bus backlog",
+      "native delivery intent/outcome depending on unflushed deferred saves",
+      "replay ordering based on naive app-local Interaction timestamps"
+    ],
+    "remaining": [
+      "pending/unknown delivery and client acknowledgement",
+      "abandoned/distributed execution recovery and external-effect settlement",
+      "arbitrary cursor pagination and long-session database scaling",
+      "historical receipt/trace migration",
+      "bounded graceful shutdown and outage credential recovery",
+      "other providers/channels and final migration/legacy engine deletion"
+    ]
+  },
+  "native_browser_outage_auth_increment": {
+    "evidence": "2026-11-05-native-auth.md",
+    "qualified_scope": "local reference-client expired-login/backend-outage preservation and real-model recovery under unchanged caller/session",
+    "preserved": [
+      "jvspatial server identity and refresh protocol",
+      "existing caller-scoped client storage and explicit 404 compatibility",
+      "Pydantic-owned execution and graph usage/receipts"
+    ],
+    "retired": [
+      "blanket logout after transient refresh failure",
+      "opaque network error treated as authentication denial",
+      "expired login omitted from paid interaction headers",
+      "duplicate proactive token writes and refresh callback queue",
+      "late refresh replacing or clearing another login/server",
+      "unknown write outcome retried across host aliases"
+    ],
+    "remaining": [
+      "bounded SSE shutdown and scheduler loop recovery",
+      "cross-tab rotation, Retry-After and outage load behavior",
+      "clock skew and historical credential migration",
+      "per-message transport failure presentation and packaged client",
+      "other provider/channel profiles and full migration/legacy engine deletion"
+    ]
+  },
+  "native_idle_delivery_increment": {
+    "evidence": "2026-11-05-native-idle.md",
+    "qualified_scope": "local source-client real-expiry reader renewal and scheduled SDK/MCP delivery, followed by server token revocation",
+    "preserved": [
+      "existing scoped auth/refresh and reply subscriptions",
+      "official SDK execution and graph records",
+      "caller-scoped client cache and foreground failure state"
+    ],
+    "retired": [
+      "parked reader requiring manual reopen after bearer expiry",
+      "background denial overwriting foreground failure or surviving another conversation scope"
+    ],
+    "remaining": [
+      "bounded SSE shutdown and scheduler loop deployment",
+      "cross-tab/rotating refresh, load/Retry-After and clock skew",
+      "historical credentials/capabilities and packaged client",
+      "other providers/channels, migration and legacy engine deletion"
+    ]
+  },
+  "native_ui_dependency_security_gate": {
+    "evidence": "2026-11-05-native-ui-production-audit.json",
+    "status": "open: five high production entries; full build/development tree has 23 entries including two critical Vitest/tinypool entries; exposure/remediation unqualified",
+    "dependency_changes_in_this_increment": false,
+    "full_audit_evidence": "2026-11-05-native-ui-full-audit.json"
+  },
+  "native_scheduler_loop_increment": {
+    "evidence": "2026-11-05-native-timer.md",
+    "qualified": [
+      "single serving loop for bootstrap/stress seed/public run_async",
+      "actual two-minute timer dispatch of native GPT-4.1 and MCP task",
+      "browser tool/reply/usage visibility and graph pending/completed readback",
+      "single SIGTERM with parked reader exits in 30.672 seconds",
+      "unchanged graph results/tasks/spending after shutdown"
+    ],
+    "remaining": [
+      "active model/tool/external-effect shutdown",
+      "blocking application or driver lifespan shutdown",
+      "multi-worker scheduling and ownership recovery",
+      "dependency security remediation",
+      "migration and legacy/pilot removal"
+    ]
+  },
+  "native_dependency_increment": {
+    "evidence": "2026-11-05-native-dependencies.md",
+    "qualified": [
+      "one Pydantic core version across native/MCP/pilot-compatibility extras",
+      "fresh combined test/native/MCP/pilot install and dependency check",
+      "locked combined profile on Python 3.12",
+      "full applicable native suites on Python 3.11/3.12",
+      "real PostgreSQL native suites on both versions",
+      "explicit LiteLLM profile still exercises its conformance cases",
+      "fresh runtime-only wheel imports outside checkout with native assets and no LiteLLM"
+    ],
+    "transitional_boundary": "LiteLLM extra conflicts with native-harness; remove boundary with retired transport adapters; full legacy manifests and requirements-all are not unified.",
+    "remaining": [
+      "default native execution cutover",
+      "full legacy dependency and engine retirement",
+      "configuration/state migration",
+      "provider and extension matrix",
+      "packaged client delivery",
+      "security/remediation and release qualification"
+    ]
+  },
+  "native_configuration_migration_increment": {
+    "evidence": "2026-11-05-native-migration.md",
+    "command": "harness-migrate",
+    "scope": "offline configuration candidate only; source and graph unchanged",
+    "qualified": [
+      "redacted dry run and private exclusive new output",
+      "known execution/identity/model/budget mappings",
+      "simple model-service retirement with explicit consumer/credential/endpoint/retry boundaries",
+      "portable app-relative skill path with no relative escape",
+      "pilot request/tool/total/output/runtime ceilings forwarded to public SDK",
+      "fresh graph with NativeHarnessAction/MCPAction/ReplyAction and actual GPT-4.1 browser lookup",
+      "unchanged results/spending after repeated planning"
+    ],
+    "reference_profile_blockers": 19,
+    "remaining": [
+      "reference controls and custom model consumers/providers",
+      "broader skill/action/channel qualification",
+      "stored graph and usage/credential/task/checkpoint migration",
+      "default native cutover",
+      "legacy/pilot code and dependency deletion",
+      "upgrade/rollback and release gates"
+    ],
+    "global_flag_guard": {
+      "evidence": "2026-11-05-native-migration-flags.md",
+      "status": "rejects graph mutation flags before global processing; actual graph digest unchanged; subsequent model browser lookup succeeds"
+    },
+    "reference_profile_report": "2026-11-05-native-config-cutover-reference-blockers.json"
+  },
+  "native_skill_catalog_qualification": {
+    "evidence": "2026-11-05-native-catalog.md",
+    "scope": "explicit native runtime catalog; not legacy skills/source or graph migration",
+    "qualified": [
+      "official deferred discovery/loading with all-member preflight",
+      "active owning skill plus independent host tool permission",
+      "MCP read/error/deny lifecycle in catalog mode",
+      "research structured output scoped to current invocation without old-history greeting leakage",
+      "run-scoped research obligation across child hook tasks and context loss",
+      "catalog scheduled tasks select only an explicit configured skill; real PostgreSQL success/failure/cancellation records"
+    ],
+    "remaining": [
+      "legacy skills/skills_source and wildcard/name/asset migration",
+      "channel-specific catalog composition",
+      "scripts and external write qualification",
+      "full comparison and default native cutover",
+      "historical-state migration and legacy engine deletion"
+    ]
+  },
+  "native_new_app_default_qualification": {
+    "evidence": "2026-11-05-native-scaffold.md",
+    "scope": "newly scaffolded default apps/agents only; existing profiles and stored graphs unchanged",
+    "qualified": [
+      "native profile chosen by app/agent CLI and context defaults",
+      "app-relative valid starter skill with authored-asset preservation and containment",
+      "native dependency extra in generated README and Docker examples",
+      "fresh 80-package installed wheel generates unedited native app outside checkout",
+      "actual GPT-4.1 jvchat remember/recall with isolated JsonDB receipts",
+      "public first-contact semantics retained; owner-capability/invalid-bearer refusals produce no Interaction or spend"
+    ],
+    "remaining": [
+      "reference declaration and stored-state migration",
+      "legacy profile and execution-engine/dependency deletion",
+      "ReplyAction inherited model-setting retirement",
+      "container/cloud deployment and packaged frontend delivery",
+      "full enterprise and optimization gates"
+    ]
+  },
+  "native_finite_catalog_migration_increment": {
+    "evidence": "2026-11-05-native-config-cutover.md",
+    "scope": "offline configuration candidate and fresh-graph rehearsal; no historical graph migration",
+    "qualified": [
+      "finite declared skill set preserved with no silent narrowing",
+      "bounded authored-name inventory and app-over-library precedence",
+      "same JV policy projection and public official Skills format preflight",
+      "portable contained package references without asset rewriting",
+      "typed explicit engine heuristics/inactive control retirement; active policies still block",
+      "qualified simple OpenAI model-service retirement with canonical Serper REST consumer",
+      "actual GPT-4.1 greeting, MCP read, Serper search/fetch research and ordinary follow-up",
+      "unchanged live outcomes/spending after current compiler re-plan"
+    ],
+    "reference_blocked_requirements": 19,
+    "remaining": [
+      "active channel/vision/planning/flow/concurrency/stream/tool policy mapping",
+      "nine reference skill format/name/spec/policy migrations",
+      "unqualified model-service consumers",
+      "historical config/state/usage migration, upgrade/rollback and release cutover",
+      "legacy implementation/profile/dependency deletion",
+      "broader compatibility, comparison, security and deployment gates"
+    ]
+  },
+  "native_skill_asset_migration_increment": {
+    "evidence": "2026-11-05-native-skill-assets.md",
+    "name_migrations": {
+      "pageindex_search_with_references": "pageindex-search-with-references",
+      "web_lookup": "web-lookup"
+    },
+    "reference_blocked_requirements": 18,
+    "scope": "Two SOP assets; explicit caller updates required; scripts and other unsupported skill policies remain blocked. Historical baseline inventory retained."
+  },
+  "native_operator_write_recovery_increment": {
+    "evidence": "2026-11-06-native-effect-recovery.md",
+    "qualified": [
+      "stopped local owner and immutable graph/resource binding",
+      "admin-only fact-bound approval and identical retry",
+      "public SDK deferred result, read-only continuation and blocked-input recall",
+      "actual GPT-4.1 crash/restart/browser/SQL no-repeat proof",
+      "ordinary subsequent write retains named permission",
+      "zero-spend completed-reply cache restore"
+    ],
+    "remaining": [
+      "unknown billing combined with mutations",
+      "multiple/external/child/background effects",
+      "distributed fencing",
+      "distinct restored-result UI label",
+      "migration/deletion and enterprise release"
+    ]
+  },
+  "native_effect_billing_reserve_increment": {
+    "evidence": "2026-11-06-native-effect-reserve.md",
+    "qualified": [
+      "read-only SDK usage inspection",
+      "independent idempotent budget reserve and effect approval",
+      "stopped local write with unknown request: actual crash/browser/restart no replay",
+      "SDK preflight refusal preserves input without false unknown billing",
+      "live local policy updates invalidate Action caches before reload",
+      "completed-cache restoration leaves state and spend unchanged"
+    ],
+    "remaining": [
+      "provider invoice correction",
+      "abandoned old snapshots",
+      "multiple/external/child/background effects",
+      "distributed policy and fencing",
+      "migration/deletion and enterprise release"
+    ]
+  },
+  "native_planning_increment": {
+    "evidence": "2026-11-06-native-planning.md",
+    "reference_blocked_requirements": 17,
+    "reference_report": "2026-11-06-native-planning-reference-blockers.json",
+    "qualified": [
+      "Official Planning write_plan/read_plan on graph-backed public PlanStore",
+      "Strict scoped canonical bounded plan storage and shared spend lock",
+      "Named AccessControl and SDK mutation effects",
+      "Actual GPT-4.1 restart/update, Action write, denial, conversation isolation and zero-spend cache restore",
+      "Boolean configuration migration from legacy source before fresh bootstrap"
+    ],
+    "remaining": [
+      "Retained legacy plan/task state and old tool grammar migration",
+      "Operator reconciliation of uncertain plan writes",
+      "Other active reference-app blockers",
+      "Child/background/distributed planning and broader deployment",
+      "Legacy planner and engine deletion; full release qualification"
+    ]
+  },
+  "native_script_sandbox_increment": {
+    "evidence": "2026-11-06-native-script-sandbox.md",
+    "reference_report": "2026-11-06-native-script-sandbox-reference-blockers.json",
+    "reference_blocked_requirements": 17,
+    "qualified": [
+      "Official DockerSandbox/Shell and public renamed toolset retain CodeExecutionAction bash name",
+      "Bounded immutable script snapshot, named host permission and SDK mutation intent before staging/execution",
+      "Graph-bound image/limits/script hashes; no legacy executor fallback",
+      "Actual GPT-4.1 triage, non-root/network/host-file/key boundary checks and conversation isolation",
+      "Parent-failing host-notice workspace regression; fresh denial/restart/accepted-input readback preserves workspace",
+      "Completed cache restore leaves SDK records, policy and spend unchanged"
+    ],
+    "remaining": [
+      "Bounded persistent storage and stopped-container semantics",
+      "Per-user FileInterface parity, artifact export/delivery and all script dependencies/specifications",
+      "Retained state and workspace migration",
+      "Container cleanup/expiry, quotas and process crash/timeout/cancellation qualification",
+      "Script-effect operator reconciliation and child/background scripts",
+      "Provider/deployment/security/evaluation gates and legacy removal"
+    ],
+    "legacy_removal_candidates": [
+      "jvagent/action/code_execution/executor.py",
+      "CodeExecutionAction.executor/stage_skill/run_bash",
+      "Mixed old runtime/isolation staging responsibilities after all callers are qualified"
+    ],
+    "optimization_claim": false
+  },
+  "native_clock_schema_qualification": {
+    "status": "local clock and declarative schema boundary qualified; final gates remain open",
+    "record": "2026-11-06-native-clock.md",
+    "reference_profile_blockers": 12,
+    "qualified": [
+      "existing AgentUtils get_current_datetime name with app timezone and independent host access",
+      "explicit offline standard/full/minimal tool-tier migration",
+      "SDK public args_validator with standard JSON Schema validation, nullable and closed signature schemas",
+      "actual GPT-4.1 browser success, denial, restart/fresh read and zero-spend reload",
+      "587 native/host/real-PG tests per Python 3.11/3.12; fresh native-only installs"
+    ],
+    "remaining": [
+      "broader Action annotation/schema/provider compatibility",
+      "remaining reference configuration and retained-state migration",
+      "distributed recovery, security/deployment and evaluation",
+      "legacy/pilot execution removal and full release qualification"
+    ]
+  },
+  "native_multimodal_input_qualification": {
+    "status": "local native inline PNG/PDF/text admission qualified to recorded scope",
+    "record": "2026-11-06-native-inputs.md",
+    "qualified": [
+      "public SDK BinaryContent/user text from existing envelopes",
+      "explicit server MIME policy, strict whole-set validation and bounded count/bytes",
+      "actual browser/model mixed input and cold restart with persisted exact binary hashes",
+      "zero-attempt input-policy refusal and final corrected capability communication",
+      "623 native/host/real-PG tests per Python 3.11/3.12"
+    ],
+    "retained_failures": [
+      "false image-enabled claim without attachment",
+      "intermediate suggestion to upload an image as text/plain"
+    ],
+    "remaining": [
+      "official media offloading/retention and binary compaction qualification",
+      "same-session rejected-input recovery",
+      "other formats/providers, remote/channel media and clients",
+      "full legacy vision flag/artifact/caller migration",
+      "full retained-state migration, distributed recovery, security/deployment, evaluation and legacy deletion"
+    ]
+  },
+  "native_media_storage_qualification": {
+    "status": "local public-SDK media storage and recovery qualified to recorded scope; caption quality remains partial",
+    "record": "2026-11-06-native-media.md",
+    "qualified": [
+      "official externalize_media/restore_media and MediaStore protocol on existing graph",
+      "scoped immutable create_if_absent payload nodes; authoritative reads and hash/bounds checks",
+      "old inline compatibility, literal marker escaping and typed TextContent",
+      "JSON adversarial tests and fresh PostgreSQL deferred on/off round trips",
+      "actual browser/model large input, restart, missing-payload zero-attempt refusal, exact restoration and unchanged reload",
+      "652 native/host/real-PG tests per Python 3.11/3.12"
+    ],
+    "remaining": [
+      "orphan/unreferenced media reclamation, aggregate quotas and capacity",
+      "maximum-size/hostile files and binary compaction",
+      "old bare-string media migration and lossless rollback export",
+      "other providers/deployments, repair UX and representative visual evaluation",
+      "remaining legacy migration, distributed recovery, security/deployment and old-engine deletion"
+    ]
+  },
+  "native_reasoning_presentation_qualification": {
+    "status": "explicit setting migration and public SDK projection tested; positive actual-provider reasoning display remains open",
+    "record": "2026-11-06-native-reasoning.md",
+    "qualified": [
+      "Literal true/false legacy visibility mapping, malformed-value refusal and default-off native policy",
+      "Public SDK completed-part streaming, signature/metadata exclusion, bounds and interrupted-part refusal",
+      "Actual GPT-4.1 browser tools/history/accounting with enabled and disabled publication, restart and unchanged reload",
+      "665 native/host/real-PostgreSQL tests per Python 3.11/3.12; full reference remains blocked on 11 items"
+    ],
+    "remaining": [
+      "Actual reasoning-capable provider, child, UI cancellation and channel matrix",
+      "Total trace retention/capacity",
+      "Remaining configuration/skill/state migration, legacy/pilot deletion and release qualification"
+    ]
+  },
+  "native_docx_qualification": {
+    "status": "bounded app-local creation and web re-sharing qualified; full DOCX feature migration remains open",
+    "record": "2026-11-06-native-docx.md",
+    "qualified": [
+      "Existing authored scripts/schemas staged unchanged; explicit execution prerequisites and official Skills loading",
+      "Optional pinned/locked dependency image, no base host dependency changes",
+      "SDK tool timeout schema ceiling and correctable pre-effect invalid-argument rejection",
+      "Actual GPT-4.1 browser DOCX creation, authored validator, byte/XML/thumbnail inspection, cold restart and unchanged re-sharing/reload",
+      "669 native/host/real-PostgreSQL tests per Python 3.11/3.12; current reference format report has 10 blockers"
+    ],
+    "retained_failures": [
+      "Initial SOP misinterpreted an unwritten example generator as a missing dependency",
+      "Excessive model-selected timeout previously ended the run before any command"
+    ],
+    "remaining": [
+      "Uploaded/binary documents, arbitrary editing/comments/redlining/conversion and hostile/large documents",
+      "Other providers/architectures and production image/deployment/supply-chain qualification",
+      "Interrupted script/operator recovery, capacity and remote/channel storage",
+      "Remaining configuration/state migration, rollback, old-engine deletion and enterprise release gates"
+    ]
+  },
+  "tracked_asset_coverage_reconciliation": {
+    "record": "2026-11-06-harness-asset-coverage.md",
+    "snapshot": "2026-11-06-harness-tracked-assets.json",
+    "reconciliation": "2026-11-06-harness-asset-reconciliation.json",
+    "baseline_omitted_action_manifests": 1,
+    "baseline_omitted_skills": 14,
+    "removed_tracked_assets_since_baseline": {
+      "action_manifests": [
+        "jvagent/action/handoff_interact_action/info.yaml"
+      ],
+      "skills": []
+    },
+    "current_totals": {
+      "skills": 38,
+      "action_manifests": 61,
+      "agent_declarations": 2
+    },
+    "qualification": "Original arrays are the historical package-only subset; complete tracked coverage is in the linked snapshot. Coverage is not compatibility approval."
+  },
+  "native_storefront_qualification": {
+    "record": "2026-11-06-native-storefront.md",
+    "evidence": "2026-11-06-native-storefront-smoke.json",
+    "action": "contrib/storefront",
+    "tools": [
+      "storefront__faq",
+      "storefront__search_products"
+    ],
+    "qualified_scope": "existing app-local mock fixed-data reads, generic native adapter; actual GPT-4.1 browser permission/restart/reload cohort",
+    "skill_renames": {
+      "product_faq": "product-faq",
+      "product_search": "product-search"
+    },
+    "full_leadgen_app_cutover": false,
+    "legacy_tool_names_and_results_preserved": true,
+    "provider_gap_adapter": "jvagent/harness/native_model.py:7; remove after same cohort passes upstream default",
+    "open_recovery_finding": "Four pre-fix duplicate capability-load receipts remain started; no silent reconciliation"
+  },
+  "native_skill_load_retry_qualification": {
+    "record": "2026-11-06-native-skill-load-retries.md",
+    "evidence": "2026-11-06-native-skill-load-retries-smoke.json",
+    "closed_scope": "Known declarative SDK loader retry rejections receive terminal public SDK failed effects/events; local read-only accepted-input follow-up qualified",
+    "host_failure_reason": "retry_limit, from typed public SDK cause chain",
+    "actual_browser_requests": 14,
+    "provider_reported_tokens": 19207,
+    "estimated_cost_usd": "0.028112",
+    "historical_storefront_graph_unchanged": true,
+    "historical_unfinished_receipts_preserved": 4,
+    "final_native_tests_per_python": 703,
+    "enterprise_qualification": false
+  },
+  "native_signup_hooks_qualification": {
+    "evidence": "2026-11-06-native-signup-hooks.md",
+    "qualified": "reviewed conversation-local validators/processors/handlers through existing Action tools and public SDK ownership/receipts",
+    "confirmed_fixes": [
+      "failed completion preserves task/session",
+      "shared interview tools require configured loaded owner",
+      "native loader failure refuses instead of silently skipping"
+    ],
+    "asset_migration": {
+      "signup": "canonical signup-interview; old tasks not automatically migrated",
+      "smoke_frontmatter": "byte-preserving move from runnable app to test fixtures"
+    },
+    "reference_blockers": 9,
+    "format_admitted_selections": 7,
+    "remaining": [
+      "external effects and delivery",
+      "custom skill tools",
+      "branch/proactive/repeated hooks",
+      "retained tasks",
+      "full app cutover and legacy deletion"
+    ]
+  },
+  "native_channel_catalog_qualification": {
+    "evidence": "2026-11-06-native-channel-catalog.md",
+    "qualified": [
+      "exact channel projection for native finite catalog",
+      "independent SDK ownership and host permission",
+      "consistent fresh host/factory script asset selection",
+      "valid unset App timezone read with explicit offset"
+    ],
+    "actual_provider": "Seven GPT-4.1 turns, five expectations met and two failures retained; final two clock reads succeed",
+    "reference_blockers": 9,
+    "remaining": [
+      "stale-denial model history limitation",
+      "authenticated channel origin",
+      "WhatsApp external sends/delivery",
+      "prior workspace assets and channel-changing conversation reuse",
+      "legacy override/vision/lock and retained-state migration",
+      "legacy removal and enterprise qualification"
+    ]
+  },
+  "native_callback_transport_qualification": {
+    "evidence": "2026-11-06-native-callback-transport.md",
+    "qualified": [
+      "HTTPX public request-extension transport",
+      "validated IP and original Host/SNI with no redirects",
+      "off-loop DNS and safe module/HTTPX summary logs",
+      "actual SDK-journaled synthetic HTTPS echo and independent named denial"
+    ],
+    "actual_provider": "Four GPT-4.1 turns, two real HTTPS echoes, history-only recall and denied write; all expected outcomes meet criteria",
+    "reference_blockers": 9,
+    "remaining": [
+      "durable background scheduling, callback delivery acknowledgement and idempotency",
+      "uncertain external effects and recovery",
+      "hard DNS worker deadlines and queue capacity",
+      "userinfo/IDNA/customer endpoints and full transport DEBUG log qualification",
+      "retained-state cutover, legacy removal and enterprise release"
+    ]
+  }
+}

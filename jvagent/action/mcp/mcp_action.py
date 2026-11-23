@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jvspatial.core.annotations import attribute
 from pydantic import PrivateAttr
@@ -266,15 +266,14 @@ class MCPAction(Action):
             "sandbox_mode, sandbox_user_scoped, sandbox_root, "
             "show_tools (default true; false keeps the server hosted but omits "
             "its tools from get_tools / the orchestrator), "
-            "type (optional: jvspatial_fs | npx_filesystem for stdio filesystem servers), "
-            "auth (optional: {type: service_key, key_env, user_id/user_id_env, "
-            "workspace_id/workspace_id_env} — signs every streamable_http request "
-            "with Core's service-key envelope; or {type: oauth, account/account_env, "
-            "scopes (list) / scope (space-separated string) — the Core OAuth scopes "
-            "(e.g. integral:read, integral:propose, integral:execute) passed through "
-            "verbatim; scope_id/scope_id_env, issuer/issuer_env} — bears a stored "
-            "Integral OAuth 2.1 access token from the MCPs-panel connect flow; the "
-            "entry url is used for refresh discovery)."
+            "type (optional: jvspatial_fs | npx_filesystem for stdio filesystem servers)."
+        ),
+    )
+    native_read_tools: List[str] = attribute(
+        default_factory=list,
+        description=(
+            "Host-reviewed exact surfaced MCP tool names eligible for native read execution. "
+            "Remote readOnlyHint annotations grant no authority. Empty by default."
         ),
     )
     model_action_type: str = attribute(
@@ -432,87 +431,11 @@ class MCPAction(Action):
                 )
                 args = a
             else:
-                auth_cfg = (
-                    raw.get("auth") if isinstance(raw.get("auth"), dict) else None
-                )
-                http_client = None
-                if (
-                    auth_cfg
-                    and str(auth_cfg.get("type") or "").strip().lower() == "service_key"
-                ):
-                    from jvagent.action.mcp.service_key_auth import (
-                        build_service_key_client,
+                if raw.get("auth"):
+                    raise ValueError(
+                        "Vendor MCP auth profiles are unsupported; configure "
+                        "authentication through an external MCP integration"
                     )
-
-                    try:
-                        http_client = build_service_key_client(
-                            service_key=str(auth_cfg.get("service_key") or ""),
-                            key_env=str(
-                                auth_cfg.get("key_env") or "INTEGRAL_SERVICE_KEY"
-                            ),
-                            user_id=str(auth_cfg.get("user_id") or ""),
-                            user_id_env=str(
-                                auth_cfg.get("user_id_env")
-                                or "INTEGRAL_SERVICE_USER_ID"
-                            ),
-                            workspace_id=str(auth_cfg.get("workspace_id") or ""),
-                            workspace_id_env=str(
-                                auth_cfg.get("workspace_id_env")
-                                or "INTEGRAL_WORKSPACE_ID"
-                            ),
-                            mcp_url=str(raw.get("url") or ""),
-                            connect_timeout=connect_timeout,
-                            read_timeout=call_timeout,
-                        )
-                    except ValueError as exc:
-                        logger.warning(
-                            "MCPAction: disabling server '%s' — service-key auth "
-                            "not configured: %s",
-                            name,
-                            exc,
-                        )
-                        continue
-                elif (
-                    auth_cfg
-                    and str(auth_cfg.get("type") or "").strip().lower() == "oauth"
-                ):
-                    from jvagent.action.mcp.integral_oauth_auth import (
-                        build_integral_oauth_client,
-                    )
-                    from jvagent.action.mcp_oauth.integral_provider import (
-                        resolve_scopes_from_auth,
-                    )
-
-                    resolved_scopes = resolve_scopes_from_auth(auth_cfg)
-                    try:
-                        http_client = build_integral_oauth_client(
-                            server_name=name,
-                            account=str(auth_cfg.get("account") or ""),
-                            account_env=str(
-                                auth_cfg.get("account_env") or "INTEGRAL_MCP_ACCOUNT"
-                            ),
-                            scope_id=str(auth_cfg.get("scope_id") or ""),
-                            scope_id_env=str(
-                                auth_cfg.get("scope_id_env")
-                                or "INTEGRAL_MCP_WORKSPACE_ID"
-                            ),
-                            scope=resolved_scopes,
-                            issuer=str(auth_cfg.get("issuer") or ""),
-                            issuer_env=str(
-                                auth_cfg.get("issuer_env") or "INTEGRAL_OAUTH_ISSUER"
-                            ),
-                            mcp_url=str(raw.get("url") or ""),
-                            connect_timeout=connect_timeout,
-                            read_timeout=call_timeout,
-                        )
-                    except ValueError as exc:
-                        logger.warning(
-                            "MCPAction: disabling server '%s' — integral oauth "
-                            "not configured: %s",
-                            name,
-                            exc,
-                        )
-                        continue
                 client = MCPClientWrapper(
                     transport,
                     command=command,
@@ -521,7 +444,6 @@ class MCPAction(Action):
                     url=url,
                     connect_timeout=connect_timeout,
                     call_timeout=call_timeout,
-                    http_client=http_client,
                 )
 
             ulock = asyncio.Lock()
@@ -750,6 +672,17 @@ class MCPAction(Action):
                 in their own per-session sandbox folder rather than the
                 shared system-default folder.
         """
+        from jvagent.core.execution_owner import uses_native_harness
+
+        if self.agent_id:
+            agent = await self.get_agent()
+            if agent is None or await uses_native_harness(agent):
+                return MCPFulfillResult(
+                    text="MCP tool selection requires an admitted native toolset when the legacy owner cannot be verified.",
+                    is_error=True,
+                    error_kind="gateway_error",
+                )
+
         from jvagent.core.sandbox import effective_user_segment
 
         # Resolve the segment used for sandbox routing. ``default=""`` so we
@@ -961,11 +894,118 @@ class MCPAction(Action):
         """
         return await self._list_tools_cached(server_name)
 
+    async def get_native_toolsets(
+        self, *, tool_timeout_seconds: Optional[float] = None
+    ) -> List[Any]:
+        """Expose reviewed plain-stdio services through the public SDK lifecycle.
+
+        Sandbox, HTTP/auth and sampling profiles require separate qualification.
+        No client from the legacy fulfill/get_tools path is connected here.
+        """
+        if not self.native_read_tools:
+            return []
+        import math
+        import re
+        from types import SimpleNamespace
+
+        from fastmcp.client import Client
+        from fastmcp.client.transports import StdioTransport
+        from pydantic_ai.mcp import MCPToolset
+
+        from jvagent.harness.mcp import ReviewedMCPToolset
+        from jvagent.tooling.tool import validate_tool_timeout
+
+        deadline = validate_tool_timeout(tool_timeout_seconds)
+
+        await self.ensure_servers()
+        reviewed = self.native_read_tools
+        if len(reviewed) != len(set(reviewed)) or any(
+            not name or "*" in name or "?" in name for name in reviewed
+        ):
+            raise ValueError("native_read_tools requires unique exact tool names")
+        sources = [raw.get("name", "") for raw in self.servers]
+        if len(sources) != len(set(sources)) or any(
+            sum(tool.startswith(f"mcp_{name}__") for name in sources) != 1
+            for tool in reviewed
+        ):
+            raise ValueError("native_read_tools has ambiguous or unavailable servers")
+        remaining = set(reviewed)
+        result = []
+        for raw in self.servers:
+            name = raw.get("name", "")
+            prefix = f"mcp_{name}__"
+            selected = {tool for tool in remaining if tool.startswith(prefix)}
+            if not selected:
+                continue
+            entry = self._get_server_entry(name)
+            if (
+                not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", name)
+                or entry.transport != "stdio"
+                or entry.sandbox_mode
+                or raw.get("auth")
+                or raw.get("bootstrap")
+                or raw.get("type")
+                or raw.get("enabled") is False
+                or not entry.show_tools
+            ):
+                raise ValueError(
+                    "MCP server profile is not qualified for native execution"
+                )
+            for full_name in selected:
+                remote_name = full_name[len(prefix) :]
+                if not self._filter_tools(entry, [SimpleNamespace(name=remote_name)]):
+                    raise ValueError(
+                        "native_read_tools conflicts with server tool policy"
+                    )
+            transport = StdioTransport(
+                command=raw["command"],
+                args=raw.get("args", []),
+                env=raw.get("env"),
+                keep_alive=False,
+            )
+            if any(
+                not math.isfinite(limit) or limit <= 0
+                for limit in (entry.connect_timeout, entry.call_timeout)
+            ):
+                raise ValueError("Native MCP timeouts must be finite and positive")
+            client = Client(
+                transport,
+                init_timeout=entry.connect_timeout,
+                timeout=(
+                    min(entry.call_timeout, deadline)
+                    if deadline is not None
+                    else entry.call_timeout
+                ),
+            )
+            sdk = MCPToolset(
+                client,
+                prefer_tasks=False,
+                include_instructions=False,
+            ).prefixed(f"mcp_{name}_")
+            result.append(
+                ReviewedMCPToolset(
+                    sdk,
+                    frozenset(selected),
+                    tool_timeout_seconds=(
+                        min(entry.call_timeout, deadline)
+                        if deadline is not None
+                        else entry.call_timeout
+                    ),
+                )
+            )
+            remaining -= selected
+        if remaining:
+            raise ValueError(
+                "native_read_tools names unavailable or hidden MCP servers"
+            )
+        return result
+
     async def get_tools(self) -> List[Any]:
         from jvagent.tooling.tool import Tool
 
         action = self
         tools: List[Tool] = []
+        seen: set[str] = set()
 
         for server_name in action.get_server_names():
             entry = action._servers_by_name.get(server_name)
@@ -989,58 +1029,53 @@ class MCPAction(Action):
                     or {"type": "object", "properties": {}}
                 )
 
-                async def _dispatch(
-                    sn: str = server_name,
-                    tn: str = name,
-                    **kwargs: Any,
-                ) -> str:
-                    """Forward keyword args (the model's tool args) to the MCP server.
-
-                    Reads the immutable dispatch context set by
-                    ``ToolExecutionEngine.dispatch`` so the call routes to the
-                    per-user MCP subprocess (folder named after the caller's
-                    ``user_id`` / ``session_id``). Falls back to the default
-                    subprocess only when no context is in scope (raw scripted
-                    tool execution, tests).
-                    """
-                    from jvagent.action.mcp.mcp_action import normalize_call_result
-                    from jvagent.core.sandbox import effective_user_segment
-                    from jvagent.tooling.tool_executor import get_dispatch_context
-
-                    ctx = get_dispatch_context()
-                    if ctx is not None:
-                        uid = (
-                            effective_user_segment(
-                                ctx.user_id,
-                                ctx.session_id,
-                                default="",
-                            )
-                            or None
-                        )
-                        try:
-                            client = await action.get_client_for_user(sn, uid)
-                        except Exception as e:
-                            return f"Error: per-user sandbox unavailable: {e}"
-                    else:
-                        client = action.get_client(sn)
-
-                    result = await client.call_tool(tn, dict(kwargs))
-                    n = normalize_call_result(result, tn)
-                    if n.is_error and n.text:
-                        return f"Error: {n.text}"
-                    return n.text
-
+                surfaced_name = f"mcp_{server_name}__{name}"
+                if surfaced_name in seen:
+                    raise ValueError("Duplicate surfaced MCP tool name")
+                seen.add(surfaced_name)
                 tools.append(
                     Tool(
-                        name=f"mcp_{server_name}__{name}",
+                        name=surfaced_name,
                         description=desc,
                         parameters_schema=(
                             schema
                             if isinstance(schema, dict)
                             else {"type": "object", "properties": {}}
                         ),
-                        execute=_dispatch,
+                        execute=self._tool_dispatch(
+                            server_name,
+                            getattr(mt, "name", ""),
+                        ),
                     )
                 )
 
         return tools
+
+    def _tool_dispatch(self, server_name: str, tool_name: str) -> Callable[..., Any]:
+        """Bind routing outside model arguments; preserve Action-owned transport."""
+
+        async def dispatch(**arguments: Any) -> Any:
+            from jvagent.tooling.context import get_dispatch_context
+            from jvagent.tooling.tool_result import ToolResult
+
+            ctx = get_dispatch_context()
+            if ctx is not None:
+                from jvagent.core.sandbox import effective_user_segment
+
+                uid = (
+                    effective_user_segment(ctx.user_id, ctx.session_id, default="")
+                    or None
+                )
+                try:
+                    client = await self.get_client_for_user(server_name, uid)
+                except Exception as exc:
+                    return ToolResult.error(f"per-user sandbox unavailable: {exc}")
+            else:
+                client = self.get_client(server_name)
+            result = await client.call_tool(tool_name, dict(arguments))
+            normalized = normalize_call_result(result, tool_name)
+            if normalized.is_error:
+                return ToolResult.error(normalized.text or "MCP tool failed")
+            return normalized.text
+
+        return dispatch

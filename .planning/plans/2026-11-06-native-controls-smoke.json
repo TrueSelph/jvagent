@@ -1,0 +1,923 @@
+{
+  "observed_at": "2026-11-06T15:50:07.727076+00:00",
+  "parent_revision": "git-commit:93f9e4e313b596dad91024a8942f84aeca60c2ed",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-controls-smoke",
+    "backend": 8160,
+    "ui": 3140,
+    "graph": "isolated PostgreSQL",
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    },
+    "mcp_fixture_git_blob": "git-blob:ac80310adce78f1372f13eeff2f9e6495445d34d"
+  },
+  "runtime_observer": {
+    "process_id": 27409,
+    "observed_at": "2026-11-06T15:50:07.470506+00:00",
+    "source_blobs": {
+      "jvagent/action/reply/reply_action.py": "git-blob:9b3b715ae9a822d2c3f56b74eca03475c4fa0880",
+      "jvagent/action/response/policy.py": "git-blob:c166edbc3d63768b132386492664cc4e17a6ca72",
+      "jvagent/action/response/response_bus.py": "git-blob:526dd8233ffa9695cf32da10475f6a8c3b52bbbe",
+      "jvagent/cli/harness_migrate.py": "git-blob:94a01f363dbbc8c35d2f7881c7c697e9035f03b5"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "runtime_epochs": [
+    {
+      "process_id": 26473,
+      "observed_at": "2026-11-06T15:29:49.758508+00:00",
+      "source_blobs": {
+        "jvagent/cli/harness_migrate.py": "git-blob:94a01f363dbbc8c35d2f7881c7c697e9035f03b5"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 27233,
+      "observed_at": "2026-11-06T15:43:10.378820+00:00",
+      "source_blobs": {
+        "jvagent/action/reply/reply_action.py": "git-blob:9b3b715ae9a822d2c3f56b74eca03475c4fa0880",
+        "jvagent/action/response/policy.py": "git-blob:2ae2892c815db7ec1fecd4b1a7fb24bf04975d56",
+        "jvagent/action/response/response_bus.py": "git-blob:526dd8233ffa9695cf32da10475f6a8c3b52bbbe",
+        "jvagent/cli/harness_migrate.py": "git-blob:94a01f363dbbc8c35d2f7881c7c697e9035f03b5"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 27409,
+      "observed_at": "2026-11-06T15:45:25.067995+00:00",
+      "source_blobs": {
+        "jvagent/action/reply/reply_action.py": "git-blob:9b3b715ae9a822d2c3f56b74eca03475c4fa0880",
+        "jvagent/action/response/policy.py": "git-blob:c166edbc3d63768b132386492664cc4e17a6ca72",
+        "jvagent/action/response/response_bus.py": "git-blob:526dd8233ffa9695cf32da10475f6a8c3b52bbbe",
+        "jvagent/cli/harness_migrate.py": "git-blob:94a01f363dbbc8c35d2f7881c7c697e9035f03b5"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.01a1ea5f8c3548b48d3af7d6",
+      "scenario": "plain_named_lookup",
+      "utterance": "Use mcp_records__lookup_record for REHEARSAL-47 and tell me the room and start time from its result.",
+      "response": "The room is Cedar and the start time is 14:30.",
+      "started_at": "2026-11-06T11:31:12.963297",
+      "completed_at": "2026-11-06T11:31:19.126547",
+      "duration_seconds": 6.16325,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 632,
+          "output_tokens": 40
+        },
+        "output": "The room is Cedar and the start time is 14:30.",
+        "run_id": "corr-5b57a2f92e1d4b0dbcc90aaab5a065a7",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T15:31:19.106832+00:00",
+                "total_tokens": 672,
+                "prompt_tokens": 632,
+                "total_cost_usd": 0.001584,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 40,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001584,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 3.539,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.539,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-5b57a2f92e1d4b0dbcc90aaab5a065a7"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "sdk_digest": "sha256:3978e4dd5ff41c13ff073ec1881b6ad3ada06a14b81847ba25a22f41121cf5dc",
+      "worker_pid": "26473",
+      "usage": {
+        "last_updated": "2026-11-06T15:31:19.126590+00:00",
+        "total_tokens": 672,
+        "prompt_tokens": 632,
+        "total_cost_usd": 0.001584,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 40,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001584,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.539,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.539,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 313,
+            "prompt_tokens": 289,
+            "completion_tokens": 24,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00077,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5b57a2f92e1d4b0dbcc90aaab5a065a7",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-5b57a2f92e1d4b0dbcc90aaab5a065a7:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 359,
+            "prompt_tokens": 343,
+            "completion_tokens": 16,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000814,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5b57a2f92e1d4b0dbcc90aaab5a065a7",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-5b57a2f92e1d4b0dbcc90aaab5a065a7:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0d153ee158a67303006aedf2c523dc87d2a6aaa6ddc03c1c63",
+          "args": "{\"reference\":\"REHEARSAL-47\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_t8mVBauVeLkoNUp9VLMxOuYX",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": {
+            "room": "Cedar",
+            "start": "14:30",
+            "reference": "REHEARSAL-47"
+          },
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T15:31:17.454864Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_t8mVBauVeLkoNUp9VLMxOuYX",
+          "content_file_digests": []
+        }
+      ],
+      "effect_count": 1
+    },
+    {
+      "id": "n.Interaction.163458c1270d4827b49668f8",
+      "scenario": "guarded_named_lookup",
+      "utterance": "Use mcp_records__lookup_record for REHEARSAL-47 and tell me the room and start time from its result.",
+      "response": "The room is Cedar and the start time is 14:30.",
+      "started_at": "2026-11-06T11:31:59.216668",
+      "completed_at": "2026-11-06T11:32:03.223518",
+      "duration_seconds": 4.00685,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 634,
+          "output_tokens": 40
+        },
+        "output": "The room is Cedar and the start time is 14:30.",
+        "run_id": "corr-86a649fff79543f4b32ea3a056503faf",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T15:32:03.203654+00:00",
+                "total_tokens": 674,
+                "prompt_tokens": 634,
+                "total_cost_usd": 0.001588,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 40,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001588,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.781,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.781,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-86a649fff79543f4b32ea3a056503faf"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "sdk_digest": "sha256:a7aa9433cb209d8caa55ff614ddf5ec6173632070476b373139eb264d09df519",
+      "worker_pid": "26473",
+      "usage": {
+        "last_updated": "2026-11-06T15:32:03.223579+00:00",
+        "total_tokens": 674,
+        "prompt_tokens": 634,
+        "total_cost_usd": 0.001588,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 40,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001588,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.781,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.781,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 314,
+            "prompt_tokens": 290,
+            "completion_tokens": 24,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000772,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-86a649fff79543f4b32ea3a056503faf",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-86a649fff79543f4b32ea3a056503faf:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 360,
+            "prompt_tokens": 344,
+            "completion_tokens": 16,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000816,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-86a649fff79543f4b32ea3a056503faf",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-86a649fff79543f4b32ea3a056503faf:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_053c9ef4dbb47db5006aedf2f11de887d2be0b4350e71ccf5d",
+          "args": "{\"reference\":\"REHEARSAL-47\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_NUF7j3qxTJUNnXN4S7VGYngL",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": {
+            "room": "Cedar",
+            "start": "14:30",
+            "reference": "REHEARSAL-47"
+          },
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T15:32:01.312541Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_NUF7j3qxTJUNnXN4S7VGYngL",
+          "content_file_digests": []
+        }
+      ],
+      "effect_count": 1
+    },
+    {
+      "id": "n.Interaction.b484322b39db431698cd6858",
+      "scenario": "retained_legacy_egress_rewrite_failure",
+      "utterance": "Call mcp_records__misleading_write. Do not use the lookup tool or any alternative. If that exact tool is unavailable, say so.",
+      "response": "I'd rather focus on helping you \u2014 what would you like to get done?",
+      "started_at": "2026-11-06T11:32:37.659437",
+      "completed_at": "2026-11-06T11:32:40.267940",
+      "duration_seconds": 2.608503,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 395,
+          "output_tokens": 15
+        },
+        "output": "The tool mcp_records__misleading_write is not available.",
+        "run_id": "corr-bde27533232f4123920ecc16a8827d9a",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T15:32:40.246200+00:00",
+                "total_tokens": 410,
+                "prompt_tokens": 395,
+                "total_cost_usd": 0.00091,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 1,
+                "completion_tokens": 15,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.00091,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 1.118,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.118,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-bde27533232f4123920ecc16a8827d9a"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-86a649fff79543f4b32ea3a056503faf"
+        },
+        "usage_complete": true
+      },
+      "sdk_digest": "sha256:1c6f9ec73e2b0491a2adc95e83d14d8796666a7bba14a707570eef73bc812c73",
+      "worker_pid": "26473",
+      "usage": {
+        "last_updated": "2026-11-06T15:32:40.267996+00:00",
+        "total_tokens": 410,
+        "prompt_tokens": 395,
+        "total_cost_usd": 0.00091,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 15,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00091,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.118,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.118,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 410,
+            "prompt_tokens": 395,
+            "completion_tokens": 15,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00091,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-bde27533232f4123920ecc16a8827d9a",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-bde27533232f4123920ecc16a8827d9a:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "current_tool_parts": [],
+      "effect_count": 0
+    },
+    {
+      "id": "n.Interaction.7a0260f834a143a292f55c28",
+      "scenario": "fixed_native_unavailable_reply",
+      "utterance": "Call mcp_records__misleading_write. Do not use the lookup tool or any alternative. If that exact tool is unavailable, say so.",
+      "response": "The tool mcp_records__misleading_write is not available.",
+      "started_at": "2026-11-06T11:46:17.086750",
+      "completed_at": "2026-11-06T11:46:21.345868",
+      "duration_seconds": 4.259118,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 445,
+          "output_tokens": 15
+        },
+        "output": "The tool mcp_records__misleading_write is not available.",
+        "run_id": "corr-fe198d6d6665471d8bd09261c9a51944",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T15:46:21.326482+00:00",
+                "total_tokens": 460,
+                "prompt_tokens": 445,
+                "total_cost_usd": 0.00101,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 1,
+                "completion_tokens": 15,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.00101,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 1.667,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.667,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-fe198d6d6665471d8bd09261c9a51944"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-bde27533232f4123920ecc16a8827d9a"
+        },
+        "usage_complete": true
+      },
+      "sdk_digest": "sha256:597a6f4b16c0fa95940a3e6199b22ef704414480ab936592c7d973640413db6b",
+      "worker_pid": "27409",
+      "usage": {
+        "last_updated": "2026-11-06T15:46:21.345905+00:00",
+        "total_tokens": 460,
+        "prompt_tokens": 445,
+        "total_cost_usd": 0.00101,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 15,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00101,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.667,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.667,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 460,
+            "prompt_tokens": 445,
+            "completion_tokens": 15,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00101,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-fe198d6d6665471d8bd09261c9a51944",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-fe198d6d6665471d8bd09261c9a51944:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "current_tool_parts": [],
+      "effect_count": 0
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.45e3193ede0c40be97fd3594",
+      "session_id": "sess_6f51b67c79364a8e",
+      "spend": {
+        "usd": "0.001584",
+        "tokens": 672,
+        "requests": 2,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.2eb55c413b144b07b92a537b",
+      "session_id": "sess_92e389ee7dbf49ac",
+      "spend": {
+        "usd": "0.003508",
+        "tokens": 1544,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    }
+  ],
+  "migration_reports": {
+    "guarded": {
+      "schema": "jvagent.native-config-migration.v1",
+      "source": "agents/demo/guarded/agent.yaml",
+      "source_digest": "sha256:794c624475a5a348f75408fddeffe45f417a860dda31cb48a8f1280839aef9da",
+      "status": "candidate",
+      "blockers": [],
+      "mappings": {
+        "block_raw_tool_invocation": "retired",
+        "tool_servers": "retired",
+        "max_concurrent_tools": "tool_execution_mode",
+        "activation_budget": "max_requests",
+        "max_duration_seconds": "timeout_seconds",
+        "max_turn_cost_usd": "max_run_cost_usd",
+        "max_conversation_cost_usd": "max_conversation_cost_usd",
+        "model": "model",
+        "model_action_type": "native provider",
+        "system_prompt_extra": "instructions",
+        "model_temperature": "model_settings.temperature",
+        "model_max_tokens": "model_settings.max_tokens",
+        "enabled": "enabled"
+      },
+      "bounded_defaults": [
+        "max_tokens"
+      ],
+      "preserved_action_count": 2,
+      "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+      "required_review": [
+        "Skills, scripts, Action tools and channel compatibility",
+        "Credentials and native provider settings",
+        "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+        "Fresh isolated bootstrap and actual-provider browser rehearsal",
+        "Qualify every retained MCP transport and native_read_tools declaration; the retired selector does not authorize remote tools",
+        "Review explicit control retirements and native single-model/context/event behavior before cutover"
+      ],
+      "retired_settings": {
+        "block_raw_tool_invocation": "Retired legacy tool-selection prompt/auto-promotion control; native SDK skill ownership and host permission remain mandatory",
+        "tool_servers": "Retired all-enabled selector; native MCP declarations, reviewed tools, active skills and host permission still govern exposure"
+      },
+      "selected_skill_count": 1,
+      "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+    },
+    "plain": {
+      "schema": "jvagent.native-config-migration.v1",
+      "source": "agents/demo/plain/agent.yaml",
+      "source_digest": "sha256:5a6a6e392db437017353624df33b2ac49182525754983fb46d5090ccce390181",
+      "status": "candidate",
+      "blockers": [],
+      "mappings": {
+        "block_raw_tool_invocation": "retired",
+        "tool_servers": "retired",
+        "max_concurrent_tools": "tool_execution_mode",
+        "activation_budget": "max_requests",
+        "max_duration_seconds": "timeout_seconds",
+        "max_turn_cost_usd": "max_run_cost_usd",
+        "max_conversation_cost_usd": "max_conversation_cost_usd",
+        "model": "model",
+        "model_action_type": "native provider",
+        "system_prompt_extra": "instructions",
+        "model_temperature": "model_settings.temperature",
+        "model_max_tokens": "model_settings.max_tokens",
+        "enabled": "enabled"
+      },
+      "bounded_defaults": [
+        "max_tokens"
+      ],
+      "preserved_action_count": 2,
+      "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+      "required_review": [
+        "Skills, scripts, Action tools and channel compatibility",
+        "Credentials and native provider settings",
+        "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+        "Fresh isolated bootstrap and actual-provider browser rehearsal",
+        "Qualify every retained MCP transport and native_read_tools declaration; the retired selector does not authorize remote tools",
+        "Review explicit control retirements and native single-model/context/event behavior before cutover"
+      ],
+      "retired_settings": {
+        "block_raw_tool_invocation": "Retired legacy tool-selection prompt/auto-promotion control; native SDK skill ownership and host permission remain mandatory",
+        "tool_servers": "Retired all-enabled selector; native MCP declarations, reviewed tools, active skills and host permission still govern exposure"
+      },
+      "selected_skill_count": 1,
+      "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+    }
+  },
+  "reference_migration": {
+    "schema": "jvagent.native-config-migration.v1",
+    "source": "agents/jvagent/orchestrator_agent/agent.yaml",
+    "source_digest": "sha256:4a84450f53dfdcc1b606e55f79f59eea61b2e0cc5ed5e1e9058104eb2b15c437",
+    "status": "blocked",
+    "blockers": [
+      "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+      "Unmapped execution setting: stream_reasoning_trace",
+      "Unmapped execution setting: tool_tier",
+      "Setting requires qualified native policy migration: channel_overrides",
+      "Setting requires qualified native policy migration: vision",
+      "Setting requires qualified native policy migration: lock_active_flow",
+      "Selected skill 6 needs native format/name/spec migration",
+      "Selected skill 7 needs native format/name/spec migration",
+      "Selected skill 8 needs native format/name/spec migration",
+      "Selected skill 9 needs native format/name/spec migration",
+      "Selected skill 10 needs native format/name/spec migration",
+      "Selected skill 11 needs native format/name/spec migration",
+      "Model service has unqualified callers or provider declarations; review before removal"
+    ],
+    "mappings": {
+      "light_model": "retired",
+      "light_model_action_type": "retired",
+      "light_model_temperature": "retired",
+      "light_model_max_tokens": "retired",
+      "enable_transient_ack": "retired",
+      "ack_on_first_tool_call": "retired",
+      "ack_interval_ms": "retired",
+      "first_emit_timeout_ms": "retired",
+      "ack_statements": "retired",
+      "stream_internal_progress": "retired",
+      "lean_tool_threshold": "retired",
+      "lean_presurface_k": "retired",
+      "history_limit": "retired",
+      "block_raw_tool_invocation": "retired",
+      "tool_servers": "retired",
+      "pinned_tools": "retired inactive control",
+      "skill_only_tools": "retired inactive control",
+      "with_event": "retired inactive control",
+      "tool_call_timeout": "retired inactive control",
+      "pilot_max_model_requests": "retired inactive pilot control",
+      "pilot_max_total_tokens": "retired inactive pilot control",
+      "pilot_max_runtime_seconds": "retired inactive pilot control",
+      "pilot_max_output_tokens": "retired inactive pilot control",
+      "pilot_max_tool_calls": "retired inactive pilot control",
+      "max_concurrent_tools": "tool_execution_mode",
+      "activation_budget": "max_requests",
+      "max_duration_seconds": "timeout_seconds"
+    },
+    "bounded_defaults": [
+      "timeout_seconds",
+      "max_run_cost_usd",
+      "max_conversation_cost_usd",
+      "max_tokens"
+    ],
+    "preserved_action_count": 17,
+    "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+    "required_review": [
+      "Skills, scripts, Action tools and channel compatibility",
+      "Credentials and native provider settings",
+      "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+      "Fresh isolated bootstrap and actual-provider browser rehearsal",
+      "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration",
+      "Qualify every retained MCP transport and native_read_tools declaration; the retired selector does not authorize remote tools",
+      "Review explicit control retirements and native single-model/context/event behavior before cutover"
+    ],
+    "retired_settings": {
+      "light_model": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_action_type": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_temperature": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_max_tokens": "Retired model gearing; use the configured native model and remeasure cost",
+      "enable_transient_ack": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_on_first_tool_call": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_interval_ms": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "first_emit_timeout_ms": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_statements": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "stream_internal_progress": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "lean_tool_threshold": "Retired legacy pre-surfacing; official Skills and host tool ownership replace it",
+      "lean_presurface_k": "Retired legacy pre-surfacing; official Skills and host tool ownership replace it",
+      "history_limit": "Retired turn-count prompt window; native bounded SDK compaction replaces it",
+      "block_raw_tool_invocation": "Retired legacy tool-selection prompt/auto-promotion control; native SDK skill ownership and host permission remain mandatory",
+      "tool_servers": "Retired all-enabled selector; native MCP declarations, reviewed tools, active skills and host permission still govern exposure",
+      "pinned_tools": "Explicitly empty/disabled legacy control; no active policy removed",
+      "skill_only_tools": "Explicitly empty/disabled legacy control; no active policy removed",
+      "with_event": "Explicitly empty/disabled legacy control; no active policy removed",
+      "tool_call_timeout": "Explicitly empty/disabled legacy control; no active policy removed",
+      "pilot_max_model_requests": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_total_tokens": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_runtime_seconds": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_output_tokens": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_tool_calls": "Inactive pilot declaration; active legacy limits migrate separately"
+    },
+    "selected_skill_count": 5,
+    "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+  },
+  "external_mcp_audit": {
+    "guarded": [
+      "REHEARSAL-47"
+    ],
+    "plain": [
+      "REHEARSAL-47"
+    ]
+  },
+  "last_fixture_processes_exited": true,
+  "reload_audit": {
+    "label": "restored",
+    "interaction_hashes": {
+      "n.Interaction.01a1ea5f8c3548b48d3af7d6": "sha256:804f0e26a72ef948b5c8da8442fde523130b05d8a57205b1a068e98543e25e83",
+      "n.Interaction.b484322b39db431698cd6858": "sha256:4a1402733accb846f9e34163eabd117223e995913ac0ecacd0c9510edd3a6b9b",
+      "n.Interaction.7a0260f834a143a292f55c28": "sha256:1152014f4c4161bd9e766aee71dc7a646a6347d80910ff10578d058f609f90eb",
+      "n.Interaction.163458c1270d4827b49668f8": "sha256:df3314b5d6c2951b38f0993c9b109b0206222b043365dbb5dd6fdc18485e3c9d"
+    },
+    "interaction_count": 4,
+    "registration_count": 4,
+    "conversations": {
+      "n.Conversation.45e3193ede0c40be97fd3594": {
+        "native_spend_digest": "sha256:52d00585455f7f35b2971ab0d07de7422b3bfec54f84514365838b5eaae228bc",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_6f51b67c79364a8e": {
+            "spent": {
+              "usd": "0.001584",
+              "tokens": 672,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T15:31:18.711100+00:00"
+          },
+          "default|run|*|corr-5b57a2f92e1d4b0dbcc90aaab5a065a7": {
+            "spent": {
+              "usd": "0.001584",
+              "tokens": 672,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T15:31:18.711100+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.2eb55c413b144b07b92a537b": {
+        "native_spend_digest": "sha256:cb876f174b3dd5976e1574a6bfb1c1d83471261a271d4c96deb2d618d86bc6d1",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_92e389ee7dbf49ac": {
+            "spent": {
+              "usd": "0.003508",
+              "tokens": 1544,
+              "requests": 4,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T15:46:21.044111+00:00"
+          },
+          "default|run|*|corr-86a649fff79543f4b32ea3a056503faf": {
+            "spent": {
+              "usd": "0.001588",
+              "tokens": 674,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T15:32:02.827889+00:00"
+          },
+          "default|run|*|corr-bde27533232f4123920ecc16a8827d9a": {
+            "spent": {
+              "usd": "0.00091",
+              "tokens": 410,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T15:32:39.914652+00:00"
+          },
+          "default|run|*|corr-fe198d6d6665471d8bd09261c9a51944": {
+            "spent": {
+              "usd": "0.00101",
+              "tokens": 460,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T15:46:21.044111+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "original_three_interactions_unchanged": true,
+  "persisted_native_action_fields": [
+    {
+      "id": "n.NativeHarnessAction.5fee7d89b3f44305a4be29df",
+      "agent_id": "n.Agent.e797e31647be47d885aa3dd0",
+      "legacy_controls_absent": true
+    },
+    {
+      "id": "n.NativeHarnessAction.a69ebacb6b164c9d983e3835",
+      "agent_id": "n.Agent.435ced49161149beb8e27c74",
+      "legacy_controls_absent": true
+    }
+  ],
+  "totals": {
+    "model_turns": 4,
+    "delivered": 4,
+    "retained_presentation_failures": 1,
+    "corrected_unavailable_replies": 1,
+    "successful_named_lookups": 2,
+    "unreviewed_tool_invocations": 0,
+    "provider_requests": 6,
+    "provider_reported_tokens": 2216,
+    "estimated_cost_usd": "0.005092",
+    "unknown_cost_calls": 0
+  },
+  "limits": [
+    "Only all-enabled MCP selector retirement is qualified; finite/empty/invalid selectors remain blockers. Enabled unreviewed MCP declarations block even with an omitted selector.",
+    "Native output no longer inherits implicit legacy core response rules when host-bound SDK registration matches. Explicit interaction rules remain. Broader Action/skill prompt/guard parameter projection still needs qualification.",
+    "The original vague egress deflection is retained as a failed request outcome; delivery does not imply semantic success.",
+    "Clock/tool-tier and reasoning-display behavior remain blockers, alongside vision/channel/flow and remaining assets, recovery, migration/deletion and enterprise release."
+  ]
+}

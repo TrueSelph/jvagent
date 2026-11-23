@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # ``AGENTIC_LOOP`` is the orchestrator's own resumable multi-step plan (ADR-0019)
 # — it has no IA tool to route to, so it is excluded from IA-flow routing here
 # and resumed instead via ``active_plan`` / ``plan_resume_note`` below.
-_NON_FLOW_TASK_TYPES = frozenset({"PROACTIVE", "AGENTIC_LOOP"})
+_NON_FLOW_TASK_TYPES = frozenset({"PROACTIVE", "AGENTIC_LOOP", "CAPABILITY_PILOT"})
 
 # Task type the orchestrator uses for its own resumable multi-step plan.
 PLAN_TASK_TYPE = "AGENTIC_LOOP"
@@ -236,6 +236,9 @@ async def note_locked_flow_error(
     if store is not None:
         try:
             for th in store.list(status="active") or []:
+                task_type = (getattr(th, "task_type", None) or "").strip().upper()
+                if task_type in _NON_FLOW_TASK_TYPES:
+                    continue
                 if str(getattr(th, "owner_action", "") or "") == flow_owner:
                     await th.cancel(
                         reason=(
@@ -493,6 +496,49 @@ async def cancel_orphan_flow_tasks(
                     "continuation: cancel orphan flow %s failed: %s", owner, exc
                 )
     return cancelled
+
+
+async def park_capability_pilot_tasks(visitor: Any) -> int:
+    """Park pilot-owned work before the legacy driver handles a turn.
+
+    This compatibility boundary uses only TaskStore and plain JSON snapshots so
+    legacy mode remains importable without the optional Pydantic AI dependency.
+    An unsettled invocation is marked for reconciliation and can never be treated
+    as safe to replay after the driver changes back.
+    """
+    conversation = getattr(visitor, "conversation", None)
+    store = _store(conversation)
+    if store is None:
+        return 0
+    parked = 0
+    for task in store.list(status="active") or []:
+        task_type = (getattr(task, "task_type", None) or "").strip().upper()
+        if task_type != "CAPABILITY_PILOT":
+            continue
+        reason = "legacy driver selected; pilot state preserved for explicit review"
+        raw_snapshot = getattr(task, "snapshot", None)
+        snapshot = None
+        if isinstance(raw_snapshot, dict) and raw_snapshot.get("schema_version") in {
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+        }:
+            snapshot = dict(raw_snapshot)
+            invocations = snapshot.get("invocations")
+            unsettled = isinstance(invocations, list) and any(
+                isinstance(invocation, dict) and invocation.get("status") == "started"
+                for invocation in invocations
+            )
+            snapshot["status"] = "parked"
+            snapshot["park_reason"] = reason
+            if unsettled:
+                snapshot["requires_reconciliation"] = True
+        await task.park(snapshot=snapshot, reason=reason)
+        parked += 1
+    return parked
 
 
 def completed_tool_observation(

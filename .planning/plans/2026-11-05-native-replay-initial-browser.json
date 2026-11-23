@@ -1,0 +1,371 @@
+{
+  "wire": [
+    {
+      "kind": "interaction",
+      "status": 200,
+      "started_at": "2026-11-05T21:58:56.328Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.14a67880b99a45e2a5790d0b",
+          "session_id": "sess_4f5997c19ade419a",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-0553e4d235664e7395e276f785c8c410",
+            "session_id": "sess_4f5997c19ade419a",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.14a67880b99a45e2a5790d0b",
+            "message_type": "adhoc",
+            "content": "READY",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {
+              "is_proactive": false,
+              "observability": {
+                "usage": {
+                  "prompt_tokens": 1550,
+                  "completion_tokens": 3,
+                  "total_tokens": 1553,
+                  "cached_prompt_tokens": 0,
+                  "cache_write_tokens": 0,
+                  "model_call_count": 1,
+                  "model_attempt_count": 1,
+                  "failed_model_attempt_count": 0,
+                  "cancelled_model_attempt_count": 0,
+                  "model_attempt_duration_seconds": 2.29,
+                  "unmeasured_model_attempt_count": 0,
+                  "estimated_cost_usd": 0.003124,
+                  "reported_cost_usd": 0,
+                  "litellm_cost_usd": 0,
+                  "unknown_cost_call_count": 0,
+                  "total_cost_usd": 0.003124,
+                  "total_duration_seconds": 2.29,
+                  "last_updated": "2026-11-05T21:59:00.010613+00:00"
+                },
+                "model": "gpt-4.1-2025-04-14"
+              }
+            },
+            "timestamp": "2026-11-05T21:59:00.010761+00:00"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-0553e4d235664e7395e276f785c8c410",
+            "session_id": "sess_4f5997c19ade419a",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.14a67880b99a45e2a5790d0b",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T21:59:00.019436+00:00"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_4f5997c19ade419a",
+          "response": "READY",
+          "interaction": {
+            "id": "n.Interaction.14a67880b99a45e2a5790d0b",
+            "utterance": "NATIVE-REPLAY-CHECK: Reply exactly READY.",
+            "response": "READY",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-0553e4d235664e7395e276f785c8c410"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-0553e4d235664e7395e276f785c8c410:1",
+                  "native_run_id": "corr-0553e4d235664e7395e276f785c8c410",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1550,
+                    "completion_tokens": 3,
+                    "total_tokens": 1553,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.003124,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_attempt",
+                "data": {
+                  "native_run_id": "corr-0553e4d235664e7395e276f785c8c410",
+                  "native_step_index": 1,
+                  "native_attempt_origin": "step_events_v1",
+                  "outcome": "completed",
+                  "usage_status": "receipt_recorded",
+                  "started_at": "2026-11-05T21:58:57.566349+00:00",
+                  "duration": 2.289715,
+                  "duration_scope": "sdk_model_request",
+                  "completed_at": "2026-11-05T21:58:59.856064+00:00"
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 1550,
+              "completion_tokens": 3,
+              "total_tokens": 1553,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 1,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 2.29,
+              "unmeasured_model_attempt_count": 0,
+              "estimated_cost_usd": 0.003124,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.003124,
+              "total_duration_seconds": 2.29,
+              "last_updated": "2026-11-05T21:59:00.019839+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.14a67880b99a45e2a5790d0b",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_4f5997c19ade419a"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "duration_ms": 3775.0999999940395
+    },
+    {
+      "kind": "subscription",
+      "status": 200,
+      "started_at": "2026-11-05T21:59:00.112Z",
+      "frames": [
+        {
+          "session_id": "sess_4f5997c19ade419a",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.14a67880b99a45e2a5790d0b",
+          "message_type": "adhoc",
+          "channel": "default",
+          "id": "o.ResponseMessage.corr-0553e4d235664e7395e276f785c8c410",
+          "content": "READY",
+          "category": "user",
+          "timestamp": "2026-11-05T17:59:00.019782",
+          "metadata": {
+            "native_replay": true,
+            "is_proactive": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-05T21:59:00.004661+00:00",
+                "total_tokens": 1553,
+                "prompt_tokens": 1550,
+                "total_cost_usd": 0.003124,
+                "litellm_cost_usd": 0,
+                "model_call_count": 1,
+                "completion_tokens": 3,
+                "reported_cost_usd": 0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003124,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.29,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.29,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "replay_window": {
+              "interactions": 20,
+              "trace_entries": 200,
+              "omitted_trace_entries": 0
+            }
+          }
+        },
+        {
+          "id": "o.ResponseMessage.corr-0553e4d235664e7395e276f785c8c410",
+          "session_id": "sess_4f5997c19ade419a",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.14a67880b99a45e2a5790d0b",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T21:59:00.019436+00:00"
+        },
+        {
+          "id": "o.ResponseMessage.00a42ae71e4846fa9691a337",
+          "session_id": "sess_4f5997c19ade419a",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.9f00bbc6c28f410084dd34f4",
+          "message_type": "adhoc",
+          "content": "mcp_records__lookup_record",
+          "channel": "default",
+          "category": "thought",
+          "thought_type": "tool_call",
+          "segment_id": "call_cEQLrTGhw4dQsU7fEiWX4mLE",
+          "metadata": {
+            "tool_name": "mcp_records__lookup_record",
+            "is_proactive": true,
+            "native_run_id": "149fa06c4384465ab3264271439039b6",
+            "native_agent_name": "jvagent-native",
+            "tool_args": {
+              "reference": "REHEARSAL-47"
+            }
+          },
+          "timestamp": "2026-11-05T21:59:15.789052+00:00"
+        },
+        {
+          "id": "o.ResponseMessage.7bb8c13d45344552b2922846",
+          "session_id": "sess_4f5997c19ade419a",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.9f00bbc6c28f410084dd34f4",
+          "message_type": "adhoc",
+          "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}",
+          "channel": "default",
+          "category": "thought",
+          "thought_type": "tool_result",
+          "segment_id": "call_cEQLrTGhw4dQsU7fEiWX4mLE",
+          "metadata": {
+            "tool_name": "mcp_records__lookup_record",
+            "is_proactive": true,
+            "native_run_id": "149fa06c4384465ab3264271439039b6",
+            "native_agent_name": "jvagent-native",
+            "tool_result": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}"
+          },
+          "timestamp": "2026-11-05T21:59:15.841255+00:00"
+        },
+        {
+          "id": "o.ResponseMessage.149fa06c4384465ab3264271439039b6",
+          "session_id": "sess_4f5997c19ade419a",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.9f00bbc6c28f410084dd34f4",
+          "message_type": "adhoc",
+          "content": "REHEARSAL-47 is scheduled in room Cedar and starts at 14:30.",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {
+            "is_proactive": true,
+            "proactive_task_id": "task_f8bfb07d381f",
+            "proactive_directive": "NATIVE-PROACTIVE-CHECK: Look up REHEARSAL-47 and tell me its actual room and start time.",
+            "proactive_skill": "summary",
+            "proactive_context": "",
+            "observability": {
+              "usage": {
+                "prompt_tokens": 2504,
+                "completion_tokens": 45,
+                "total_tokens": 2549,
+                "cached_prompt_tokens": 1152,
+                "cache_write_tokens": 0,
+                "model_call_count": 2,
+                "model_attempt_count": 2,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.161,
+                "unmeasured_model_attempt_count": 0,
+                "estimated_cost_usd": 0.00364,
+                "reported_cost_usd": 0,
+                "litellm_cost_usd": 0,
+                "unknown_cost_call_count": 0,
+                "total_cost_usd": 0.00364,
+                "total_duration_seconds": 3.161,
+                "last_updated": "2026-11-05T21:59:17.685462+00:00"
+              },
+              "model": "gpt-4.1-2025-04-14"
+            }
+          },
+          "timestamp": "2026-11-05T21:59:17.685596+00:00"
+        },
+        {
+          "id": "o.ResponseMessage.149fa06c4384465ab3264271439039b6",
+          "session_id": "sess_4f5997c19ade419a",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.9f00bbc6c28f410084dd34f4",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T21:59:17.698456+00:00"
+        }
+      ]
+    }
+  ],
+  "snapshots": {
+    "ready": "jvchat\nAGENT TESTING\nNew Conversation\n4 conversations\n\nNATIVE-REPLAY-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-FINAL-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-CHECK: Reply exactly READY.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-REPLAY-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 2.3s · 1.3 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+    "live": "jvchat\nAGENT TESTING\nNew Conversation\n4 conversations\n\nNATIVE-REPLAY-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-FINAL-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-CHECK: Reply exactly READY.\n\nNATIVE-CHANNEL-CHECK: Reply exactly READY.\n\nLogout\nNA\nNative Signed Host Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-REPLAY-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 2.3s · 1.3 tok/s\n1 tool call\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 2 attempts · 2.5k tokens · 3.2s · 14.2 tok/s\nCopy\nRefresh\nAdd Attachment\nSend message"
+  },
+  "task": {
+    "session_id": "sess_4f5997c19ade419a",
+    "task_id": "task_f8bfb07d381f",
+    "conversation_id": "n.Conversation.340242d653d5419a98a8e7a8"
+  },
+  "result": {
+    "status": 200,
+    "duration_ms": 4546.799999982119,
+    "result": {
+      "tick": {
+        "dispatched": 1,
+        "timestamp": "2026-11-05T21:59:13.191781+00:00"
+      },
+      "task_status": "completed"
+    }
+  }
+}

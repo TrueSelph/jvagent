@@ -1,0 +1,48 @@
+agent: jvagent/migration
+context:
+  alias: Migrated Native Harness
+  name: Migrated Native Harness
+  role: A concise assistant using modular read integrations
+  enabled: true
+  interaction_limit: 30
+actions:
+- action: jvagent/native_harness
+  context:
+    enabled: true
+    max_requests: 20
+    timeout_seconds: 180
+    max_run_cost_usd: '2.00'
+    max_conversation_cost_usd: '20.00'
+    max_tokens: 100000
+    model_settings:
+      max_tokens: 8192
+      temperature: 0.0
+      max_retries: 0
+    model: openai:gpt-4.1
+    skill_directory: agents/jvagent/migration/skills/summary
+    instructions: 'Agent identity: Migrated Native Harness
+
+
+      Role: A concise assistant using modular read integrations
+
+
+      Answer concisely using the selected skill and successful tool results. Never
+      invent completed work.'
+- action: jvagent/mcp
+  context:
+    enabled: true
+    sandbox_mode: false
+    native_read_tools:
+    - mcp_records__lookup_record
+    servers:
+    - name: records
+      transport: stdio
+      command: /private/tmp/jvagent-unified-test-311/bin/python
+      args:
+      - /Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/harness/native/mcp_fixture.py
+      env:
+        JV_MCP_FIXTURE_AUDIT: /private/tmp/jvagent-native-migration-smoke/calls.txt
+        JV_MCP_FIXTURE_PID: /private/tmp/jvagent-native-migration-smoke/server.pid
+- action: jvagent/reply
+  context:
+    enabled: true

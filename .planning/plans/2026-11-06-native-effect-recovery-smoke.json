@@ -1,0 +1,550 @@
+{
+  "observed_at": "2026-11-06T09:14:59.250187+00:00",
+  "parent_revision": "git-commit:ae05bb661642c9378cff7e1dc841a719ed116d0b",
+  "source_blobs": {
+    "jvagent/action/file_interface/file_interface_action.py": "git-blob:7c1eed8c870860fe457ef4d039f0f48d8a55a6ce",
+    "jvagent/action/native_harness/endpoints.py": "git-blob:62e7c0f1de9c8a133ae85ba7d6a35f4cf71e0b25",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:22796fcc87ccc322cbb1908069849bcb57fe0ee4",
+    "jvagent/core/execution_owner.py": "git-blob:b9556567465bb4c8e5af969801f1ff4f7b0a4d48",
+    "jvagent/harness/contracts.py": "git-blob:ed90b85df919b6daab50902f06babfbe1df94c27",
+    "jvagent/harness/effect_recovery.py": "git-blob:d13fe2ad3d6924efc1f10eace2e2682c6bb04cdd",
+    "jvagent/harness/mutation_tools.py": "git-blob:e91db33374ac22f111b5737288c247d23767875b",
+    "jvagent/harness/native.py": "git-blob:3acc89a8e1ce503bb826ca6a24419ef503087e57",
+    "jvagent/harness/reconciliation.py": "git-blob:a739273b68500d6c8c239aaf49aa1e8325a261a3",
+    "jvagent/harness/recovery.py": "git-blob:0daedbdc1aace56dc3ee19a896db014044482fca",
+    "jvagent/harness/step_store.py": "git-blob:ce238fb839ef82b959818f578758411b73fd41ff"
+  },
+  "fixture": {
+    "backend": 8151,
+    "ui": 3140,
+    "database": "isolated PostgreSQL",
+    "model": "openai:gpt-4.1",
+    "runtime_functions_patched": false
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.463eaa4cdfe64758ac9278a0",
+      "session_id": "sess_6f728a43f8f64945",
+      "utterance": "Write exactly VERIFIED-RECOVERY-62 to interrupted.txt and confirm the tool result.",
+      "response": null,
+      "native_run": {
+        "run_id": "corr-1e5c429736524f7f8acafe6d9660addc",
+        "status": "running",
+        "history_source": {}
+      },
+      "seconds": null,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 479,
+            "prompt_tokens": 449,
+            "completion_tokens": 30,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001138,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-1e5c429736524f7f8acafe6d9660addc",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-1e5c429736524f7f8acafe6d9660addc:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-1e5c429736524f7f8acafe6d9660addc",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T09:05:41.411419Z",
+          "tool_call_id": "call_0dDueNNewn7RYsjCf9UMo4Lr",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-1e5c429736524f7f8acafe6d9660addc/call_0dDueNNewn7RYsjCf9UMo4Lr/sha256:5a79f1bfa7180fa763c984ee88e1ebf06b18da767b5282301a9d642740536845"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:05:38.847812Z"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:05:38.881861Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:05:41.326774Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_call_id": "call_0dDueNNewn7RYsjCf9UMo4Lr",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:05:41.414866Z"
+        }
+      ],
+      "sdk_registration_count": 1
+    },
+    {
+      "id": "n.Interaction.d46eb0d9d2514861b1b4110e",
+      "session_id": "sess_6f728a43f8f64945",
+      "utterance": "Do not repeat the write. Remember recovery code ORCHID-62 for my next question.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.463eaa4cdfe64758ac9278a0"
+      },
+      "seconds": 0.104646,
+      "calls": [],
+      "effects": [],
+      "events": [],
+      "sdk_registration_count": 0
+    },
+    {
+      "id": "n.Interaction.a5a9c37736f44eb3a1e56b9c",
+      "session_id": "sess_2405d00537f644b9",
+      "utterance": "Write exactly VERIFIED-RECOVERY-62 to verified.txt and confirm the tool result.",
+      "response": null,
+      "native_run": {
+        "run_id": "corr-c76f5447aa254753bdff94e6fe99a081",
+        "status": "running",
+        "history_source": {},
+        "effect_recovery": {
+          "actor": "o.User.8025594ea9004e73ac12d99e",
+          "facts": {
+            "usage": {
+              "total_tokens": 478,
+              "model_call_count": 1,
+              "reported_cost_usd": 0.0,
+              "estimated_cost_usd": 0.00113,
+              "unknown_cost_call_count": 0
+            },
+            "digest": "sha256:7c85138698f9b8d6e75659f04b089444729241b8181a5119a25023f66af1c8cd",
+            "run_id": "corr-c76f5447aa254753bdff94e6fe99a081",
+            "version": "verified-mutation-recovery-v1",
+            "frontier": "interrupted",
+            "tool_name": "file_interface__write_file",
+            "tool_call_id": "call_XofMgQ4aPX7mgsgUieX8rAmE",
+            "source_digest": "sha256:ff80e157aff4a85049e895a4f0fe0767d46037eca4010561c1dabce6c323b48a",
+            "effect_summary": "jv:mutation:file-write:v1",
+            "interaction_id": "n.Interaction.a5a9c37736f44eb3a1e56b9c",
+            "resource_scope": "sha256:5a79f1bfa7180fa763c984ee88e1ebf06b18da767b5282301a9d642740536845",
+            "conversation_id": "n.Conversation.2655e46d2a1e4aadb1772878",
+            "verified_result": {
+              "ok": true,
+              "path": "verified.txt",
+              "bytes": 20,
+              "sha256": "sha256:05e0565ff5948b0232550e3ac8871bca0773a98a2d023380b40b56ce5d772251",
+              "verification": "Current file matches recorded intent; original completion was not observed.",
+              "operator_verified": true
+            },
+            "verification_metadata": {
+              "jv_resource_version": {
+                "size": 20,
+                "created_at": "2026-11-06T05:08:57.832735",
+                "modified_at": "2026-11-06T05:08:57.832583",
+                "content_type": "text/plain"
+              }
+            }
+          },
+          "digest": "sha256:7c85138698f9b8d6e75659f04b089444729241b8181a5119a25023f66af1c8cd",
+          "reason": "Acknowledge verified state without repeating the mutation.",
+          "status": "approved",
+          "version": "verified-mutation-recovery-v1",
+          "evidence": "Operator inspected current local file digest and stopped worker; browser crash cohort.",
+          "created_at": "2026-11-06T09:10:02.214915+00:00"
+        }
+      },
+      "seconds": null,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 478,
+            "prompt_tokens": 449,
+            "completion_tokens": 29,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00113,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-c76f5447aa254753bdff94e6fe99a081",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-c76f5447aa254753bdff94e6fe99a081:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-c76f5447aa254753bdff94e6fe99a081",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T09:08:57.807160Z",
+          "tool_call_id": "call_XofMgQ4aPX7mgsgUieX8rAmE",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-c76f5447aa254753bdff94e6fe99a081/call_XofMgQ4aPX7mgsgUieX8rAmE/sha256:5a79f1bfa7180fa763c984ee88e1ebf06b18da767b5282301a9d642740536845"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:08:55.643908Z"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:08:55.705219Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:08:57.660063Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_call_id": "call_XofMgQ4aPX7mgsgUieX8rAmE",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:08:57.813411Z"
+        }
+      ],
+      "sdk_registration_count": 1
+    },
+    {
+      "id": "n.Interaction.39d23ec2381c49e7bf5e02f5",
+      "session_id": "sess_2405d00537f644b9",
+      "utterance": "Do not repeat that write. Remember recovery code ORCHID-62 for my next question.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.a5a9c37736f44eb3a1e56b9c"
+      },
+      "seconds": 0.087297,
+      "calls": [],
+      "effects": [],
+      "events": [],
+      "sdk_registration_count": 0
+    },
+    {
+      "id": "n.Interaction.41cbd0839ff54c93b0b02f2b",
+      "session_id": "sess_2405d00537f644b9",
+      "utterance": "The administrator has verified the interrupted write. Confirm what is known about verified.txt without writing it again, and tell me the recovery code from my blocked message.",
+      "response": "The file verified.txt contains exactly VERIFIED-RECOVERY-62, as confirmed by the administrator's verification of the interrupted write. The recovery code from your blocked message is ORCHID-62.",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 565,
+          "output_tokens": 41
+        },
+        "output": "The file verified.txt contains exactly VERIFIED-RECOVERY-62, as confirmed by the administrator's verification of the interrupted write. The recovery code from your blocked message is ORCHID-62.",
+        "run_id": "corr-68d5c2baa8d347778805db144db5aa66",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "operator_verified_effect",
+          "source_run_id": "corr-c76f5447aa254753bdff94e6fe99a081",
+          "recovery_digest": "sha256:7c85138698f9b8d6e75659f04b089444729241b8181a5119a25023f66af1c8cd",
+          "blocked_interaction_ids": [
+            "n.Interaction.39d23ec2381c49e7bf5e02f5"
+          ]
+        },
+        "usage_complete": true
+      },
+      "seconds": 2.729133,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 606,
+            "prompt_tokens": 565,
+            "completion_tokens": 41,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001458,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-68d5c2baa8d347778805db144db5aa66",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-68d5c2baa8d347778805db144db5aa66:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:14.515412Z"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:14.591832Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:15.989524Z"
+        },
+        {
+          "kind": "run_completed",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:16.095523Z"
+        }
+      ],
+      "sdk_registration_count": 1
+    },
+    {
+      "id": "n.Interaction.fe9e76b4ce49498aad5169eb",
+      "session_id": "sess_2405d00537f644b9",
+      "utterance": "Now write exactly NORMAL-AFTER-RECOVERY-62 to next.txt and confirm the tool result.",
+      "response": "The file next.txt was successfully written with exactly NORMAL-AFTER-RECOVERY-62.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1470,
+          "output_tokens": 52
+        },
+        "output": "The file next.txt was successfully written with exactly NORMAL-AFTER-RECOVERY-62.",
+        "run_id": "corr-d7be8590d80648168f6c001c4cebfc6e",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-68d5c2baa8d347778805db144db5aa66"
+        },
+        "usage_complete": true
+      },
+      "seconds": 3.49763,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 716,
+            "prompt_tokens": 685,
+            "completion_tokens": 31,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001618,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d7be8590d80648168f6c001c4cebfc6e",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-d7be8590d80648168f6c001c4cebfc6e:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 806,
+            "prompt_tokens": 785,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001738,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d7be8590d80648168f6c001c4cebfc6e",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-d7be8590d80648168f6c001c4cebfc6e:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-d7be8590d80648168f6c001c4cebfc6e",
+          "status": "completed",
+          "ended_at": "2026-11-06T09:10:44.900522Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T09:10:44.874294Z",
+          "tool_call_id": "call_LoWxH2pmADkU2K6tZMyJL7ZT",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-d7be8590d80648168f6c001c4cebfc6e/call_LoWxH2pmADkU2K6tZMyJL7ZT/sha256:5a79f1bfa7180fa763c984ee88e1ebf06b18da767b5282301a9d642740536845"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:43.026211Z"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:43.065534Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:44.790694Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_call_id": "call_LoWxH2pmADkU2K6tZMyJL7ZT",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:10:44.879224Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_call_id": "call_LoWxH2pmADkU2K6tZMyJL7ZT",
+          "tool_name": "file_interface__write_file",
+          "timestamp": "2026-11-06T09:10:44.905808Z"
+        },
+        {
+          "kind": "model_request_started",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:44.992945Z"
+        },
+        {
+          "kind": "model_request_completed",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:45.788281Z"
+        },
+        {
+          "kind": "run_completed",
+          "tool_call_id": null,
+          "tool_name": null,
+          "timestamp": "2026-11-06T09:10:45.903773Z"
+        }
+      ],
+      "sdk_registration_count": 1
+    }
+  ],
+  "crash_trigger": {
+    "pid": 75994,
+    "command_verified": true,
+    "file": "/private/tmp/jvagent-native-effect-recovery-smoke/files/n.Agent.b7ed88665c154db4a320191d/o.User.8025594ea9004e73ac12d99e/verified.txt",
+    "bytes": 20,
+    "sha256": "sha256:05e0565ff5948b0232550e3ac8871bca0773a98a2d023380b40b56ce5d772251",
+    "mtime_ns": 1793956137832583465,
+    "inode": 868974790,
+    "observed_at": "2026-11-06T09:08:57.834078+00:00",
+    "signal": "SIGKILL",
+    "runtime_functions_patched": false
+  },
+  "initial_crash_trigger": {
+    "pid": 75652,
+    "command_verified": true,
+    "file": "/private/tmp/jvagent-native-effect-recovery-smoke/files/n.Agent.b7ed88665c154db4a320191d/o.User.8025594ea9004e73ac12d99e/interrupted.txt",
+    "bytes": 20,
+    "sha256": "sha256:05e0565ff5948b0232550e3ac8871bca0773a98a2d023380b40b56ce5d772251",
+    "mtime_ns": 1793955941427442145,
+    "inode": 868966767,
+    "observed_at": "2026-11-06T09:05:41.428619+00:00",
+    "signal": "SIGKILL",
+    "runtime_functions_patched": false
+  },
+  "sdk_steps_original_digest_still_matches_approval": true,
+  "original_files_unchanged": true,
+  "cache_restore_unchanged": true,
+  "totals": {
+    "reported_calls": 5,
+    "reported_tokens": 3085,
+    "estimated_cost_usd": "0.007082",
+    "original_crash_runs_finalization": "incomplete; raw statuses remain running; approved recovery is a separate fact"
+  },
+  "operator_api": {
+    "inspect": 200,
+    "approve": 200,
+    "identical_retry": 200,
+    "identical_receipt": true,
+    "member_inspect": 403,
+    "member_approve": 403,
+    "anonymous_inspect": 401,
+    "anonymous_approve": 401,
+    "initial_flat_request_shape": 422,
+    "authorization_errors_hidden_by_CORS_in_browser_but_server_status_verified": true
+  },
+  "runtime": {
+    "process_id": 76158,
+    "observed_at": "2026-11-06T09:14:58.956477+00:00",
+    "source_blobs": {
+      "jvagent/action/file_interface/file_interface_action.py": "git-blob:7c1eed8c870860fe457ef4d039f0f48d8a55a6ce",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:62e7c0f1de9c8a133ae85ba7d6a35f4cf71e0b25",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:22796fcc87ccc322cbb1908069849bcb57fe0ee4",
+      "jvagent/core/execution_owner.py": "git-blob:b9556567465bb4c8e5af969801f1ff4f7b0a4d48",
+      "jvagent/harness/contracts.py": "git-blob:ed90b85df919b6daab50902f06babfbe1df94c27",
+      "jvagent/harness/effect_recovery.py": "git-blob:d13fe2ad3d6924efc1f10eace2e2682c6bb04cdd",
+      "jvagent/harness/mutation_tools.py": "git-blob:e91db33374ac22f111b5737288c247d23767875b",
+      "jvagent/harness/native.py": "git-blob:3acc89a8e1ce503bb826ca6a24419ef503087e57",
+      "jvagent/harness/reconciliation.py": "git-blob:a739273b68500d6c8c239aaf49aa1e8325a261a3",
+      "jvagent/harness/recovery.py": "git-blob:0daedbdc1aace56dc3ee19a896db014044482fca",
+      "jvagent/harness/step_store.py": "git-blob:ce238fb839ef82b959818f578758411b73fd41ff"
+    },
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "limits": [
+    "Single local worker, local text file, one reviewed mutation only",
+    "Unknown billing plus mutation recovery remains refused",
+    "No S3, remote effect, distributed fencing, child/background write recovery or invoice settlement qualification",
+    "Original MAC-derived identity failed the first restart; retained old record stays refused after boot-identity repair",
+    "SDK restored tool result appears as a tool group in current jvchat; this is not evidence of a second execution",
+    "Interrupted/blocked original replies are not restored by the completed-reply cache-loss projection",
+    "Browser end-to-end timing is unmeasured; reported seconds are Interaction elapsed times"
+  ],
+  "artifact_encoding": {
+    "idempotency_key": "sdk-effect-key: prefix identifies opaque SDK correlation keys; raw SQL assertions run before rendering",
+    "sha256": "sha256: prefix marks raw file digests for rendering; remove prefix for original SDK value. Raw fact-digest assertions precede rendering."
+  }
+}

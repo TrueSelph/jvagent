@@ -1,0 +1,793 @@
+{
+  "parent_revision": "git-commit:f40229400228f711a974ddfaa641b610acf0921e",
+  "source_blobs": {
+    "jvagent/harness/accounting.py": "git-blob:7609d626699ca481803e37b54905bd47f7824c6a",
+    "jvagent/memory/interaction.py": "git-blob:41910e6d78024d68e1cc573a6fd9e966dfb5996c",
+    "tests/harness/native/test_accounting.py": "git-blob:2583264c0898d9b1dc8209cc335393b2503b7834",
+    "jvagent/action/interview/engine.py": "git-blob:7b7581468efc51542c1f1b2c2f90a651092a2081",
+    "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+    "tests/harness/native/test_interview_branches.py": "git-blob:f83ae80314a5297143cf432722525fea79404756",
+    "tests/action/interview/test_native_branch_admission.py": "git-blob:e172a4dad0ec18f4c3d03e7707a4f08b3e3f7b75",
+    "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+    "jvagent/harness/native.py": "git-blob:0e762989151281e404ed6eba5d7914f0690367fd",
+    "jvagent/harness/recovery.py": "git-blob:221f8b445a566afb9f4db03dfcf81d4455b3d3e1",
+    "jvagent/action/interview/native.py": "git-blob:6b9b1ef322c80f4760ba808226179c0ac7367947",
+    "jvagent/action/interview/native_skill/SKILL.md": "git-blob:a667624ad24050775e30c3134de7a66b1ee7fed5",
+    "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:5b992c6592ad95085a3b3dd555835c1b768c3937",
+    "tests/harness/native/test_interview.py": "git-blob:af45ec338dc14aeaca7acc1dab1276e128ccc2f2",
+    "tests/harness/native/test_postgres_store.py": "git-blob:c6efd45de78bf95453ef3e94d0242712db399d1a"
+  },
+  "phase": "second-before-cancel",
+  "observed_at": "2026-11-05T18:24:23.129650+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "database": "jvagent_native_host_context",
+    "model": "openai:gpt-4.1",
+    "api_port": 8136,
+    "ui_port": 3136,
+    "public_entrypoint": true,
+    "skill": "---\nname: conversation\ndescription: Collect and confirm a premium or standard membership request\nextends: action:jvagent/interview\ninterview:\n  title: Membership request\n  summary: Collect and confirm a membership selection without external effects\n  confirm: manual\n  fields:\n    - key: tier\n      prompt: Premium or standard membership?\n      required: true\n      validator: text\n      branches:\n        - when: {op: equals, value: premium}\n          goto: premium_note\n      else: standard_note\n    - key: premium_note\n      prompt: What premium detail should I record?\n      required: true\n      validator: text\n      else: email\n    - key: standard_note\n      prompt: What standard detail should I record?\n      required: true\n      validator: text\n      else: email\n    - key: email\n      prompt: What email address should I record?\n      required: true\n      validator: email\n---\nUse the inherited procedure to collect and review the reachable membership fields.\nNormalize tier to lowercase premium or standard. Store explicit supplied details\nusing interview__set_fields. A correction can change the branch: follow the tool's\nreachable fields and pruned_fields, preserve the already stored shared email, and\nshow a fresh review before waiting for a new confirmation. Do not complete against\nan earlier review of different values. Do not claim to register, contact, or charge\nanyone; this is an isolated intake demonstration with no external effects.\n",
+    "patched_execution_functions": false
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.7e5f626f24314d67a0dd6504",
+      "session_id": "sess_6e7fd67021884808",
+      "interview": null,
+      "tasks": []
+    },
+    {
+      "id": "n.Conversation.7214baf8c1854ca8ac11f37e",
+      "session_id": "sess_5b38f6e788964696",
+      "interview": null,
+      "tasks": []
+    },
+    {
+      "id": "n.Conversation.9d7d5107a82945a58bacf5f7",
+      "session_id": "sess_cd8ac940b9e2424e",
+      "interview": null,
+      "tasks": [
+        {
+          "id": "task_86c68d3c7942",
+          "data": {
+            "interview_type": "conversation",
+            "interview_managed": true
+          },
+          "seed": {},
+          "order": 0,
+          "steps": [],
+          "title": "Membership request",
+          "status": "completed",
+          "resumes": null,
+          "snapshot": {},
+          "task_type": "SKILL",
+          "blocked_on": [],
+          "created_at": "2026-11-05T18:22:18.663267+00:00",
+          "updated_at": "2026-11-05T18:22:59.258847+00:00",
+          "description": "Collect and confirm a membership selection without external effects",
+          "completed_at": "2026-11-05T18:22:59.258847+00:00",
+          "owner_action": "conversation"
+        }
+      ]
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.913ede57923847449ec49934",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_6e7fd67021884808",
+      "utterance": "NATIVE-TIMING-CANCEL-CHECK: Please give a detailed 2000-word general explanation of how community groups organize membership programs, without starting an intake or using tools.",
+      "response": "Certainly! Here is a detailed general explanation of how community groups organize membership programs, covering key concepts, structures, and best practices. This overview is designed to be comprehensive and informative, suitable for anyone interested in understanding the process.\n\n---\n\n## Introduction\n\nCommunity groups\u2014ranging from neighborhood associations and cultural clubs to advocacy organizations and hobbyist societies\u2014often rely on membership programs to build a sense of belonging, sustain operations, and achieve their missions. Organizing a membership program is a multifaceted process that involves planning, outreach, administration, and ongoing engagement. This explanation explores the typical steps, structures, and considerations involved in creating and managing a successful membership program.\n\n---\n\n## 1. Defining the Purpose and Goals\n\n### a. Mission Alignment\nThe first step in organizing a membership program is to clarify its purpose. The program should align with the group\u2019s mission and objectives. For example, a community garden may seek members to help maintain plots, while a historical society may want to foster local heritage appreciation.\n\n### b. Goals\nCommon goals include:\n- Building a supportive community\n- Generating revenue through dues or donations\n- Expanding advocacy or outreach efforts\n- Providing services or benefits to members\n\n---\n\n## 2. Designing the Membership Structure\n\n### a. Membership Types\nGroups often offer different types of memberships, such as:\n- Individual\n- Family/household\n- Student/senior\n- Organizational/corporate\n\n### b. Membership Tiers\nSome programs have tiered levels (e.g., standard, premium, lifetime) with varying benefits and dues.\n\n### c. Eligibility Criteria\nEligibility may be open to all or restricted based on location, interest, or other factors.\n\n---\n\n## 3. Developing Membership Benefits\n\n### a. Tangible Benefits\nThese may include:\n- Access to events, workshops, or facilities\n- Newsletters or publications\n- Discounts on products or services\n- Voting rights in organizational decisions\n\n### b. Intangible Benefits\nThese include:\n- Sense of belonging\n- Opportunities for networking and leadership\n- Participation in meaningful projects\n\n---\n\n## 4. Setting Membership Dues and Fees\n\n### a. Determining Dues\nGroups must decide whether to charge dues, and if so, how much. Considerations include:\n- Organizational costs\n- Member demographics and ability to pay\n- Comparison with similar organizations\n\n### b. Payment Methods\nOptions include annual, monthly, or lifetime payments, and may be collected online, by mail, or in person.\n\n---\n\n## 5. Creating Policies and Procedures\n\n### a. Application Process\nGroups establish how individuals can join, which may involve:\n- Filling out an application form\n- Providing references or endorsements\n- Agreeing to a code of conduct\n\n### b. Approval and Onboarding\nSome groups automatically accept members, while others review applications. Onboarding may include welcome packets, orientation sessions, or mentorship.\n\n### c. Renewal and Lapse Policies\nClear procedures for renewing membership and handling lapsed members help maintain accurate records and engagement.\n\n---\n\n## 6. Outreach and Recruitment\n\n### a. Marketing Strategies\nEffective outreach may involve:\n- Social media campaigns\n- Community events\n- Partnerships with other organizations\n- Word-of-mouth referrals\n\n### b. Target Audiences\nGroups identify and target potential members who share their interests or values.\n\n---\n\n## 7. Member Engagement and Retention\n\n### a. Communication\nRegular communication is vital. Methods include:\n- Email newsletters\n- Social media groups\n- Meetings and forums\n\n### b. Events and Activities\nHosting events, workshops, or volunteer opportunities keeps members involved and invested.\n\n### c. Recognition and Appreciation\nAcknowledging member contributions through awards, spotlights, or thank-you notes fosters loyalty.\n\n---\n\n## 8. Administration and Record-Keeping\n\n### a. Membership Database\nMaintaining an up-to-date database is essential for tracking contact information, dues status, and participation.\n\n### b. Privacy and Security\nGroups must protect member data and comply with relevant privacy laws.\n\n### c. Volunteer or Staff Roles\nAssigning roles such as membership coordinator, treasurer, or communications officer ensures smooth operations.\n\n---\n\n## 9. Evaluation and Improvement\n\n### a. Feedback Mechanisms\nSoliciting feedback through surveys or suggestion boxes helps identify areas for improvement.\n\n### b. Program Assessment\nRegularly reviewing membership numbers, engagement levels, and financial health guides future planning.\n\n---\n\n## 10. Legal and Ethical Considerations\n\n### a. Bylaws and Governance\nMembership programs should be governed by clear bylaws outlining rights, responsibilities, and procedures.\n\n### b. Non-Discrimination\nPrograms should be inclusive and comply with anti-discrimination laws.\n\n### c. Transparency\nBeing transparent about finances, decision-making, and policies builds trust.\n\n---\n\n## 11. Technology and Tools\n\n### a. Membership Management Software\nMany groups use software to automate applications, renewals, payments, and communications.\n\n### b. Online Platforms\nWebsites, forums, and social media facilitate engagement and information sharing.\n\n---\n\n## 12. Case Study Examples\n\n### a. Neighborhood Association\nA neighborhood association may offer memberships to residents, providing voting rights, newsletters, and access to community events. Dues fund neighborhood improvements and advocacy efforts.\n\n### b. Cultural Club\nA cultural club might have student, adult, and family memberships, each with different dues and benefits such as language classes, cultural festivals, and networking opportunities.\n\n### c. Advocacy Organization\nAn advocacy group may offer free or paid memberships, with benefits like action alerts, training sessions, and opportunities to participate in campaigns.\n\n---\n\n## 13. Challenges and Solutions\n\n### a. Recruitment Difficulties\nSolution: Enhance outreach, offer incentives, and leverage current members as ambassadors.\n\n### b. Retention Issues\nSolution: Increase engagement, recognize contributions, and regularly assess member satisfaction.\n\n### c. Administrative Burden\nSolution: Use technology to automate tasks and delegate responsibilities among volunteers or staff.\n\n---\n\n## 14. Best Practices\n\n- Align membership programs with organizational mission and values.\n- Offer meaningful benefits that meet member needs.\n- Communicate regularly and transparently.\n- Foster a welcoming and inclusive environment.\n- Continuously evaluate and adapt the program.\n\n---\n\n## Conclusion\n\nOrganizing a membership program is a dynamic process that requires thoughtful planning, clear communication, and ongoing engagement. By understanding the needs of their community, offering valuable benefits, and maintaining effective administration, community groups can build strong, sustainable membership programs that advance their missions and create lasting impact.\n\n---\n\nThis overview provides a comprehensive foundation for understanding how community groups organize membership programs, covering the essential elements and considerations involved in the process.",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 1212,
+          "output_tokens": 1348
+        },
+        "output": "Certainly! Here is a detailed general explanation of how community groups organize membership programs, covering key concepts, structures, and best practices. This overview is designed to be comprehensive and informative, suitable for anyone interested in understanding the process.\n\n---\n\n## Introduction\n\nCommunity groups\u2014ranging from neighborhood associations and cultural clubs to advocacy organizations and hobbyist societies\u2014often rely on membership programs to build a sense of belonging, sustain operations, and achieve their missions. Organizing a membership program is a multifaceted process that involves planning, outreach, administration, and ongoing engagement. This explanation explores the typical steps, structures, and considerations involved in creating and managing a successful membership program.\n\n---\n\n## 1. Defining the Purpose and Goals\n\n### a. Mission Alignment\nThe first step in organizing a membership program is to clarify its purpose. The program should align with the group\u2019s mission and objectives. For example, a community garden may seek members to help maintain plots, while a historical society may want to foster local heritage appreciation.\n\n### b. Goals\nCommon goals include:\n- Building a supportive community\n- Generating revenue through dues or donations\n- Expanding advocacy or outreach efforts\n- Providing services or benefits to members\n\n---\n\n## 2. Designing the Membership Structure\n\n### a. Membership Types\nGroups often offer different types of memberships, such as:\n- Individual\n- Family/household\n- Student/senior\n- Organizational/corporate\n\n### b. Membership Tiers\nSome programs have tiered levels (e.g., standard, premium, lifetime) with varying benefits and dues.\n\n### c. Eligibility Criteria\nEligibility may be open to all or restricted based on location, interest, or other factors.\n\n---\n\n## 3. Developing Membership Benefits\n\n### a. Tangible Benefits\nThese may include:\n- Access to events, workshops, or facilities\n- Newsletters or publications\n- Discounts on products or services\n- Voting rights in organizational decisions\n\n### b. Intangible Benefits\nThese include:\n- Sense of belonging\n- Opportunities for networking and leadership\n- Participation in meaningful projects\n\n---\n\n## 4. Setting Membership Dues and Fees\n\n### a. Determining Dues\nGroups must decide whether to charge dues, and if so, how much. Considerations include:\n- Organizational costs\n- Member demographics and ability to pay\n- Comparison with similar organizations\n\n### b. Payment Methods\nOptions include annual, monthly, or lifetime payments, and may be collected online, by mail, or in person.\n\n---\n\n## 5. Creating Policies and Procedures\n\n### a. Application Process\nGroups establish how individuals can join, which may involve:\n- Filling out an application form\n- Providing references or endorsements\n- Agreeing to a code of conduct\n\n### b. Approval and Onboarding\nSome groups automatically accept members, while others review applications. Onboarding may include welcome packets, orientation sessions, or mentorship.\n\n### c. Renewal and Lapse Policies\nClear procedures for renewing membership and handling lapsed members help maintain accurate records and engagement.\n\n---\n\n## 6. Outreach and Recruitment\n\n### a. Marketing Strategies\nEffective outreach may involve:\n- Social media campaigns\n- Community events\n- Partnerships with other organizations\n- Word-of-mouth referrals\n\n### b. Target Audiences\nGroups identify and target potential members who share their interests or values.\n\n---\n\n## 7. Member Engagement and Retention\n\n### a. Communication\nRegular communication is vital. Methods include:\n- Email newsletters\n- Social media groups\n- Meetings and forums\n\n### b. Events and Activities\nHosting events, workshops, or volunteer opportunities keeps members involved and invested.\n\n### c. Recognition and Appreciation\nAcknowledging member contributions through awards, spotlights, or thank-you notes fosters loyalty.\n\n---\n\n## 8. Administration and Record-Keeping\n\n### a. Membership Database\nMaintaining an up-to-date database is essential for tracking contact information, dues status, and participation.\n\n### b. Privacy and Security\nGroups must protect member data and comply with relevant privacy laws.\n\n### c. Volunteer or Staff Roles\nAssigning roles such as membership coordinator, treasurer, or communications officer ensures smooth operations.\n\n---\n\n## 9. Evaluation and Improvement\n\n### a. Feedback Mechanisms\nSoliciting feedback through surveys or suggestion boxes helps identify areas for improvement.\n\n### b. Program Assessment\nRegularly reviewing membership numbers, engagement levels, and financial health guides future planning.\n\n---\n\n## 10. Legal and Ethical Considerations\n\n### a. Bylaws and Governance\nMembership programs should be governed by clear bylaws outlining rights, responsibilities, and procedures.\n\n### b. Non-Discrimination\nPrograms should be inclusive and comply with anti-discrimination laws.\n\n### c. Transparency\nBeing transparent about finances, decision-making, and policies builds trust.\n\n---\n\n## 11. Technology and Tools\n\n### a. Membership Management Software\nMany groups use software to automate applications, renewals, payments, and communications.\n\n### b. Online Platforms\nWebsites, forums, and social media facilitate engagement and information sharing.\n\n---\n\n## 12. Case Study Examples\n\n### a. Neighborhood Association\nA neighborhood association may offer memberships to residents, providing voting rights, newsletters, and access to community events. Dues fund neighborhood improvements and advocacy efforts.\n\n### b. Cultural Club\nA cultural club might have student, adult, and family memberships, each with different dues and benefits such as language classes, cultural festivals, and networking opportunities.\n\n### c. Advocacy Organization\nAn advocacy group may offer free or paid memberships, with benefits like action alerts, training sessions, and opportunities to participate in campaigns.\n\n---\n\n## 13. Challenges and Solutions\n\n### a. Recruitment Difficulties\nSolution: Enhance outreach, offer incentives, and leverage current members as ambassadors.\n\n### b. Retention Issues\nSolution: Increase engagement, recognize contributions, and regularly assess member satisfaction.\n\n### c. Administrative Burden\nSolution: Use technology to automate tasks and delegate responsibilities among volunteers or staff.\n\n---\n\n## 14. Best Practices\n\n- Align membership programs with organizational mission and values.\n- Offer meaningful benefits that meet member needs.\n- Communicate regularly and transparently.\n- Foster a welcoming and inclusive environment.\n- Continuously evaluate and adapt the program.\n\n---\n\n## Conclusion\n\nOrganizing a membership program is a dynamic process that requires thoughtful planning, clear communication, and ongoing engagement. By understanding the needs of their community, offering valuable benefits, and maintaining effective administration, community groups can build strong, sustainable membership programs that advance their missions and create lasting impact.\n\n---\n\nThis overview provides a comprehensive foundation for understanding how community groups organize membership programs, covering the essential elements and considerations involved in the process.",
+        "run_id": "corr-fe4a0a3fcb0442d09f6bda5097c5a320",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T18:23:47.591600+00:00",
+        "total_tokens": 2560,
+        "prompt_tokens": 1212,
+        "total_cost_usd": 0.013208,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 1348,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.013208,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 11.642,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 11.642,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T14:23:35.654864",
+      "completed_at": "2026-11-05T14:23:47.591462",
+      "closed": true,
+      "emitted": true,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-fe4a0a3fcb0442d09f6bda5097c5a320",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:23:35.733260Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_6e7fd67021884808",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-fe4a0a3fcb0442d09f6bda5097c5a320",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:23:35.775130Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_6e7fd67021884808",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-fe4a0a3fcb0442d09f6bda5097c5a320",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:23:47.416979Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_6e7fd67021884808",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-fe4a0a3fcb0442d09f6bda5097c5a320",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:23:47.498469Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_6e7fd67021884808",
+          "idempotency_key": "3:0:run_completed:"
+        }
+      ],
+      "effects": [],
+      "duration_seconds": 11.936598
+    },
+    {
+      "id": "n.Interaction.a179ee17e3964cd5b551aad7",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_cd8ac940b9e2424e",
+      "utterance": "NATIVE-TIMING-CHECK: Please record a standard membership request with standard detail weekend group sessions and email timing.member@example.com. Show me the review and wait for confirmation.",
+      "response": "Please review the details:\n\n**Tier**: standard  \n**Standard Note**: weekend group sessions  \n**Email**: timing.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 6110,
+          "output_tokens": 127
+        },
+        "output": "Please review the details:\n\n**Tier**: standard  \n**Standard Note**: weekend group sessions  \n**Email**: timing.member@example.com\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+        "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T18:22:24.132299+00:00",
+        "total_tokens": 6237,
+        "prompt_tokens": 6110,
+        "total_cost_usd": 0.009588,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 127,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.009588,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 2432,
+        "total_duration_seconds": 6.014,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 6.014,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T14:22:16.097405",
+      "completed_at": "2026-11-05T14:22:24.132246",
+      "closed": true,
+      "emitted": true,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:17.186618Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:17.219821Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:18.560369Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:18.639112Z",
+          "tool_name": "interview__start",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_Is2We0pGYIMX4WlRnlvrbvZr",
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "3:1:tool_call_started:call_Is2We0pGYIMX4WlRnlvrbvZr"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:18.683284Z",
+          "tool_name": "interview__start",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_Is2We0pGYIMX4WlRnlvrbvZr",
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "4:1:tool_call_completed:call_Is2We0pGYIMX4WlRnlvrbvZr"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:18.754590Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "5:2:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:20.000273Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "6:2:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:20.049764Z",
+          "tool_name": "interview__set_fields",
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": "call_yzjzjaxlGZxwExa3eYoyPr0C",
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "7:2:tool_call_started:call_yzjzjaxlGZxwExa3eYoyPr0C"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:20.084393Z",
+          "tool_name": "interview__set_fields",
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": "call_yzjzjaxlGZxwExa3eYoyPr0C",
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "8:2:tool_call_completed:call_yzjzjaxlGZxwExa3eYoyPr0C"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:20.150444Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "9:3:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:21.951412Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "10:3:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:22.008025Z",
+          "tool_name": "interview__review",
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": "call_3Le8zN927gQoFYiYsHiGQX7x",
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "11:3:tool_call_started:call_3Le8zN927gQoFYiYsHiGQX7x"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:22.045628Z",
+          "tool_name": "interview__review",
+          "agent_name": "jvagent-native",
+          "step_index": 3,
+          "tool_call_id": "call_3Le8zN927gQoFYiYsHiGQX7x",
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "12:3:tool_call_completed:call_3Le8zN927gQoFYiYsHiGQX7x"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:22.122184Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 4,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "13:4:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:23.749226Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 4,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "14:4:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:23.867111Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "15:0:run_completed:"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:22:18.680584Z",
+          "tool_name": "interview__start",
+          "started_at": "2026-11-05T18:22:18.635841Z",
+          "tool_call_id": "call_Is2We0pGYIMX4WlRnlvrbvZr",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:22:20.080104Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-05T18:22:20.044710Z",
+          "tool_call_id": "call_yzjzjaxlGZxwExa3eYoyPr0C",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-56184e91e18f41ec93fe766939ecc65b",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:22:22.039886Z",
+          "tool_name": "interview__review",
+          "started_at": "2026-11-05T18:22:22.001332Z",
+          "tool_call_id": "call_3Le8zN927gQoFYiYsHiGQX7x",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        }
+      ],
+      "duration_seconds": 8.034841
+    },
+    {
+      "id": "n.Interaction.b3fc1305525542e2ba9a0e8e",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_5b38f6e788964696",
+      "utterance": "NATIVE-TIMING-CANCEL-CHECK: Second cancellation timing probe. Write a detailed 4000-word general guide to running a community program, without starting an intake or using tools.",
+      "response": null,
+      "native_run": {
+        "run_id": "corr-4bc88d0c0cba4bd089ec5d0ee06c7a9b",
+        "status": "running",
+        "history_source": {}
+      },
+      "usage": {},
+      "started_at": "2026-11-05T14:24:22.197470",
+      "completed_at": null,
+      "closed": false,
+      "emitted": false,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-4bc88d0c0cba4bd089ec5d0ee06c7a9b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:24:22.264391Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_5b38f6e788964696",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-4bc88d0c0cba4bd089ec5d0ee06c7a9b",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:24:22.295962Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_5b38f6e788964696",
+          "idempotency_key": "1:1:model_request_started:"
+        }
+      ],
+      "effects": []
+    },
+    {
+      "id": "n.Interaction.c8954160082b4760895d4452",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_cd8ac940b9e2424e",
+      "utterance": "Confirm these standard membership details.",
+      "response": "Your standard membership request with the following details has been recorded:\n\n- Tier: standard\n- Standard Note: weekend group sessions\n- Email: timing.member@example.com\n\nThe process is now complete.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 3974,
+          "output_tokens": 54
+        },
+        "output": "Your standard membership request with the following details has been recorded:\n\n- Tier: standard\n- Standard Note: weekend group sessions\n- Email: timing.member@example.com\n\nThe process is now complete.",
+        "run_id": "corr-d320028a058f40f397c98c66bc001474",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-56184e91e18f41ec93fe766939ecc65b"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T18:23:01.183989+00:00",
+        "total_tokens": 4028,
+        "prompt_tokens": 3974,
+        "total_cost_usd": 0.003388,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 54,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.003388,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 3328,
+        "total_duration_seconds": 2.555,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.555,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T14:22:57.535659",
+      "completed_at": "2026-11-05T14:23:01.183926",
+      "closed": true,
+      "emitted": true,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:58.129821Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:58.160990Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:59.163292Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:59.226583Z",
+          "tool_name": "interview__complete",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_WbeYS9N6FdMrLXxm4QlDFQiP",
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "3:1:tool_call_started:call_WbeYS9N6FdMrLXxm4QlDFQiP"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:59.288627Z",
+          "tool_name": "interview__complete",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_WbeYS9N6FdMrLXxm4QlDFQiP",
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "4:1:tool_call_completed:call_WbeYS9N6FdMrLXxm4QlDFQiP"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:22:59.372674Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "5:2:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:23:00.925560Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "6:2:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T18:23:01.013197Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_cd8ac940b9e2424e",
+          "idempotency_key": "7:0:run_completed:"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-d320028a058f40f397c98c66bc001474",
+          "status": "completed",
+          "ended_at": "2026-11-05T18:22:59.282277Z",
+          "tool_name": "interview__complete",
+          "started_at": "2026-11-05T18:22:59.215419Z",
+          "tool_call_id": "call_WbeYS9N6FdMrLXxm4QlDFQiP",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": null
+        }
+      ],
+      "duration_seconds": 3.648267
+    }
+  ],
+  "module_observation": {
+    "source_blobs": {
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:7609d626699ca481803e37b54905bd47f7824c6a",
+      "jvagent/memory/interaction.py": "git-blob:41910e6d78024d68e1cc573a6fd9e966dfb5996c",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/action/interview/engine.py": "git-blob:7b7581468efc51542c1f1b2c2f90a651092a2081",
+      "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+      "jvagent/harness/native.py": "git-blob:0e762989151281e404ed6eba5d7914f0690367fd",
+      "jvagent/harness/skill_assets.py": "git-blob:6cd00c8a67ed378e3c84bdb15c87047bb2fb22a0",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:221f8b445a566afb9f4db03dfcf81d4455b3d3e1",
+      "jvagent/action/interview/native.py": "git-blob:6b9b1ef322c80f4760ba808226179c0ac7367947",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:a667624ad24050775e30c3134de7a66b1ee7fed5",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:5b992c6592ad95085a3b3dd555835c1b768c3937"
+    },
+    "process_id": 70067,
+    "observed_at": "2026-11-05T18:21:56.168754+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T18:24:22.944166+00:00"
+  }
+}

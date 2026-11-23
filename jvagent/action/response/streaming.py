@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, AsyncIterator, Dict, Optional
 
 from fastapi.responses import StreamingResponse
 
@@ -49,6 +49,7 @@ async def stream_messages(
     keepalive_seconds: Optional[float] = None,
     max_replay: Optional[int] = None,
     cursor: Optional[str] = None,
+    history: Optional[AsyncIterator[Dict[str, Any]]] = None,
 ) -> AsyncGenerator[str, None]:
     """Stream messages from response bus for a session.
 
@@ -72,19 +73,33 @@ async def stream_messages(
     Yields:
         SSE-formatted string chunks
     """
+    if cursor and getattr(response_bus, "native_execution", False) is True:
+        yield format_sse_chunk(
+            {
+                "type": "error",
+                "code": "native_cursor_replay_unsupported",
+                "message": "Durable native delivery replay is not yet qualified.",
+            }
+        )
+        return
+
     # Idle poll interval. Turn-scoped streams keep the original tight loop so
     # end-of-walk detection stays snappy; long-lived ones poll at the keepalive.
     poll_timeout = keepalive_seconds if keepalive_seconds else 0.1
     # Subscribe to new messages using asyncio.Queue for real-time delivery
-    message_queue: asyncio.Queue = asyncio.Queue()
+    message_queue: asyncio.Queue = asyncio.Queue(maxsize=256)
+    overflowed = False
     done = asyncio.Event()
 
     async def message_callback(message: Any) -> None:
         """Callback to receive new messages."""
+        nonlocal overflowed
         if interaction_id and message.interaction_id != interaction_id:
             return
         try:
-            await message_queue.put(message)
+            message_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            overflowed = True
         except Exception as e:
             logger.error(f"Error queuing message: {e}", exc_info=True)
 
@@ -99,6 +114,12 @@ async def stream_messages(
         # IDs emitted from durable replay must not also be emitted when an
         # in-process queue still has the same response during reconnect.
         replayed_ids: set = set()
+        # A native graph projection is read only. Subscribe before reading it
+        # so completion during that read is also present in the live queue.
+        if history is not None:
+            async for frame in history:
+                replayed_ids.add(_sse_dedup_key(frame))
+                yield format_sse_chunk(frame)
         # Durable outbox replay (HP-06) when a cursor is supplied. Live bus
         # backlog still covers in-process overlap; message ids remain the
         # dedup key (test_streaming_dedup).
@@ -135,11 +156,22 @@ async def stream_messages(
         for message in existing_messages:
             if interaction_id and message.interaction_id != interaction_id:
                 continue
+            if _sse_dedup_key(message) in replayed_ids:
+                continue
             replayed_ids.add(_sse_dedup_key(message))
             yield format_sse_chunk(message.to_dict())
 
         # Stream new messages as they arrive using queue-based waiting
         while True:
+            if overflowed:
+                yield format_sse_chunk(
+                    {
+                        "type": "error",
+                        "code": "subscription_overflow",
+                        "message": "The subscription fell behind. Reconnect to recover the bounded backlog.",
+                    }
+                )
+                return
             try:
                 # Wait for message with timeout to allow checking for done event
                 message = await asyncio.wait_for(

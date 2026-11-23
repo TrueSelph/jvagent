@@ -856,26 +856,17 @@ class ArtifactHandlerInteractAction(InteractAction):
     async def _ensure_access_group(
         self, visitor: Any, user_id: str, session_id: str
     ) -> None:
-        try:
-            access_control: Any = await self.get_action("AccessControlAction")
-        except Exception:
-            access_control = None
+        access_control: Any = await self.get_action("AccessControlAction")
         if access_control is None:
-            return
+            raise RuntimeError("required vault AccessControlAction is unavailable")
         group = f"private_{user_id}"
-        try:
-            await access_control.add_user_to_group(
-                group, user_id, action_label="PageIndexAction"
-            )
-        except Exception:
-            pass
+        await access_control.add_user_to_group(
+            group, user_id, action_label="PageIndexAction"
+        )
         if session_id and session_id != user_id:
-            try:
-                await access_control.add_user_to_group(
-                    group, session_id, action_label="PageIndexAction"
-                )
-            except Exception:
-                pass
+            await access_control.add_user_to_group(
+                group, session_id, action_label="PageIndexAction"
+            )
 
     # ── Accessible documents parameter ──
 
@@ -1386,7 +1377,7 @@ class ArtifactHandlerInteractAction(InteractAction):
         return mod
 
     async def _dispatch_tool(self, func_name: str, **kwargs: Any) -> str:
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         from .vault_tool_context import VaultToolContext
 

@@ -32,7 +32,7 @@ def signup_action():
     return action, spec
 
 
-async def _activate(action):
+async def _activate(action, *, complete_fields: bool = False):
     conversation = SimpleNamespace(context={}, save=AsyncMock())
     visitor = SimpleNamespace(
         conversation=conversation, tasks=SimpleNamespace(), utterance="sign me up"
@@ -43,8 +43,16 @@ async def _activate(action):
 
     action._save_session = _persist
     await action.on_skill_activate(
-        "signup_interview", visitor, user_message=visitor.utterance
+        "signup-interview", visitor, user_message=visitor.utterance
     )
+    if complete_fields:
+        # Review/confirmation tests require a genuinely complete domain record.
+        session = load_session(conversation)
+        session.set_value("user_name", "Jane Doe")
+        session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
+        session.set_value("user_email", "jane@training.invalid")
+        session.skip_field("phone_number")
+        await save_session(conversation, session)
     return visitor
 
 
@@ -69,7 +77,7 @@ async def test_complete_blocked_before_review_under_manual_confirm(signup_action
 async def test_complete_allowed_after_review(signup_action):
     """Once interview__review has run (status REVIEW), complete proceeds."""
     action, spec = signup_action
-    visitor = await _activate(action)
+    visitor = await _activate(action, complete_fields=True)
 
     await action._handle_review(visitor=visitor)
     result = json.loads(await action._handle_complete(visitor=visitor))
@@ -84,7 +92,7 @@ async def test_same_turn_review_complete_blocked_under_manual_confirm(signup_act
     the user's behalf — the summary was never seen. Blocked on the same
     interaction; allowed on the next one (user replied to the summary)."""
     action, spec = signup_action
-    visitor = await _activate(action)
+    visitor = await _activate(action, complete_fields=True)
     visitor.interaction = SimpleNamespace(id="turn-1")
 
     await action._handle_review(visitor=visitor)

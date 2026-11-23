@@ -1,0 +1,20 @@
+{
+  "page_id": 50,
+  "url": "http://127.0.0.1:3140/chat/n.Agent.b2c7e59d88914e4cb472d913",
+  "isolated_context": "native-effect-usage-reserve",
+  "snapshot": [
+    {
+      "type": "text",
+      "text": "## Latest page snapshot\nuid=682_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3140/chat/n.Agent.b2c7e59d88914e4cb472d913\"\n  uid=682_1 StaticText \"jvchat\"\n  uid=682_2 StaticText \"AGENT TESTING\"\n  uid=682_3 button \"New Conversation\"\n  uid=682_4 StaticText \"2\"\n  uid=682_5 StaticText \" conversation\"\n  uid=682_6 StaticText \"s\"\n  uid=682_7 StaticText \"The budget is restored. Write exactly VERIFIED-POLICY-74 to policy-next.txt and confirm the acknowledgement.\"\n  uid=682_8 button \"Delete conversation\"\n  uid=682_9 StaticText \"The budget has been restored. Write exactly AFTER-UNKNOWN-RECOVERY-73 to next.txt and confirm its acknowledgement.\"\n  uid=682_10 button \"Delete conversation\"\n  uid=682_11 button \"Logout\"\n  uid=682_12 button \"Collapse sidebar\"\n  uid=682_13 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=682_14 button \"Native Effect Reserve Qualification AGENT\" expandable haspopup=\"listbox\"\n  uid=682_15 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=682_16 button \"Copy token\" description=\"Copy access token\"\n  uid=682_17 button \"Switch to light mode\"\n  uid=683_0 StaticText \"Both administrator decisions are recorded. Confirm the verified state of final-uncertain.txt without writing it again, and recall both codes from my blocked messages.\"\n  uid=683_1 StaticText \"Acknowledged. The verified state of final-uncertain.txt is confirmed—no further write will be performed.\"\n  uid=683_2 StaticText \"Recovery codes recalled from your blocked messages:\"\n  uid=683_3 StaticText \"IRIS-74\"\n  uid=683_4 StaticText \"DAISY-74\"\n  uid=683_5 button \"gpt-4.1-2025-04-14 · 1 attempt · 681 tokens · 1.7s · 25.5 tok/s\"\n  uid=683_6 StaticText \"Do not write anything. Reply with FINAL-BUDGET-CHECK-74.\"\n  uid=683_7 StaticText \"FINAL-BUDGET-CHECK-74\"\n  uid=683_8 button \"gpt-4.1-2025-04-14 · 1 attempt · 766 tokens · 1.3s · 7.8 tok/s\"\n  uid=683_9 StaticText \"The budget is restored. Write exactly FINAL-AFTER-RECOVERY-74 to final-next.txt and confirm the tool acknowledgement.\"\n  uid=683_10 button \"1 tool call\" expandable\n  uid=683_11 StaticText \"Write to final-next.txt acknowledged: FINAL-AFTER-RECOVERY-74.\"\n  uid=683_12 button \"gpt-4.1-2025-04-14 · 2 attempts · 1.7k tokens · 2.5s · 20.1 tok/s\"\n  uid=683_13 StaticText \"The budget is restored. Write exactly VERIFIED-POLICY-74 to policy-next.txt and confirm the acknowledgement.\"\n  uid=683_14 button \"1 tool call\" expandable\n  uid=683_15 StaticText \"Write to policy-next.txt acknowledged: VERIFIED-POLICY-74.\"\n  uid=683_16 button \"gpt-4.1-2025-04-14 · 2 attempts · 2.1k tokens · 2.4s · 19.0 tok/s\"\n  uid=683_17 button \"Copy\"\n  uid=683_18 button \"Refresh\"\n  uid=683_19 button \"More\" expandable haspopup=\"menu\"\n  uid=683_20 button \"Scroll to bottom\"\n  uid=682_20 form\n    uid=682_21 textbox \"Message input\" multiline\n    uid=682_22 button \"Add Attachment\"\n    uid=682_23 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=682_24 button \"Send message\" disableable disabled\n"
+    }
+  ],
+  "assertions": {
+    "completed_responses_and_usage_restored": true,
+    "cache_loss_no_execution_or_spend": true,
+    "operator_decisions_survived_backend_restart": true
+  },
+  "limits": [
+    "Only completed reply pairs are restored; interrupted and failed notices remain outside this projection.",
+    "Earlier failed smoke attempts are retained in the linked SQL evidence."
+  ]
+}

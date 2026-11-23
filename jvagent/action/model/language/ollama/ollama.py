@@ -10,8 +10,9 @@ Supports both:
 
 import json
 import logging
+import math
 import uuid
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, ClassVar, Dict, List, Optional
 
 import httpx
 from jvspatial.core.annotations import attribute
@@ -54,6 +55,16 @@ class OllamaLanguageModelAction(LanguageModelAction):
     Implements the LanguageModelAction interface for Ollama's native /api/chat
     endpoint.
     """
+
+    pydantic_ai_supported_settings: ClassVar[frozenset[str]] = frozenset(
+        {
+            "seed",
+            "stop_sequences",
+            "top_k",
+            "presence_penalty",
+            "frequency_penalty",
+        }
+    )
 
     api_endpoint: str = attribute(
         default="http://localhost:11434",
@@ -238,6 +249,33 @@ class OllamaLanguageModelAction(LanguageModelAction):
             "total_tokens": prompt_tokens + completion_tokens,
         }
 
+    async def track_usage(
+        self,
+        usage: Dict[str, int],
+        duration: Optional[float] = None,
+        result: Any = None,
+    ) -> None:
+        """Preserve provider-reported costs or estimate metered cloud usage."""
+        metrics = getattr(result, "metrics", None)
+        if isinstance(metrics, dict):
+            reported = metrics.get("cost_usd")
+            from jvagent.action.model.cost_estimator import is_valid_cost_usd
+
+            if not is_valid_cost_usd(reported):
+                from jvagent.action.model.cost_estimator import estimate_cost
+
+                cost = estimate_cost(
+                    str(getattr(result, "model", "") or self.model),
+                    str(getattr(result, "provider", "") or self.provider),
+                    metrics or usage,
+                )
+                if cost > 0:
+                    metrics["cost_usd"] = cost
+                    metrics["cost_source"] = "jv_cost_estimator"
+            if is_valid_cost_usd(metrics.get("cost_usd")):
+                self.total_cost += float(metrics["cost_usd"])
+        await super().track_usage(usage, duration, result=result)
+
     def _normalize_tool_calls(self, raw_tool_calls: Any) -> List[Dict[str, Any]]:
         """Normalize Ollama-native tool calls to OpenAI function-call shape."""
         if not isinstance(raw_tool_calls, list):
@@ -331,6 +369,11 @@ class OllamaLanguageModelAction(LanguageModelAction):
             "top_p": kwargs.get("top_p", self.top_p),
             "num_predict": kwargs.get("max_tokens", self.max_tokens),
         }
+        for key in ("seed", "top_k", "presence_penalty", "frequency_penalty"):
+            if kwargs.get(key) is not None:
+                options[key] = kwargs[key]
+        if kwargs.get("stop") is not None:
+            options["stop"] = kwargs["stop"]
         payload: Dict[str, Any] = {
             "model": model_override,
             "messages": self._to_ollama_messages(messages),
@@ -388,7 +431,7 @@ class OllamaLanguageModelAction(LanguageModelAction):
             thinking_raw = message.get("thinking") or ""
             thinking_content = str(thinking_raw) if thinking_raw else None
 
-            return ModelActionResult(
+            result = ModelActionResult(
                 response=content,
                 usage=usage,
                 model=model_override,
@@ -397,6 +440,16 @@ class OllamaLanguageModelAction(LanguageModelAction):
                 tool_calls=self._normalize_tool_calls(message.get("tool_calls", [])),
                 thinking_content=thinking_content,
             )
+            reported_cost = data.get("cost_usd")
+            if (
+                isinstance(reported_cost, (int, float))
+                and not isinstance(reported_cost, bool)
+                and math.isfinite(float(reported_cost))
+                and reported_cost >= 0
+            ):
+                result.metrics["cost_usd"] = float(reported_cost)
+                result.metrics["cost_source"] = "ollama_response"
+            return result
         except httpx.HTTPStatusError:
             raise
         except httpx.TimeoutException:
@@ -484,6 +537,15 @@ class OllamaLanguageModelAction(LanguageModelAction):
                             # do not merge again (would duplicate when done chunk includes tools).
                             result.tool_calls = accumulated_tool_calls
                             result.metrics.update(self._extract_usage(chunk))
+                            reported_cost = chunk.get("cost_usd")
+                            if (
+                                isinstance(reported_cost, (int, float))
+                                and not isinstance(reported_cost, bool)
+                                and math.isfinite(float(reported_cost))
+                                and reported_cost >= 0
+                            ):
+                                result.metrics["cost_usd"] = float(reported_cost)
+                                result.metrics["cost_source"] = "ollama_response"
             except httpx.HTTPStatusError:
                 raise
             except httpx.TimeoutException:

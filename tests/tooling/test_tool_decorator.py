@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import pytest
 
 from jvagent.tooling.tool import Tool
 from jvagent.tooling.tool_decorator import TOOL_MARKER, ToolSpec, collect_tools, tool
+from jvagent.tooling.tool_result import ToolResultText
 
 
 class FakeAction:
@@ -33,6 +34,11 @@ class FakeAction:
     async def _hidden(self) -> str:
         """Underscore-named but still collected."""
         return "shh"
+
+    @tool(effect_class="read")
+    async def inspect(self) -> str:
+        """Read a record without mutating it."""
+        return "record"
 
     async def not_a_tool(self) -> str:
         """Undecorated — must be ignored."""
@@ -83,6 +89,40 @@ def test_underscore_method_collected_with_hints():
     assert hidden.binds_visitor is True
 
 
+def test_effect_class_is_carried_to_collected_tool():
+    tools = _by_name(collect_tools(FakeAction()))
+    assert tools["myact__inspect"].effect_class == "read"
+
+
+@pytest.mark.asyncio
+async def test_deadline_metadata_preserves_normal_method_and_wire_schema() -> None:
+    class Service:
+        @tool(name="deadline_read", effect_class="read", timeout_seconds=2)
+        async def read(self) -> str:
+            """Read a record."""
+            return "record"
+
+    service = Service()
+    declared = collect_tools(service)[0]
+    assert declared.timeout_seconds == 2.0
+    assert declared.to_serialized()["function"]["parameters"]["properties"] == {}
+    assert await service.read() == "record"
+
+
+@pytest.mark.parametrize(
+    "value", [0, -1, True, "private-invalid-deadline", float("nan"), float("inf")]
+)
+def test_invalid_deadline_is_rejected_during_collection(value: Any) -> None:
+    class Service:
+        @tool(timeout_seconds=value)
+        async def read(self) -> str:
+            return "record"
+
+    with pytest.raises(ValueError) as caught:
+        collect_tools(Service())
+    assert "private-invalid-deadline" not in str(caught.value)
+
+
 def test_undecorated_method_ignored():
     tools = _by_name(collect_tools(FakeAction()))
     assert all("not_a_tool" not in n for n in tools)
@@ -111,6 +151,21 @@ async def test_built_tool_calls_through_to_bound_method():
     tools = _by_name(collect_tools(FakeAction()))
     result = await tools["myact__greet"].call(who="ada")
     assert result.content == "hi ada"
+
+
+@pytest.mark.asyncio
+async def test_string_compatible_tool_result_preserves_host_metadata():
+    class FetchAction:
+        metadata = {"name": "fetch"}
+        label = None
+
+        @tool
+        async def read(self) -> str:
+            return ToolResultText("readable result", {"receipt": {"ok": True}})
+
+    result = await _by_name(collect_tools(FetchAction()))["fetch__read"].call()
+    assert result.content == "readable result"
+    assert result.metadata == {"receipt": {"ok": True}}
 
 
 def test_returns_empty_when_nothing_decorated():
@@ -151,4 +206,25 @@ async def test_web_fetch_uses_base_default():
     tools = await WebFetchAction().get_tools()
     assert [t.name for t in tools] == ["web_fetch__fetch"]
     assert isinstance(tools[0], Tool)
+    assert tools[0].effect_class == "read"
     assert tools[0].parameters_schema["required"] == ["url"]
+
+
+def test_effect_class_and_named_permission_metadata_survive_collection() -> None:
+    class NamedAction:
+        metadata = {"name": "named"}
+        label = "NamedAction"
+
+        @tool(
+            effect_class="read",
+            requires_tool_permission=True,
+            permission_denied_message="Restricted",
+        )
+        async def lookup(self) -> str:
+            """Read a protected value."""
+            return "value"
+
+    built = collect_tools(NamedAction())[0]
+    assert built.effect_class == "read"
+    assert built.requires_tool_permission is True
+    assert built.permission_denied_message == "Restricted"

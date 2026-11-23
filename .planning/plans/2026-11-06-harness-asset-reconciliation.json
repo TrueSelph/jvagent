@@ -1,0 +1,127 @@
+{
+  "schema": "jvagent.harness-source-coverage-reconciliation.v1",
+  "audited_parent": "git-commit:f0c2e2225c4a53aa7a6d040b24d09b51aa50cc67",
+  "baseline_revision": "7d689e4d",
+  "original_package_inventory": {
+    "action_manifests": 58,
+    "skills": 22
+  },
+  "complete_baseline_tracked_totals": {
+    "action_manifests": 59,
+    "skills": 36
+  },
+  "baseline_omissions": {
+    "action_manifests": [
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/actions/contrib/storefront/info.yaml",
+        "disposition": "Preserve app-local mock plugin; qualify its consumers/tools separately before cutover"
+      }
+    ],
+    "skills": [
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/example_leadgen/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/example_leadgen/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_faq/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_faq/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_inquiry_leads/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_inquiry_leads/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_search/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_search/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/render_ui/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/render_ui/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/docx/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/docx/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup_interview/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/smoke_frontmatter/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/smoke_frontmatter/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web_lookup/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_flows/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_flows/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_service_flows/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_service_flows/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_templates/SKILL.md",
+        "current_path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_templates/SKILL.md",
+        "disposition": "Preserve app-local authoring/extensions; qualify migration and consumer behavior explicitly"
+      },
+      {
+        "path": "tests/action/interview/fixtures/skills/onboarding_interview/SKILL.md",
+        "current_path": "tests/action/interview/fixtures/skills/onboarding_interview/SKILL.md",
+        "disposition": "Retain test fixture; source discovery is not runtime exposure"
+      },
+      {
+        "path": "tests/action/interview/fixtures/skills/pre_alert_interview/SKILL.md",
+        "current_path": "tests/action/interview/fixtures/skills/pre_alert_interview/SKILL.md",
+        "disposition": "Retain test fixture; source discovery is not runtime exposure"
+      }
+    ]
+  },
+  "renamed_skill_paths": {
+    "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web_lookup/SKILL.md": "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md",
+    "jvagent/skills/pageindex_search_with_references/SKILL.md": "jvagent/skills/pageindex-search-with-references/SKILL.md",
+    "jvagent/skills/pdf_generation/SKILL.md": "jvagent/skills/pdf-generation/SKILL.md"
+  },
+  "added_tracked_assets_since_baseline": {
+    "action_manifests": [
+      "jvagent/action/handoff_action/info.yaml",
+      "jvagent/action/native_harness/info.yaml",
+      "jvagent/action/pageindex_read/info.yaml"
+    ],
+    "skills": [
+      "jvagent/action/interview/native_skill/SKILL.md",
+      "jvagent/skills/delegate/SKILL.md"
+    ]
+  },
+  "removed_tracked_assets_since_baseline": {
+    "action_manifests": [
+      "jvagent/action/handoff_interact_action/info.yaml"
+    ],
+    "skills": []
+  },
+  "current_totals": {
+    "skills": 38,
+    "action_manifests": 61,
+    "agent_declarations": 2
+  },
+  "snapshot": "2026-11-06-harness-tracked-assets.json",
+  "qualification": "Source coverage only; no asset automatically promoted, migrated, executed, retired or deleted",
+  "limits": [
+    "Only Git-tracked repository assets and companions are covered; untracked/private/external deployment assets require separate inventory.",
+    "Companion digests bind directory contents, not runtime call graphs or dependency ownership.",
+    "SDK admission and real provider/browser/security/recovery/deployment compatibility gates remain independent."
+  ]
+}

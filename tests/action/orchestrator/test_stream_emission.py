@@ -17,6 +17,7 @@ from typing import Any, Dict, List
 from jvagent.action.orchestrator.orchestrator_interact_action import (
     OrchestratorInteractAction,
 )
+from jvagent.action.orchestrator.pilot.tools import PilotToolOutcome
 
 
 class _FakeBus:
@@ -76,6 +77,21 @@ async def test_emit_tool_thought_flags_errors():
         _visitor(bus=bus), "tool_result", "t", "s", obs="(tool error: boom)"
     )
     assert bus.published[0]["metadata"]["is_error"] is True
+
+
+async def test_emit_tool_thought_uses_explicit_status_without_text_markers():
+    bus = _FakeBus()
+    await OrchestratorInteractAction()._emit_tool_thought(
+        _visitor(bus=bus),
+        "tool_result",
+        "web_search__search",
+        "segment-1",
+        obs=PilotToolOutcome("timed_out", "Search timed out."),
+    )
+    metadata = bus.published[0]["metadata"]
+    assert metadata["tool_result"] == "Search timed out."
+    assert metadata["is_error"] is True
+    assert metadata["status"] == "timed_out"
 
 
 async def test_emit_tool_thought_uncapped_by_default():

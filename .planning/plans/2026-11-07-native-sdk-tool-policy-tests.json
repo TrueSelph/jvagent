@@ -1,0 +1,59 @@
+{
+  "checks": {
+    "native311": {
+      "log_sha256": "sha256:2e4acd78987e5e4eb475b49ffa9ba3463989c90e5242d0d8b8ac2b1fc58cc057",
+      "summary": "939 passed, 489 warnings in 127.12s (0:02:07)"
+    },
+    "native312": {
+      "log_sha256": "sha256:1dd2d39fb35fb31ce19ab2fb454deeb6003d4b189418b5926e8a29a81fe954a9",
+      "summary": "939 passed, 489 warnings in 129.58s (0:02:09)"
+    },
+    "transitional": {
+      "log_sha256": "sha256:c58b6e8c0dd4a6345f4430cfb39fce15b1158853c12b24fbca8c134ceb6f3a73",
+      "summary": "5139 passed, 73 skipped, 31 warnings in 118.27s (0:01:58)"
+    },
+    "focused": {
+      "log_sha256": "sha256:b5aedbddc558f5958fa4bf7759cf2e943bf9247a6df1f30d30a65cec93203e15",
+      "summary": "162 passed, 101 warnings in 17.04s"
+    },
+    "migration311": {
+      "log_sha256": "sha256:b309ae1884b569675dccafdc9b837d77c5b5cb76d6053dfdab74e9b511833851",
+      "summary": "226 passed in 2.39s"
+    },
+    "migration312": {
+      "log_sha256": "sha256:769e80938063d2746217e9a1eb16b2def321b38c1e77589f27cd4f8e6aa808a0",
+      "summary": "226 passed in 2.79s"
+    },
+    "docker": {
+      "log_sha256": "sha256:be60c3750986e5fcffb4c551a2b19c6ec304c2061cf26945ba68de949a7c036f",
+      "summary": "1 passed, 21 deselected, 1 warning in 5.71s"
+    },
+    "restored_affected": {
+      "log_sha256": "sha256:282a087cfab83c7bb2ddb4fd4db757b9958ff342cc840b55f015c188c9c64faa",
+      "summary": "MCP, tool deadlines and delegation passed after byte-for-byte restoration (exit 0)."
+    }
+  },
+  "commands": {
+    "native": "python /private/tmp/jv-channel-instructions-native-checks.py -> pytest tests/harness/native tests/action/pageindex/test_native_read_profile.py tests/action/web_fetch tests/action/interact/test_native_host_context.py -q -o addopts=; real PG, reviewed Docker image and bounded script root configured",
+    "migration": "python -m pytest -q tests/cli/test_harness_migrate.py tests/scaffold",
+    "transitional": "legacy qualified Python environment: pytest tests/",
+    "focused": "native Action, channel limits, deadlines, delegation and migration affected slices"
+  },
+  "mutation_checks": [
+    {
+      "guard": "mcp-clock",
+      "exit_code": 1,
+      "source_restored_sha256": "sha256:dd1748d420744a6de416ebf347c93d17b90c4ab17562f39472629fe1386ac002",
+      "observed": "Both RPC tests fail: slow call returns success after client deadline is removed despite adapter marker."
+    },
+    {
+      "guard": "pre-intent",
+      "exit_code": 1,
+      "source_restored_sha256": "sha256:d4e817827a361b7088b9abee1f758ac68f84a2b05a9f271e5281f70adc73f356",
+      "observed": "Pre-intent test fails: first receipt stays started instead of failed."
+    }
+  ],
+  "limitations": [
+    "Transitional skips remain explicit. No release or merge qualification."
+  ]
+}

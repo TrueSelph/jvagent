@@ -1,0 +1,19 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________________ test_output_cap_is_enforced_by_public_sdk ___________________
+tests/harness/native/test_native.py:159: in test_output_cap_is_enforced_by_public_sdk
+    with pytest.raises(UsageLimitExceeded):
+E   Failed: DID NOT RAISE UsageLimitExceeded
+=============================== warnings summary ===============================
+../../../../../../private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/_pytest/config/__init__.py:1507
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/_pytest/config/__init__.py:1507: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+tests/harness/native/test_native.py::test_output_cap_is_enforced_by_public_sdk
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/usage.py:673: CostNotFoundWarning: A `cost_limit` is set but cannot be enforced because no cost was calculated for this run. This usually means there is no pricing data for the model or provider in use. If the model is newer than your install, `pydantic_ai.prices.update_in_background()` can download current prices.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/harness/native/test_native.py::test_output_cap_is_enforced_by_public_sdk
+1 failed, 2 warnings in 0.58s

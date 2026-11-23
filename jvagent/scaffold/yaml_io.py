@@ -89,16 +89,27 @@ def write_agent_yaml(
         )
 
 
-def apply_agent_placeholders(obj: Any, title: str, description: str) -> Any:
+def apply_agent_placeholders(
+    obj: Any, title: str, description: str, *, agent_ref: str | None = None
+) -> Any:
     """Replace scaffold tokens in nested structures."""
     if isinstance(obj, str):
-        return obj.replace("__JVAGENT_SCAFFOLD_AGENT_TITLE__", title).replace(
+        text = obj.replace("__JVAGENT_SCAFFOLD_AGENT_TITLE__", title).replace(
             "__JVAGENT_SCAFFOLD_AGENT_DESCRIPTION__", description
+        )
+        return (
+            text.replace("__JVAGENT_SCAFFOLD_AGENT_REF__", agent_ref)
+            if agent_ref is not None
+            else text
         )
     if isinstance(obj, dict):
         return {
-            k: apply_agent_placeholders(v, title, description) for k, v in obj.items()
+            k: apply_agent_placeholders(v, title, description, agent_ref=agent_ref)
+            for k, v in obj.items()
         }
     if isinstance(obj, list):
-        return [apply_agent_placeholders(i, title, description) for i in obj]
+        return [
+            apply_agent_placeholders(i, title, description, agent_ref=agent_ref)
+            for i in obj
+        ]
     return obj

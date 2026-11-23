@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from jvagent.tooling.tool_executor import get_tool_visitor
+from jvagent.tooling.context import get_tool_visitor
 
 from . import tasks
 from .directive_compose import (
@@ -50,6 +49,7 @@ from .for_each import (
     is_for_each_child_key,
     maybe_advance_for_each,
     next_unanswered_child_key,
+    repeated_status,
     resolve_field_def,
     update_for_each_record_field,
     wipe_parent_for_each,
@@ -177,11 +177,6 @@ def _for_each_staged_example_snippets(
     review = '{"2": ' + json.dumps(staged_partial, separators=(",", ": ")) + "}"
     return full, partial, review
 
-
-_WORD_RE = re.compile(r"\b[a-z0-9_]{3,}\b", re.IGNORECASE)
-_LABEL_RE = re.compile(r"\b[a-z][a-z0-9_\-\s]{1,40}\s*(?:is|:|=)", re.IGNORECASE)
-_TIME_RE = re.compile(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b", re.IGNORECASE)
-_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
 # ---------------------------------------------------------------------------
 # Session plumbing
@@ -528,65 +523,6 @@ def _normalize_field_map(
     return {str(k): str(v) for k, v in fields.items() if v is not None}
 
 
-def _latest_user_text(visitor: Any = None) -> str:
-    utterance = getattr(visitor, "utterance", None)
-    if isinstance(utterance, str):
-        return utterance.strip()
-    interaction = getattr(visitor, "interaction", None) if visitor else None
-    request = getattr(interaction, "request", None) if interaction else None
-    text = getattr(request, "text", None) if request else None
-    if isinstance(text, str):
-        return text.strip()
-    return ""
-
-
-def _field_text_tokens(fdef: FieldDef) -> List[str]:
-    source = " ".join(
-        [fdef.key.replace("_", " "), fdef.prompt or "", fdef.guidance or ""]
-    ).lower()
-    return [token for token in _WORD_RE.findall(source) if len(token) >= 4]
-
-
-def _under_extracted_candidate_keys(
-    spec: InterviewSpec,
-    field_map: Dict[str, str],
-    visitor: Any = None,
-) -> List[str]:
-    """Detect likely under-extraction when a compound utterance yields one key."""
-    if len(field_map) != 1:
-        return []
-    text = _latest_user_text(visitor)
-    if not text:
-        return []
-
-    lower = text.lower()
-    compound_signals = 0
-    if " and " in lower:
-        compound_signals += 1
-    if "," in text or ";" in text:
-        compound_signals += 1
-    if len(_LABEL_RE.findall(text)) >= 2:
-        compound_signals += 1
-    if _EMAIL_RE.search(text):
-        compound_signals += 1
-    if _TIME_RE.search(text):
-        compound_signals += 1
-    if compound_signals < 2:
-        return []
-
-    submitted = set(field_map.keys())
-    candidates: List[str] = []
-    for fdef in spec.fields:
-        if fdef.key in submitted:
-            continue
-        tokens = _field_text_tokens(fdef)
-        if not tokens:
-            continue
-        if any(re.search(rf"\b{re.escape(token)}\b", lower) for token in tokens):
-            candidates.append(fdef.key)
-    return candidates
-
-
 async def _chain_hint(
     action: Any,
     session: InterviewSession,
@@ -634,8 +570,6 @@ async def handle_set_fields(
             status="completed",
             response_directive=restart_session_directive(session.interview_type),
         )
-
-    under_extracted_keys = _under_extracted_candidate_keys(spec, field_map, visitor)
 
     load_fn = action._load_fn(spec)
     ordered = sorted(
@@ -1015,20 +949,6 @@ async def handle_set_fields(
 
     if stored_any:
         await action._save_session(session, visitor)
-
-    if under_extracted_keys and not failures:
-        append_system_event(
-            system_queue,
-            field=sorted(field_map.keys())[0] if field_map else "",
-            stage="set",
-            source="under_extract_heuristic",
-            system_message=(
-                "Likely compound utterance with only one submitted field. "
-                f"Review the latest user message for additional values "
-                f"({', '.join(under_extracted_keys)}) and call interview__set_fields "
-                "again when confident."
-            ),
-        )
 
     complete_check = completion_candidates[-1] if completion_candidates else None
     if complete_check is not None and not failures:
@@ -1900,6 +1820,25 @@ def _fields_fingerprint(collected: Dict[str, Any]) -> str:
         return str(sorted((collected or {}).items()))
 
 
+def _review_fingerprint(session: InterviewSession) -> str:
+    values: Dict[str, Any] = session.get_collected_summary()
+    repeated = get_for_each_store(session)
+    if repeated:
+        values = {"fields": values, "for_each": repeated}
+    return _fields_fingerprint(values)
+
+
+def _pending_repeated_field(
+    session: InterviewSession, spec: InterviewSpec
+) -> Optional[str]:
+    for parent in spec.fields:
+        if parent.for_each and session.has_field(parent.key):
+            state = get_for_each_state(session, parent.key)
+            if state is None or state.get("status") not in {"complete", "skipped"}:
+                return parent.key
+    return None
+
+
 def _interaction_marker(visitor: Any) -> str:
     """Stable id for the current interaction turn (empty when unavailable)."""
     interaction = getattr(visitor, "interaction", None)
@@ -1911,6 +1850,14 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
         return _no_session_response()
+
+    if _pending_repeated_field(session, spec):
+        return interview_tool_response(
+            ok=False,
+            status="active",
+            error="Repeated items are incomplete.",
+            next_tool="interview__next_field",
+        )
 
     collected = session.get_collected_summary()
     visible_keys = await compute_review_field_keys(
@@ -1931,15 +1878,11 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
         marker = _interaction_marker(visitor)
         stamped = str(session.context.get(REVIEW_PRESENTED_MARKER_KEY) or "")
         stored_fields = session.context.get(REVIEW_PRESENTED_FIELDS_KEY)
-        # Absent (not merely different) means the summary was stamped by a build
-        # that predates the fingerprint, or by a path that doesn't record one.
-        # Treat that as unchanged and fall back to the marker alone — reading
-        # absence as "something changed" silently disables the guard for every
-        # in-flight session, which is exactly how the echo reached a user again
-        # after the first fix shipped.
-        unchanged = stored_fields is None or str(stored_fields) == _fields_fingerprint(
-            collected
-        )
+        # A missing fingerprint cannot prove which values were reviewed.
+        # Present a fresh summary instead of looping against the completion gate.
+        unchanged = stored_fields is not None and str(
+            stored_fields
+        ) == _review_fingerprint(session)
         if stamped and marker and stamped != marker and unchanged:
             return interview_tool_response(
                 ok=True,
@@ -1969,7 +1912,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
         )
         session.status = InterviewStatus.REVIEW
         session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
-        session.context[REVIEW_PRESENTED_FIELDS_KEY] = _fields_fingerprint(collected)
+        session.context[REVIEW_PRESENTED_FIELDS_KEY] = _review_fingerprint(session)
         await action._save_session(session, visitor)
         return _review_response(session, spec, review_fields, summary)
 
@@ -2041,7 +1984,7 @@ async def handle_review(action: Any, visitor: Any = None) -> str:
     )
     session.status = InterviewStatus.REVIEW
     session.context[REVIEW_PRESENTED_MARKER_KEY] = _interaction_marker(visitor)
-    session.context[REVIEW_PRESENTED_FIELDS_KEY] = _fields_fingerprint(collected)
+    session.context[REVIEW_PRESENTED_FIELDS_KEY] = _review_fingerprint(session)
     await action._save_session(session, visitor)
     review_fields = {
         k: collected[k] for k in visible_keys if k in collected and k not in omit_fields
@@ -2060,6 +2003,13 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
     session, spec = await action._get_session_and_contract(visitor)
     if not session or not spec:
         return _no_session_response()
+    if _pending_repeated_field(session, spec):
+        return interview_tool_response(
+            ok=False,
+            status="active",
+            error="Repeated items are incomplete.",
+            next_tool="interview__next_field",
+        )
 
     # Review gate (invariant #5): under manual confirmation the review step MUST
     # run before completion. Without this backstop a model that jumps straight to
@@ -2072,6 +2022,17 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
             ok=False,
             status=session.status.value,
             error="Review required before completion.",
+            next_tool="interview__review",
+            response_directive=call_tool_directive("interview__review"),
+        )
+
+    if spec.confirm != "auto" and session.context.get(
+        REVIEW_PRESENTED_FIELDS_KEY
+    ) != _review_fingerprint(session):
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error="The current values require a fresh review before completion.",
             next_tool="interview__review",
             response_directive=call_tool_directive("interview__review"),
         )
@@ -2096,6 +2057,19 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
                     "before calling interview__complete."
                 ),
             )
+
+    missing = await compute_missing_required(
+        session, spec, action._load_fn(spec), visitor, action
+    )
+    if missing:
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error="Required fields are incomplete.",
+            missing_required=missing,
+            next_tool="interview__next_field",
+            response_directive=call_tool_directive("interview__next_field"),
+        )
 
     fields_summary = session.get_collected_summary()
     complete_fn = spec.handlers.complete
@@ -2138,6 +2112,18 @@ async def handle_complete(action: Any, visitor: Any = None) -> str:
     parsed = coerce_hook_result(result)
 
     # Deferred completion: async / queue work still open. Keep session + task.
+    if parsed.get("ok") is False or parsed.get("status") in {"error", "failed"}:
+        await action._save_session(session, visitor)
+        return interview_tool_response(
+            ok=False,
+            status=session.status.value,
+            error=parsed.get("error") or "Completion handler did not confirm success.",
+            response_directive=parsed.get("response_directive")
+            or "Completion did not succeed; the interview remains open.",
+            completion_result=parsed,
+            fields=fields_summary,
+        )
+
     if str(parsed.get("status") or "") == "extraction_pending":
         payload: Dict[str, Any] = {
             "ok": True,
@@ -2352,6 +2338,8 @@ async def handle_get_status(action: Any, visitor: Any = None) -> str:
         skipped_fields=sorted(session.skipped_fields) or None,
         started_at=session.started_at,
         field_reference=fields_reference(spec) if spec else None,
+        repeated_items=repeated_status(session) or None,
+        staged_item_fields=session.context.get("_for_each_staged") or None,
         next_field_key=(next_field["key"] if next_field else None),
         confirm=spec.confirm if spec else None,
         custom_tools=(

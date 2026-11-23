@@ -1,0 +1,14 @@
+{
+  "blockers": [
+    "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+    "Setting requires qualified native policy migration: channel_overrides",
+    "Setting requires qualified native policy migration: lock_active_flow",
+    "Model service has unqualified callers or provider declarations; review before removal"
+  ],
+  "selected_skill_count": 10,
+  "source_digest": "sha256:f922e97fd45f5bad2a94188557f5697ceb83974e266d407ba25be8073d790573",
+  "retired_actions": [
+    "jvagent/vision"
+  ],
+  "scope": "Offline proposals only; no reference graph/state cutover or module deletion."
+}

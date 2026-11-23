@@ -34,6 +34,7 @@ async def test_tick_initializes_actions_once_across_ticks():
 
     memory = MagicMock(id="mem-1")
     agent = MagicMock()
+    agent.get_actions = AsyncMock(return_value=[])
     agent.get_memory = AsyncMock(return_value=memory)
     agent.get_action_by_type = AsyncMock(return_value=None)
 

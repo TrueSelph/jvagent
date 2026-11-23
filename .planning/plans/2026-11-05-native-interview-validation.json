@@ -1,0 +1,43 @@
+{
+  "parent_revision": "git-commit:226c705f745bac838762fec81333f5b1b374dce9",
+  "source_blobs": {
+    "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+    "jvagent/harness/native.py": "git-blob:0e762989151281e404ed6eba5d7914f0690367fd",
+    "jvagent/harness/recovery.py": "git-blob:221f8b445a566afb9f4db03dfcf81d4455b3d3e1",
+    "jvagent/action/interview/native.py": "git-blob:3e331a83ede3cba5a63e806709f8349524d0c38c",
+    "jvagent/action/interview/native_skill/SKILL.md": "git-blob:cc7fe7f80c54588c6da8314dbaabf356c835b0d3",
+    "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:5b992c6592ad95085a3b3dd555835c1b768c3937",
+    "tests/harness/native/test_interview.py": "git-blob:aeceeb39eee56d6622f72030937d78d8b9270bba",
+    "tests/harness/native/test_native.py": "git-blob:604c696c30c4b827dff62280eb53ddf4a610f6bd",
+    "tests/harness/native/test_postgres_store.py": "git-blob:3ffee5cd88f02c1534f23194f1586eec172b99fc"
+  },
+  "checks": {
+    "native_and_real_postgres_python311": "280 passed, 177 warnings, 40.30 seconds",
+    "native_and_real_postgres_python312": "280 passed, 177 warnings, 40.45 seconds",
+    "legacy_interview": "282 passed, 2.14 seconds",
+    "recovery_mutation": "two expected failures when write-history guard removed, 1.11 seconds",
+    "task_close_mutation": "one expected failure when terminal task guard removed, 0.96 seconds",
+    "all_file_hooks": "passed on staged final source, tests and evidence; Git IDs are explicitly typed to avoid entropy false positives",
+    "full_suite_push": "independent publication gate"
+  },
+  "browser_totals": {
+    "delivered_turns": 7,
+    "provider_requests": 18,
+    "provider_reported_tokens": 25827,
+    "estimated_cost_usd": "0.029790",
+    "unknown_cost_call_count": 0,
+    "provider_invoiced_cost_available": false
+  },
+  "remaining": [
+    "full extension compatibility",
+    "operator reconciliation",
+    "client conversation reset",
+    "legacy parameter retirement",
+    "migration",
+    "single runtime deletion",
+    "provider/channel/deployment coverage",
+    "performance comparison",
+    "enterprise qualification"
+  ]
+}

@@ -33,7 +33,7 @@ def signup_action():
 @pytest.mark.asyncio
 async def test_set_fields_batch_stores_multiple(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
 
@@ -53,7 +53,7 @@ async def test_set_fields_batch_stores_multiple(signup_action):
 @pytest.mark.asyncio
 async def test_set_fields_correction_mid_active(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
@@ -74,7 +74,7 @@ async def test_set_fields_correction_mid_active(signup_action):
 @pytest.mark.asyncio
 async def test_set_fields_partial_success_keeps_valid_values(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
 
@@ -101,7 +101,7 @@ async def test_set_fields_partial_success_keeps_valid_values(signup_action):
 @pytest.mark.asyncio
 async def test_set_fields_multi_field_hooks_use_single_compact_directive(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
@@ -123,9 +123,11 @@ async def test_set_fields_multi_field_hooks_use_single_compact_directive(signup_
 
 
 @pytest.mark.asyncio
-async def test_set_fields_under_extracted_stores_and_nudges(signup_action):
+async def test_set_fields_stores_explicit_values_without_utterance_steering(
+    signup_action,
+):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
     visitor = SimpleNamespace(
@@ -144,13 +146,15 @@ async def test_set_fields_under_extracted_stores_and_nudges(signup_action):
 
     assert result["ok"] is True
     assert session.get_value("user_name") == "Jane Doe"
-    assert "user_email" in str(result.get("system_message", ""))
+    assert "user_email" not in str(result.get("system_message", ""))
+    assert "Likely compound utterance" not in str(result)
+    assert "user_email" not in session.fields
 
 
 @pytest.mark.asyncio
 async def test_set_fields_unknown_alias_keys_then_canonical_retry(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
 
@@ -199,7 +203,7 @@ async def test_set_fields_unknown_alias_keys_then_canonical_retry(signup_action)
 @pytest.mark.asyncio
 async def test_get_status_returns_collected_fields(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
 
@@ -213,7 +217,7 @@ async def test_get_status_returns_collected_fields(signup_action):
 @pytest.mark.asyncio
 async def test_review_email_correction_via_set_fields(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.status = InterviewStatus.REVIEW
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
@@ -254,7 +258,7 @@ def test_normalize_field_map_requires_fields_wrapper(signup_action):
 @pytest.mark.asyncio
 async def test_set_fields_return_is_slim(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
 
@@ -288,7 +292,7 @@ async def test_set_fields_return_is_slim(signup_action):
 @pytest.mark.asyncio
 async def test_set_fields_completion_return_is_slim(signup_action, monkeypatch):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
     action._clear_interview_session = AsyncMock()
@@ -323,7 +327,7 @@ async def test_batch_note_pairs_with_final_next_not_stale(signup_action):
     next field (phone), with the work-email note preserved.
     """
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
@@ -349,7 +353,7 @@ async def test_skipped_fields_surface_in_set_fields_after_skip(signup_action):
     """A correction after skipping an optional field reports skipped_fields so the
     model stays aware and does not re-prompt the skipped field."""
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "eldon@mail.com")
@@ -377,7 +381,7 @@ async def test_next_field_optional_signals_skip(signup_action):
     """An optional next field must carry required:False and a skip directive so a
     user decline routes to interview__skip_field."""
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     for k, v in [
         ("user_name", "Eldon Marks"),
         ("available_times", "Monday 9:00 AM - 11:00 AM"),
@@ -404,7 +408,7 @@ async def test_skip_field_without_key_skips_pending_field(signup_action):
     """A bare interview__skip_field() (no field_key) skips the current pending
     field — the model can decline the question just asked without naming it."""
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     for k, v in [
         ("user_name", "Eldon Marks"),
         ("available_times", "Monday 9:00 AM - 11:00 AM"),
@@ -431,7 +435,7 @@ async def test_inline_next_question_carries_key_without_skip_tool_text(signup_ac
     must still surface the canonical next_field_key — without injecting
     interview__skip_field into the reply directive."""
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()
 

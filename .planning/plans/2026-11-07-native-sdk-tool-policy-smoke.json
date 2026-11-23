@@ -1,0 +1,1364 @@
+{
+  "parent_revision": "git-commit:915854e557b55c81bbcacb2d5b576f46e8693516",
+  "scope": "Disposable empty PostgreSQL graph; backend8183, frozen byte-qualified UI3144, actual OpenAI GPT-4.1. No external business writes.",
+  "acceptance": {
+    "required": [
+      "Generated candidate preserves base2/default1 SDK execution deadlines",
+      "Actual GPT-4.1 MCP slow RPC times out once, then verified record read succeeds",
+      "Actual GPT-4.1 local Action slow read times out once, then file read succeeds",
+      "An accepted local write times out with one body and no model/queued retry",
+      "Follow-up after uncertain write is blocked before a model call",
+      "Cold readback and cached reload preserve graph receipts/results/spend"
+    ],
+    "clock_contract": [
+      "SDK function body clocks and MCP RPC clock use selected execution deadline",
+      "SDK capability-load controls and MCP initialization keep SDK run/setup bounds",
+      "No generic host timer or scheduler"
+    ],
+    "limitations": [
+      "No external write or real channel transport",
+      "No hard preemption or rollback guarantee"
+    ]
+  },
+  "source_epochs": [
+    {
+      "process_id": 9705,
+      "observed_at": "2026-11-07T05:14:21.873831+00:00",
+      "source_blobs": {
+        "jvagent/action/mcp/mcp_action.py": "git-blob:a8a49332a0348c4f89a2134657aebd41859bf8a7",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migrate.py": "git-blob:96af8f1452167b721b8694c6fd18b23530721240",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7",
+        "jvagent/harness/mcp.py": "git-blob:d6c041eb6e98edea125f5c2c7dda303ec58b3c7d",
+        "jvagent/harness/native.py": "git-blob:8d26ec62cb8cd8798b6e7dccb48fef0334588dbe",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 10559,
+      "observed_at": "2026-11-07T05:21:44.765517+00:00",
+      "source_blobs": {
+        "jvagent/action/mcp/mcp_action.py": "git-blob:a8a49332a0348c4f89a2134657aebd41859bf8a7",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migrate.py": "git-blob:96af8f1452167b721b8694c6fd18b23530721240",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7",
+        "jvagent/harness/mcp.py": "git-blob:d6c041eb6e98edea125f5c2c7dda303ec58b3c7d",
+        "jvagent/harness/mutation_tools.py": "git-blob:ffd599afe0590cffdc8cadb2e58dea6104404872",
+        "jvagent/harness/native.py": "git-blob:fe12d6308dbdf50c59ace90b279cdebe2b7ab25a",
+        "jvagent/harness/read_retries.py": "git-blob:b9869a4984cc35e7add06ceb7a141a2381976494",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.6d6edf9de9df48bbb857fd06",
+      "worker_pid": "9705",
+      "utterance": "Load deadline-probe. Test the MCP slow_lookup once. If it times out, use lookup_record for REHEARSAL-47 and report the room and start time. Do not write any marker.",
+      "response": "The MCP slow_lookup request timed out. Using the backup record for REHEARSAL-47:\n\n- Room: Cedar\n- Start time: 14:30",
+      "closed": true,
+      "session_id": "sess_07b5ae680861490e",
+      "started_at": "2026-11-07T01:08:17.991991",
+      "completed_at": "2026-11-07T01:08:30.926435",
+      "elapsed_seconds": 12.934444,
+      "usage": {
+        "last_updated": "2026-11-07T05:08:30.926593+00:00",
+        "total_tokens": 2329,
+        "prompt_tokens": 2237,
+        "total_cost_usd": 0.00521,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 92,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00521,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 4.845,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 4.845,
+        "unmeasured_model_attempt_count": 0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 2237,
+          "output_tokens": 92
+        },
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null,
+          "tool_timeout_seconds": 1.0
+        },
+        "output": "The MCP slow_lookup request timed out. Using the backup record for REHEARSAL-47:\n\n- Room: Cedar\n- Start time: 14:30",
+        "run_id": "corr-d093b021d6a949de93e5a3392ac6b673",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T05:08:30.872772+00:00",
+                "total_tokens": 2329,
+                "prompt_tokens": 2237,
+                "total_cost_usd": 0.00521,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 4,
+                "completion_tokens": 92,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.00521,
+                "model_attempt_count": 4,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 4.845,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 4.845,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-d093b021d6a949de93e5a3392ac6b673"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "effects": [
+        {
+          "run_id": "corr-d093b021d6a949de93e5a3392ac6b673",
+          "status": "completed",
+          "ended_at": "2026-11-07T05:08:23.857936Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T05:08:23.838298Z",
+          "tool_call_id": "provider-call-01",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-d093b021d6a949de93e5a3392ac6b673",
+          "status": "failed",
+          "ended_at": "2026-11-07T05:08:26.830768Z",
+          "tool_name": "mcp_records__slow_lookup",
+          "started_at": "2026-11-07T05:08:25.792434Z",
+          "tool_call_id": "provider-call-02",
+          "effect_summary": "ToolRetryError(\"Request 'tools/call' timed out\")",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-d093b021d6a949de93e5a3392ac6b673",
+          "status": "completed",
+          "ended_at": "2026-11-07T05:08:28.471519Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-07T05:08:28.425669Z",
+          "tool_call_id": "provider-call-03",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "timestamp": "2026-11-07T05:08:21.130241Z",
+          "step_index": 0
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:08:21.866481Z",
+          "step_index": 1
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:08:23.502873Z",
+          "step_index": 1
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:08:23.846205Z",
+          "step_index": 1,
+          "tool_name": "load_capability",
+          "tool_call_id": "provider-call-01"
+        },
+        {
+          "kind": "tool_call_completed",
+          "timestamp": "2026-11-07T05:08:23.870552Z",
+          "step_index": 1,
+          "tool_name": "load_capability",
+          "tool_call_id": "provider-call-01"
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:08:24.309407Z",
+          "step_index": 2
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:08:25.537806Z",
+          "step_index": 2
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:08:25.801993Z",
+          "step_index": 2,
+          "tool_name": "mcp_records__slow_lookup",
+          "tool_call_id": "provider-call-02"
+        },
+        {
+          "kind": "tool_call_failed",
+          "timestamp": "2026-11-07T05:08:26.845460Z",
+          "step_index": 2,
+          "tool_name": "mcp_records__slow_lookup",
+          "tool_call_id": "provider-call-02",
+          "error": "ToolRetryError(\"Request 'tools/call' timed out\")"
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:08:27.319256Z",
+          "step_index": 3
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:08:28.172951Z",
+          "step_index": 3
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:08:28.440003Z",
+          "step_index": 3,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "provider-call-03"
+        },
+        {
+          "kind": "tool_call_completed",
+          "timestamp": "2026-11-07T05:08:28.486041Z",
+          "step_index": 3,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "provider-call-03"
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:08:28.945919Z",
+          "step_index": 4
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:08:30.072319Z",
+          "step_index": 4
+        },
+        {
+          "kind": "run_completed",
+          "timestamp": "2026-11-07T05:08:30.545528Z",
+          "step_index": 0
+        }
+      ],
+      "model_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 293,
+            "prompt_tokens": 275,
+            "completion_tokens": 18,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000694,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d093b021d6a949de93e5a3392ac6b673",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-d093b021d6a949de93e5a3392ac6b673:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 627,
+            "prompt_tokens": 612,
+            "completion_tokens": 15,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001344,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d093b021d6a949de93e5a3392ac6b673",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-d093b021d6a949de93e5a3392ac6b673:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 672,
+            "prompt_tokens": 648,
+            "completion_tokens": 24,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001488,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d093b021d6a949de93e5a3392ac6b673",
+          "native_step_index": 3,
+          "native_receipt_key": "spend:default|run|*|corr-d093b021d6a949de93e5a3392ac6b673:3",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 737,
+            "prompt_tokens": 702,
+            "completion_tokens": 35,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001684,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d093b021d6a949de93e5a3392ac6b673",
+          "native_step_index": 4,
+          "native_receipt_key": "spend:default|run|*|corr-d093b021d6a949de93e5a3392ac6b673:4",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.5c99135fca324c17b3f0027d",
+      "worker_pid": "9705",
+      "utterance": "Now test the local Action slow_read once. If it times out, call fast_read once and report its exact value. Do not write any marker.",
+      "response": "The local Action slow_read timed out. The fast_read returned: SDK-DEADLINE-VERIFIED-58.",
+      "closed": true,
+      "session_id": "sess_07b5ae680861490e",
+      "started_at": "2026-11-07T01:09:16.938950",
+      "completed_at": "2026-11-07T01:09:25.177842",
+      "elapsed_seconds": 8.238892,
+      "usage": {
+        "last_updated": "2026-11-07T05:09:25.177961+00:00",
+        "total_tokens": 2481,
+        "prompt_tokens": 2426,
+        "total_cost_usd": 0.005292,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 55,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005292,
+        "model_attempt_count": 3,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.458,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.458,
+        "unmeasured_model_attempt_count": 0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 3,
+          "input_tokens": 2426,
+          "output_tokens": 55
+        },
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null,
+          "tool_timeout_seconds": 1.0
+        },
+        "output": "The local Action slow_read timed out. The fast_read returned: SDK-DEADLINE-VERIFIED-58.",
+        "run_id": "corr-627df36751ed49278bb7458005270f63",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T05:09:25.106030+00:00",
+                "total_tokens": 2481,
+                "prompt_tokens": 2426,
+                "total_cost_usd": 0.005292,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 3,
+                "completion_tokens": 55,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005292,
+                "model_attempt_count": 3,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 3.458,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.458,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-627df36751ed49278bb7458005270f63"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-d093b021d6a949de93e5a3392ac6b673"
+        },
+        "usage_complete": true
+      },
+      "effects": [
+        {
+          "run_id": "corr-627df36751ed49278bb7458005270f63",
+          "status": "failed",
+          "ended_at": "2026-11-07T05:09:20.701097Z",
+          "tool_name": "deadline_probe__slow_read",
+          "started_at": "2026-11-07T05:09:19.670867Z",
+          "tool_call_id": "provider-call-04",
+          "effect_summary": "ToolRetryError('Timed out after 1.0 seconds.')",
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-627df36751ed49278bb7458005270f63",
+          "status": "completed",
+          "ended_at": "2026-11-07T05:09:22.719140Z",
+          "tool_name": "deadline_probe__fast_read",
+          "started_at": "2026-11-07T05:09:22.681082Z",
+          "tool_call_id": "provider-call-05",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "timestamp": "2026-11-07T05:09:17.485972Z",
+          "step_index": 0
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:09:18.178875Z",
+          "step_index": 1
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:09:19.392103Z",
+          "step_index": 1
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:09:19.682317Z",
+          "step_index": 1,
+          "tool_name": "deadline_probe__slow_read",
+          "tool_call_id": "provider-call-04"
+        },
+        {
+          "kind": "tool_call_failed",
+          "timestamp": "2026-11-07T05:09:20.713459Z",
+          "step_index": 1,
+          "tool_name": "deadline_probe__slow_read",
+          "tool_call_id": "provider-call-04",
+          "error": "ToolRetryError('Timed out after 1.0 seconds.')"
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:09:21.189528Z",
+          "step_index": 2
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:09:22.401854Z",
+          "step_index": 2
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:09:22.695782Z",
+          "step_index": 2,
+          "tool_name": "deadline_probe__fast_read",
+          "tool_call_id": "provider-call-05"
+        },
+        {
+          "kind": "tool_call_completed",
+          "timestamp": "2026-11-07T05:09:22.734582Z",
+          "step_index": 2,
+          "tool_name": "deadline_probe__fast_read",
+          "tool_call_id": "provider-call-05"
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:09:23.225497Z",
+          "step_index": 3
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:09:24.257448Z",
+          "step_index": 3
+        },
+        {
+          "kind": "run_completed",
+          "timestamp": "2026-11-07T05:09:24.771453Z",
+          "step_index": 0
+        }
+      ],
+      "model_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 788,
+            "prompt_tokens": 773,
+            "completion_tokens": 15,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001666,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-627df36751ed49278bb7458005270f63",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-627df36751ed49278bb7458005270f63:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 825,
+            "prompt_tokens": 810,
+            "completion_tokens": 15,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00174,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-627df36751ed49278bb7458005270f63",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-627df36751ed49278bb7458005270f63:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 868,
+            "prompt_tokens": 843,
+            "completion_tokens": 25,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001886,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-627df36751ed49278bb7458005270f63",
+          "native_step_index": 3,
+          "native_receipt_key": "spend:default|run|*|corr-627df36751ed49278bb7458005270f63:3",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.a07159b5dbc746debc744876",
+      "worker_pid": "9705",
+      "utterance": "Load deadline-probe and call its write tool once to append one local marker. Do not retry on timeout or uncertainty.",
+      "response": "That operation may already have been accepted. Automatic retry is blocked until its outcome has been reconciled.",
+      "closed": true,
+      "session_id": "sess_111aa02f42a24bde",
+      "started_at": "2026-11-07T01:10:27.820875",
+      "completed_at": "2026-11-07T01:10:33.262778",
+      "elapsed_seconds": 5.441903,
+      "usage": {
+        "last_updated": "2026-11-07T05:10:33.262901+00:00",
+        "total_tokens": 885,
+        "prompt_tokens": 853,
+        "total_cost_usd": 0.001962,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 32,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001962,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.936,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.936,
+        "unmeasured_model_attempt_count": 0
+      },
+      "native_run": {
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null,
+          "tool_timeout_seconds": 1.0
+        },
+        "reason": "mutation_outcome_unknown",
+        "run_id": "corr-4b0908ce2a394a22b0bcdd46152b657c",
+        "status": "failed",
+        "failure_type": "MutationOutcomeUnknown",
+        "failure_origin": "read_retries.py:52:wrap_tool_execute",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "effects": [
+        {
+          "run_id": "corr-4b0908ce2a394a22b0bcdd46152b657c",
+          "status": "completed",
+          "ended_at": "2026-11-07T05:10:29.856816Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T05:10:29.839686Z",
+          "tool_call_id": "provider-call-06",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-4b0908ce2a394a22b0bcdd46152b657c",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "deadline_probe__write",
+          "started_at": "2026-11-07T05:10:31.671861Z",
+          "tool_call_id": "provider-call-07",
+          "effect_summary": "jv:mutation:deadline-probe:v1",
+          "idempotency_key": "corr-4b0908ce2a394a22b0bcdd46152b657c/provider-call-07"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "timestamp": "2026-11-07T05:10:27.942768Z",
+          "step_index": 0
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:10:28.765171Z",
+          "step_index": 1
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:10:29.592316Z",
+          "step_index": 1
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:10:29.846123Z",
+          "step_index": 1,
+          "tool_name": "load_capability",
+          "tool_call_id": "provider-call-06"
+        },
+        {
+          "kind": "tool_call_completed",
+          "timestamp": "2026-11-07T05:10:29.864956Z",
+          "step_index": 1,
+          "tool_name": "load_capability",
+          "tool_call_id": "provider-call-06"
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:10:30.304825Z",
+          "step_index": 2
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:10:31.414134Z",
+          "step_index": 2
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:10:31.681150Z",
+          "step_index": 2,
+          "tool_name": "deadline_probe__write",
+          "tool_call_id": "provider-call-07"
+        },
+        {
+          "kind": "run_failed",
+          "timestamp": "2026-11-07T05:10:32.910514Z",
+          "step_index": 0,
+          "error": "MutationOutcomeUnknown('An annotated mutation cannot be retried after SDK execution failure')"
+        }
+      ],
+      "model_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 276,
+            "prompt_tokens": 258,
+            "completion_tokens": 18,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00066,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-4b0908ce2a394a22b0bcdd46152b657c",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-4b0908ce2a394a22b0bcdd46152b657c:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 609,
+            "prompt_tokens": 595,
+            "completion_tokens": 14,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001302,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-4b0908ce2a394a22b0bcdd46152b657c",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-4b0908ce2a394a22b0bcdd46152b657c:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.eb5888c762634ce7a126aa84",
+      "worker_pid": null,
+      "utterance": "Try that marker write again.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "closed": true,
+      "session_id": "sess_111aa02f42a24bde",
+      "started_at": "2026-11-07T01:13:06.143984",
+      "completed_at": "2026-11-07T01:13:06.249531",
+      "elapsed_seconds": 0.105547,
+      "usage": {
+        "last_updated": "2026-11-07T05:13:06.249616+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.a07159b5dbc746debc744876"
+      },
+      "effects": [],
+      "events": [],
+      "model_receipts": []
+    },
+    {
+      "interaction_id": "n.Interaction.d030663934e84cb787f86b36",
+      "worker_pid": "10559",
+      "utterance": "After the restart, use fast_read and report its exact value.",
+      "response": "After the restart, the fast_read returned: SDK-DEADLINE-VERIFIED-58.",
+      "closed": true,
+      "session_id": "sess_07b5ae680861490e",
+      "started_at": "2026-11-07T01:19:43.717763",
+      "completed_at": "2026-11-07T01:19:52.892353",
+      "elapsed_seconds": 9.17459,
+      "usage": {
+        "last_updated": "2026-11-07T05:19:52.892463+00:00",
+        "total_tokens": 1843,
+        "prompt_tokens": 1807,
+        "total_cost_usd": 0.003902,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 36,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.003902,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.063,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.063,
+        "unmeasured_model_attempt_count": 0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1807,
+          "output_tokens": 36
+        },
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null,
+          "tool_timeout_seconds": 1.0
+        },
+        "output": "After the restart, the fast_read returned: SDK-DEADLINE-VERIFIED-58.",
+        "run_id": "corr-86b0ecc2cf374854a9112e9a2e401ac3",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T05:19:52.834146+00:00",
+                "total_tokens": 1843,
+                "prompt_tokens": 1807,
+                "total_cost_usd": 0.003902,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 36,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003902,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 3.063,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.063,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-86b0ecc2cf374854a9112e9a2e401ac3"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-627df36751ed49278bb7458005270f63"
+        },
+        "usage_complete": true
+      },
+      "effects": [
+        {
+          "run_id": "corr-86b0ecc2cf374854a9112e9a2e401ac3",
+          "status": "completed",
+          "ended_at": "2026-11-07T05:19:50.286460Z",
+          "tool_name": "deadline_probe__fast_read",
+          "started_at": "2026-11-07T05:19:50.252802Z",
+          "tool_call_id": "provider-call-08",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "timestamp": "2026-11-07T05:19:47.240911Z",
+          "step_index": 0
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:19:47.980768Z",
+          "step_index": 1
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:19:49.829088Z",
+          "step_index": 1
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:19:50.265600Z",
+          "step_index": 1,
+          "tool_name": "deadline_probe__fast_read",
+          "tool_call_id": "provider-call-08"
+        },
+        {
+          "kind": "tool_call_completed",
+          "timestamp": "2026-11-07T05:19:50.296181Z",
+          "step_index": 1,
+          "tool_name": "deadline_probe__fast_read",
+          "tool_call_id": "provider-call-08"
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:19:50.802839Z",
+          "step_index": 2
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:19:52.017291Z",
+          "step_index": 2
+        },
+        {
+          "kind": "run_completed",
+          "timestamp": "2026-11-07T05:19:52.517048Z",
+          "step_index": 0
+        }
+      ],
+      "model_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 902,
+            "prompt_tokens": 887,
+            "completion_tokens": 15,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001894,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-86b0ecc2cf374854a9112e9a2e401ac3",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-86b0ecc2cf374854a9112e9a2e401ac3:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 941,
+            "prompt_tokens": 920,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002008,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-86b0ecc2cf374854a9112e9a2e401ac3",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-86b0ecc2cf374854a9112e9a2e401ac3:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.e588ed44e9b44936b8fb3728",
+      "worker_pid": "10559",
+      "utterance": "Load deadline-probe. This is a new independent test: explicitly append one accepted marker using the write tool once. If it times out, do not retry or claim success.",
+      "response": "That operation may already have been accepted. Automatic retry is blocked until its outcome has been reconciled.",
+      "closed": true,
+      "session_id": "sess_ff311b8f8895420c",
+      "started_at": "2026-11-07T01:20:12.420293",
+      "completed_at": "2026-11-07T01:20:17.693146",
+      "elapsed_seconds": 5.272853,
+      "usage": {
+        "last_updated": "2026-11-07T05:20:17.693299+00:00",
+        "total_tokens": 907,
+        "prompt_tokens": 875,
+        "total_cost_usd": 0.002006,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 32,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002006,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.703,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.703,
+        "unmeasured_model_attempt_count": 0
+      },
+      "native_run": {
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 10,
+          "max_tool_calls": 40,
+          "timeout_seconds": 60.0,
+          "max_run_cost_usd": "2.00",
+          "max_output_tokens": null,
+          "tool_timeout_seconds": 1.0
+        },
+        "reason": "mutation_outcome_unknown",
+        "run_id": "corr-15afc0a60c004392aa0946a0049caa2c",
+        "status": "failed",
+        "failure_type": "MutationOutcomeUnknown",
+        "failure_origin": "read_retries.py:58:wrap_tool_execute",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "effects": [
+        {
+          "run_id": "corr-15afc0a60c004392aa0946a0049caa2c",
+          "status": "completed",
+          "ended_at": "2026-11-07T05:20:14.400475Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T05:20:14.381536Z",
+          "tool_call_id": "provider-call-09",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-15afc0a60c004392aa0946a0049caa2c",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "deadline_probe__write",
+          "started_at": "2026-11-07T05:20:16.008117Z",
+          "tool_call_id": "provider-call-10",
+          "effect_summary": "jv:mutation:deadline-probe:v1",
+          "idempotency_key": "corr-15afc0a60c004392aa0946a0049caa2c/provider-call-10"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "timestamp": "2026-11-07T05:20:12.555037Z",
+          "step_index": 0
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:20:13.302137Z",
+          "step_index": 1
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:20:14.143626Z",
+          "step_index": 1
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:20:14.388534Z",
+          "step_index": 1,
+          "tool_name": "load_capability",
+          "tool_call_id": "provider-call-09"
+        },
+        {
+          "kind": "tool_call_completed",
+          "timestamp": "2026-11-07T05:20:14.408646Z",
+          "step_index": 1,
+          "tool_name": "load_capability",
+          "tool_call_id": "provider-call-09"
+        },
+        {
+          "kind": "model_request_started",
+          "timestamp": "2026-11-07T05:20:14.893441Z",
+          "step_index": 2
+        },
+        {
+          "kind": "model_request_completed",
+          "timestamp": "2026-11-07T05:20:15.755079Z",
+          "step_index": 2
+        },
+        {
+          "kind": "tool_call_started",
+          "timestamp": "2026-11-07T05:20:16.018869Z",
+          "step_index": 2,
+          "tool_name": "deadline_probe__write",
+          "tool_call_id": "provider-call-10"
+        },
+        {
+          "kind": "run_failed",
+          "timestamp": "2026-11-07T05:20:17.260881Z",
+          "step_index": 0,
+          "error": "MutationOutcomeUnknown('An annotated mutation cannot be retried after SDK execution failure')"
+        }
+      ],
+      "model_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 287,
+            "prompt_tokens": 269,
+            "completion_tokens": 18,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.000682,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-15afc0a60c004392aa0946a0049caa2c",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-15afc0a60c004392aa0946a0049caa2c:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 620,
+            "prompt_tokens": 606,
+            "completion_tokens": 14,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001324,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-15afc0a60c004392aa0946a0049caa2c",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-15afc0a60c004392aa0946a0049caa2c:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "interaction_id": "n.Interaction.bae170529558405881ad9238",
+      "worker_pid": null,
+      "utterance": "Try that marker write again.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "closed": true,
+      "session_id": "sess_ff311b8f8895420c",
+      "started_at": "2026-11-07T01:20:34.461075",
+      "completed_at": "2026-11-07T01:20:34.587354",
+      "elapsed_seconds": 0.126279,
+      "usage": {
+        "last_updated": "2026-11-07T05:20:34.587423+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.e588ed44e9b44936b8fb3728"
+      },
+      "effects": [],
+      "events": [],
+      "model_receipts": []
+    }
+  ],
+  "totals": {
+    "model_requests": 13,
+    "provider_reported_tokens": 8445,
+    "estimated_cost_usd": "0.018372",
+    "provider_reported_cost_usd": "0",
+    "unknown_cost_call_count": 0
+  },
+  "conversation_spending": [
+    {
+      "conversation_id": "n.Conversation.35c77f8ff26c4b90a7181109",
+      "spent": {
+        "usd": "0.001962",
+        "tokens": 885,
+        "requests": 2,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "conversation_id": "n.Conversation.5a3860866f21463b98057b68",
+      "spent": {
+        "usd": "0.014404",
+        "tokens": 6653,
+        "requests": 9,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "conversation_id": "n.Conversation.6b3400946877429b9aa22841",
+      "spent": {
+        "usd": "0.002006",
+        "tokens": 907,
+        "requests": 2,
+        "unpriced_requests": 0
+      }
+    }
+  ],
+  "cold_readback_exact": {
+    "rows": true,
+    "conversations": true,
+    "registrations": true
+  },
+  "cached_reload_readback_exact": {
+    "rows": true,
+    "conversations": true,
+    "registrations": true
+  },
+  "marker_lines": 2,
+  "marker_intents": "Two explicit independent conversations; no automatic or follow-up retry.",
+  "probe_audit": [
+    {
+      "tool": "slow_read",
+      "pid": 9705,
+      "at": "2026-11-07T05:09:19.699420+00:00"
+    },
+    {
+      "tool": "fast_read",
+      "pid": 9705,
+      "at": "2026-11-07T05:09:22.714865+00:00"
+    },
+    {
+      "tool": "write_accepted",
+      "pid": 9705,
+      "at": "2026-11-07T05:10:31.710659+00:00"
+    },
+    {
+      "tool": "fast_read",
+      "pid": 10559,
+      "at": "2026-11-07T05:19:50.283956+00:00"
+    },
+    {
+      "tool": "write_accepted",
+      "pid": 10559,
+      "at": "2026-11-07T05:20:16.053887+00:00"
+    }
+  ],
+  "mcp_audit": [
+    "SLOW-start",
+    "SLOW-stop",
+    "REHEARSAL-47"
+  ],
+  "fixture_sha256": {
+    "agents/demo/assistant/actions/qualification/deadline_probe/__init__.py": "sha256:e4e056f501cbd7e2bee4a8a5ba3dcf05e269e5dc13905eaf8d526710fe38bedf",
+    "agents/demo/assistant/actions/qualification/deadline_probe/deadline_probe_action.py": "sha256:0f167fb84390b7d26df1b013745812fc60eb77649f0f9b99a40972b8cd99befc",
+    "agents/demo/assistant/actions/qualification/deadline_probe/endpoints.py": "sha256:9e1fe5f0f44504db804d0bd4e69dce02ce83aecbf101f403c6cb0bba27052161",
+    "agents/demo/assistant/actions/qualification/deadline_probe/info.yaml": "sha256:52fe4e6841186e6255781cd8d254673732d69b329346fce2c3ddab4858cad1f4",
+    "agents/demo/assistant/agent.yaml": "sha256:de3e9cd852cb266740a640db123f2b5f67205a4a3e4c3e04e0b56f61f2ba9b3b",
+    "agents/demo/assistant/skills/deadline-probe/SKILL.md": "sha256:8deb4da82cb232117ef173346562cd517b1b42949006597eee48567288130781"
+  },
+  "frontend_artifact_sha256": {
+    "assets/ChatInterface-CpKl2eGN.css": "sha256:1ea370447682afc2ab43cf4081772232f21acdf30dc25f400a60588480a5dafe",
+    "assets/ChatInterface-lrdnIXCk.js": "sha256:5ec8757ae9a44c99f0fcd808e6b94a9c80fedb3183e68b49c506bda523b50e77",
+    "assets/ChatRedirect-CYIr8iVr.js": "sha256:656de6e8b5c79f83ffcfd50b5557a3c9dd37473d9f4ec6f58131f2f57c82e6b2",
+    "assets/DebugInteractions-B-4dqr-p.js": "sha256:9b948f885a03215f086bc1bf1a8c5513f60793b0903f79f29604429ca057ce0b",
+    "assets/Login-DleGSgbG.js": "sha256:1d2eaaee5f03dfc91f8cc09544b12a27aa0d005d26fea73bde34c7c0eb555d81",
+    "assets/main-DH_gRVsF.css": "sha256:bab3487136e783d0d622f35a60d56e116d9b339f246eb5f61ea5cac340ef1a87",
+    "assets/main-DeN3J7NC.js": "sha256:dcf5a6b7d624b63c7d45c76cf4b416875a0e7ebc6c3c9447bd24bac38caa612e",
+    "assets/useAgents-DO1FNsk2.js": "sha256:0e73a066a2fc2e42a8b04f94166246cb4061331ac41f2df393daf4fead510efc",
+    "assets/useAuth-rV1-X0d0.js": "sha256:302acccc87d8e4f7039c13bd3381dae598a0c390f11ed183c4a777cfe4af7155",
+    "assets/vendor-cytoscape-CUqq0XTU.js": "sha256:9bb1dbac73bc986536b9d4f3c6509da2c104606dc115b3e03114361719388b7c",
+    "assets/vendor-d3-DznK3MmS.js": "sha256:56633e29226472b3d4affcaf13cca2721065d796d2c25d6e366eaa84dfead42e",
+    "assets/vendor-dagre-bridge-B2IYeVxy.js": "sha256:ba057e6ea4e77c708d44fcf1b1bd1a20d2c487d95ff107a94c25f218a124597d",
+    "assets/vendor-graphviz-C9sQj0WI.js": "sha256:892db92bc653ae6c8457fa1798d56cf055bfe327c96f1cecc2c288394f09c5bb",
+    "assets/vendor-markdown-B9moJQqy.js": "sha256:fd0c3342290dfd51549ef179e3065c58c3c5c08b5759d1a25095b99cc9ffd976",
+    "assets/vendor-react-CEqf_TvG.js": "sha256:8d7514ae05f82ab1e79f2f94261eeead2ee410d37b3ee0a37bd16aa61e4b4e60",
+    "index.html": "sha256:283ded0089eeb68e801e85648244db8d960814114484714ab74b99eed14031dc"
+  },
+  "limitations": [
+    "First four turns precede the pre-intent receipt repair; final three use the final source epoch.",
+    "Loader/output controls use SDK run deadline; MCP initialization uses its separate init deadline.",
+    "Actual-provider delayed admission, delegated cancellation and Docker deadline are not live-browser-qualified; separate deterministic SDK/Docker regressions cover them.",
+    "No retained legacy-state cutover, external effect reconciliation, comparative optimization, Meta transport or enterprise release qualification."
+  ]
+}

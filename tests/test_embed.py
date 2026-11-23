@@ -12,6 +12,8 @@ These tests assert the contract hosts depend on:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import jvagent
@@ -151,7 +153,7 @@ async def test_interact_stream_emits_error_for_missing_agent(tmp_path) -> None:
 # is awkward (Agent has required pydantic fields the host normally supplies
 # via app.yaml), so the happy-path tests here are minimal: they exercise
 # the contract that missing-resource paths return clean negatives without
-# raising. End-to-end multi-user isolation is covered by integral's smoke
+# raising. End-to-end multi-user isolation is covered by the embedding host smoke
 # test against a fully bootstrapped agent.
 
 
@@ -195,3 +197,18 @@ async def test_purge_user_rejects_missing_agent(tmp_path) -> None:
     await embed.bootstrap(app_root=tmp_path, ensure_admin=False)
     with pytest.raises(ResourceNotFoundError):
         await embed.purge_user(agent_id="nope", user_id="any")
+
+
+@pytest.mark.asyncio
+async def test_embed_bootstrap_refuses_failed_action_startup(
+    tmp_path, monkeypatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from jvagent.core.errors import ConfigError
+
+    monkeypatch.setattr(
+        "jvagent.core.startup.run_app_startup", AsyncMock(return_value=False)
+    )
+    with pytest.raises(ConfigError, match="initialization failed"):
+        await embed.bootstrap(app_root=tmp_path, ensure_admin=False)

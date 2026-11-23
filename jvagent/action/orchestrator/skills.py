@@ -89,6 +89,12 @@ class SkillDoc:
     allowed_groups: Tuple[str, ...] = ()
     denied_groups: Tuple[str, ...] = ()
     digest: str = ""
+    # Declared response guarantees; the capability pilot currently supports
+    # only evidence-backed factual output.
+    output_contract: str = "evidence_required"
+    # Resolver-recorded semantics outside the Pydantic pilot's supported SOP
+    # subset. The pilot compiler must reject these rather than ignore them.
+    unsupported_features: Tuple[str, ...] = ()
     metadata: dict = field(default_factory=dict)
 
 
@@ -229,6 +235,8 @@ def discover_skill_docs(
                 allowed_groups=tuple(bundle.get("allowed_groups") or ()),
                 denied_groups=tuple(bundle.get("denied_groups") or ()),
                 digest=str(bundle.get("digest") or ""),
+                output_contract=str(bundle.get("output_contract") or ""),
+                unsupported_features=tuple(bundle.get("unsupported_features") or ()),
                 metadata=bundle.get("metadata") or {},
             )
         )

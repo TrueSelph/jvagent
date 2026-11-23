@@ -62,7 +62,9 @@ async def test_the_prompt_is_identical_under_different_hash_seeds(tmp_path):
     assert first["USER"] == second["USER"], "user turn differs between interpreters"
     # Guard against the degenerate pass where both renders are empty.
     assert first["SYSTEM"][1] > 500
-    assert first["USER"][1] > 100
+    # The user role now contains only the exact utterance (test_prompt_contract
+    # guards this boundary), so a short but non-empty message is valid.
+    assert first["USER"][1] > 0
 
 
 async def test_repeated_renders_in_one_process_are_identical(wire):

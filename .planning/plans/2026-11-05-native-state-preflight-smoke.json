@@ -1,0 +1,279 @@
+{
+  "parent_revision": "git-commit:f0ef49a13b13b843a7eeb072cd2c8ed5c0f86bc4",
+  "observed_at": "2026-11-06T03:45:21.491733+00:00",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-canonical-skills-smoke",
+    "database": "jvagent_native_canonical_skills_20261105",
+    "backend_port": 8143,
+    "ui_port": 3136,
+    "browser_page": 39,
+    "index_backend": "isolated JsonDB",
+    "collections": [
+      "canonical-public",
+      "other-tenant"
+    ],
+    "no_execution_patch": true
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.31f42fffe6664db4970228d7",
+      "utterance": "Please re-read the Cedar Staff Handbook with the retrieval tool and confirm the opening date, room and booking code again with a citation.",
+      "response": "Cedar training opens on 21 November 2026 in the Orchid room. The booking code is CEDAR-83, according to the Cedar Staff Handbook[1].\n\nReferences:\n[1] Cedar Staff Handbook",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 8868,
+          "output_tokens": 81
+        },
+        "output": "Cedar training opens on 21 November 2026 in the Orchid room. The booking code is CEDAR-83, according to the Cedar Staff Handbook[1].\n\nReferences:\n[1] Cedar Staff Handbook",
+        "run_id": "corr-51f536a338154c26931271621bc138ce",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T03:37:50.721723+00:00",
+                "total_tokens": 8949,
+                "prompt_tokens": 8868,
+                "total_cost_usd": 0.005712,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 81,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005712,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 8448,
+                "total_duration_seconds": 3.47,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.47,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-51f536a338154c26931271621bc138ce"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-2ce498de07bc4611b959d781018cb4e7"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T03:37:50.763229+00:00",
+        "total_tokens": 8949,
+        "prompt_tokens": 8868,
+        "total_cost_usd": 0.005712,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 81,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005712,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 8448,
+        "total_duration_seconds": 3.47,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.47,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T23:37:46.157748",
+      "completed_at": "2026-11-05T23:37:50.763185",
+      "closed": true,
+      "emitted": true,
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 8,
+        "effects": 1,
+        "snapshots": 6
+      },
+      "snapshot_digest": "sha256:b8f4fa71e996daeef2e94fa08d87d1e6d495614e642f6c6f2d4bc824ade8b879",
+      "tool_calls": [
+        {
+          "name": "load_capability",
+          "arguments": "{\"id\":\"web-lookup\"}"
+        },
+        {
+          "name": "web_search__search",
+          "arguments": "{\"query\":\"Python official description site:python.org/about/\"}"
+        },
+        {
+          "name": "web_fetch__fetch",
+          "arguments": "{\"url\":\"https://www.python.org/about/\"}"
+        },
+        {
+          "name": "load_capability",
+          "arguments": "{\"id\":\"pageindex-search-with-references\"}"
+        },
+        {
+          "name": "pageindex__search",
+          "arguments": "{\"query\":\"training opening date, room, and booking code\",\"doc_name\":\"Cedar Staff Handbook\"}"
+        },
+        {
+          "name": "pageindex__search",
+          "arguments": "{\"query\":\"training opening date, room, and booking code\",\"doc_name\":\"Cedar Staff Handbook\"}"
+        }
+      ],
+      "foreign_document_marker_in_snapshot": false,
+      "persisted_seconds": 4.605437
+    }
+  ],
+  "conversation_accounting": [
+    {
+      "id": "n.Conversation.b62f18a8243c4154a21b4613",
+      "tasks": [],
+      "budget_counters": {
+        "default|conversation|*|sess_201de21c0b1d4079": {
+          "spent": {
+            "usd": "0.032854",
+            "tokens": 27296,
+            "requests": 10,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 10,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-0dad78bb31b64e828f640ddcab02e529": {
+          "spent": {
+            "usd": "0.008464",
+            "tokens": 4574,
+            "requests": 4,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 4,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-2ce498de07bc4611b959d781018cb4e7": {
+          "spent": {
+            "usd": "0.013022",
+            "tokens": 11200,
+            "requests": 3,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 3,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-344a6ca12de54519934bc891879a35cc": {
+          "spent": {
+            "usd": "0.005656",
+            "tokens": 2573,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-51f536a338154c26931271621bc138ce": {
+          "spent": {
+            "usd": "0.005712",
+            "tokens": 8949,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 2,
+          "reserve_markers": 0
+        }
+      }
+    }
+  ],
+  "graph_entities": {
+    "Root": 1,
+    "Agents": 1,
+    "App": 1,
+    "Agent": 1,
+    "Actions": 1,
+    "User": 1,
+    "Interaction": 4,
+    "Memory": 1,
+    "ConversationHealthState": 1,
+    "NativeHarnessAction": 1,
+    "SerperWebSearchAction": 1,
+    "WebFetchAction": 1,
+    "PageIndexReadAction": 1,
+    "ReplyAction": 1,
+    "Conversation": 1
+  },
+  "legacy_execution_nodes": [],
+  "module_observation": {
+    "python_executable": "/private/tmp/jvagent-unified-test-311/bin/python",
+    "jvagent_origin": "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/__init__.py",
+    "source_blobs": {
+      "jvagent/cli/harness_migrate.py": "git-blob:1a3b6ea5fe8eae0c695c5a558e7bee06a4d2ba73",
+      "jvagent/cli/harness_migration_skills.py": "git-blob:62a260934a1509418c83c6617396d6b6a57db20b",
+      "jvagent/skills/research/SKILL.md": "git-blob:a8cae08b85b5c87be42f34a204f90d0e1a4c810e",
+      "jvagent/skills/pageindex-search-with-references/SKILL.md": "git-blob:d1f71db055c74c581c093c3554c3dce12d51d169",
+      "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md": "git-blob:827ba5b1ac245bb6b82ba2f146e64ba1d121cffb",
+      "jvagent/action/web_search/serper/serper.py": "git-blob:3a07b8ce58a16e9278d3bab05e31ee91331de6dc",
+      "jvagent/cli/main.py": "git-blob:478df3e3ae6dbb42f46e24c7de78b0802130002e",
+      "jvagent/harness/skill_assets.py": "git-blob:a8ab2c6e91407a61b23747a401b87826fe77ce26",
+      "pyproject.toml": "git-blob:eeaa539bcb6ba38d9117cf461e9c00ceca16447a",
+      "uv.lock": "git-blob:5bce62c019de0ec10819d0e8a425c90e03abd843",
+      "jvagent/cli/server.py": "git-blob:a3b18dc5ed131f1d7a4d4157bf1fe5ed6395869c",
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:ea0e0f68e4cc33f9f6237d63d8a5b975e9ca9ad2",
+      "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/action/interview/engine.py": "git-blob:38c5146f341e7d67112e151ab72dec18a2187964",
+      "jvagent/core/task_dispatch.py": "git-blob:3d354440470af6e5c1a8c3471661358983a3658e",
+      "jvagent/core/app.py": "git-blob:234ac33a77cc8c37f9c43b49cc835faee77bf4f6",
+      "jvagent/action/reply/endpoints.py": "git-blob:3e6587a381dd8cbbbbda46096a68fe09277ea74d",
+      "jvagent/action/reply/reply_action.py": "git-blob:d36ce5ce301ad52a3b2b74895f02cd0c001b92ca",
+      "jvagent/action/response/response_bus.py": "git-blob:55b7f4aff61041aec3d469aed5ed03f3f0995842",
+      "jvagent/action/response/streaming.py": "git-blob:2f21bc5ea1438264f6c18abb28791f20c45f13cc",
+      "jvagent/action/response/native_replay.py": "git-blob:7552ec6a2432c860bfcf2e047ce2720d24038f8d",
+      "jvchat/src/config/api.ts": "git-blob:70c3513aeb567edcb045717f898b8573c3426785",
+      "jvchat/src/hooks/useAuth.ts": "git-blob:682eff88e7d4da608dac5055336f0f989b85952d",
+      "jvchat/src/hooks/useStreaming.ts": "git-blob:c5b4d03e416ed96706495a5df8cd5b415471639b",
+      "jvchat/src/lib/channelMessages.ts": "git-blob:4349931d03b12ce4675814ddc4f84e86f033aeb9",
+      "jvchat/src/lib/threadMessages.ts": "git-blob:8b885c78d888afaf15089611618f607f88da65f8",
+      "jvchat/src/lib/messageObservability.ts": "git-blob:42f8da47d9f982eb0255058d32f166b9bf8588f8",
+      "jvchat/src/components/assistant-ui/message-stats.tsx": "git-blob:bff76ac6f6e76c9fb452d9fae9baf7b9fe68ac3a",
+      "jvagent/action/task_monitor/task_monitor.py": "git-blob:d0f60fda9a8ec92a108ff1cd19e2f35e6e479c40",
+      "jvagent/action/task_monitor/finalize.py": "git-blob:fa26ff72734306780d447825bfdf34924b92f191",
+      "jvagent/action/interact/interact_walker.py": "git-blob:0d3eef8a3bd41030b5900dd2aa305fbf854c1f81",
+      "jvagent/action/interview/native_repeats.py": "git-blob:ae5f03478ffec03963cf9056ffb01f379c7b5def",
+      "jvagent/action/interview/for_each.py": "git-blob:10f1740f26caa5fd456b975d7ff9c305ba73ac03",
+      "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+      "jvagent/harness/native.py": "git-blob:0789e10ee3d9f524209bc76b562e15044b1a8104",
+      "jvagent/harness/skill_catalog.py": "git-blob:386e20152777b231248a9b62cd376b1891f7e23a",
+      "jvagent/harness/mcp.py": "git-blob:1e24c92737448967965c37c35f51ad4574467144",
+      "tests/harness/native/test_skill_catalog.py": "git-blob:ae4b0fef0d1894a77720ce47dccaac281794a555",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+      "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+      "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+      "jvagent/action/interview/native.py": "git-blob:8a90f0197e3b4dcdfbe9d7645806a0b51f3055a8",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:d656ef8762f09b0e10742f294c8726084c062d2f",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:f50813bff7bca6d6e2fc80d35cb00ab8ac977332"
+    },
+    "process_id": 41049,
+    "observed_at": "2026-11-06T03:17:48.500928+00:00",
+    "modules": [],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-06T03:45:21.306047+00:00"
+  },
+  "source_blobs": {
+    "jvagent/skills/pageindex-search-with-references/SKILL.md": "git-blob:d1f71db055c74c581c093c3554c3dce12d51d169",
+    "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/web-lookup/SKILL.md": "git-blob:827ba5b1ac245bb6b82ba2f146e64ba1d121cffb",
+    "tests/harness/native/test_shipped_skills.py": "git-blob:47be218f70d7ff7e07a779260bfb1fc0f7f96bc2",
+    "jvagent/cli/harness_migration_state.py": "git-blob:febc1483cee4595fb0d189bfa45cf13870eadb68",
+    "jvagent/cli/harness_migrate.py": "git-blob:4d185e901ce5b8f5564038129db84015ca261346",
+    "jvagent/cli/main.py": "git-blob:e0e4ec8df71a52594d79329431fb846f81af5c09",
+    "tests/cli/test_harness_migration_state.py": "git-blob:ebe7d441c64078c80d7ca9d897d005d769c889e8"
+  }
+}

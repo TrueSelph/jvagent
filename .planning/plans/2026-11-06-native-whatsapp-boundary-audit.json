@@ -1,0 +1,132 @@
+{
+  "revision": "git-commit:9f7dfbf904a8ada642713f1f74a982adc29f0777",
+  "scope": "Offline direct-Action and native-admission probes; not an HTTP exploit or provider/browser qualification.",
+  "network_requests": 0,
+  "real_model_calls": 0,
+  "cases": [
+    {
+      "case": "public-marker-channel-gate",
+      "channel": "default",
+      "method": "send_template",
+      "provider_stub_calls": 0,
+      "ok": false,
+      "error": "whatsapp_templates_require_inbound_whatsapp"
+    },
+    {
+      "case": "public-marker-channel-gate",
+      "channel": "default",
+      "method": "send_flow",
+      "provider_stub_calls": 0,
+      "ok": false,
+      "error": "whatsapp_flows_require_inbound_whatsapp"
+    },
+    {
+      "case": "public-marker-channel-gate",
+      "channel": "whatsapp",
+      "method": "send_template",
+      "provider_stub_calls": 1,
+      "ok": true,
+      "error": null
+    },
+    {
+      "case": "public-marker-channel-gate",
+      "channel": "whatsapp",
+      "method": "send_flow",
+      "provider_stub_calls": 1,
+      "ok": true,
+      "error": null
+    },
+    {
+      "case": "public-marker-channel-gate",
+      "channel": "whatsapp_call",
+      "method": "send_template",
+      "provider_stub_calls": 1,
+      "ok": true,
+      "error": null
+    },
+    {
+      "case": "public-marker-channel-gate",
+      "channel": "whatsapp_call",
+      "method": "send_flow",
+      "provider_stub_calls": 1,
+      "ok": true,
+      "error": null
+    },
+    {
+      "case": "provider-envelope",
+      "tool": "whatsapp__send_template",
+      "provider_ok": true,
+      "domain_ok": true,
+      "message_id": "",
+      "tool_is_error": false
+    },
+    {
+      "case": "provider-envelope",
+      "tool": "whatsapp__send_flow",
+      "provider_ok": true,
+      "domain_ok": true,
+      "message_id": "",
+      "tool_is_error": false
+    },
+    {
+      "case": "provider-envelope",
+      "tool": "whatsapp__send_template",
+      "provider_ok": false,
+      "domain_ok": false,
+      "message_id": null,
+      "tool_is_error": false
+    },
+    {
+      "case": "provider-envelope",
+      "tool": "whatsapp__send_flow",
+      "provider_ok": false,
+      "domain_ok": false,
+      "message_id": null,
+      "tool_is_error": false
+    }
+  ],
+  "native_admission": [
+    {
+      "tool": "whatsapp__list_templates",
+      "admitted": false,
+      "error": "Action is not qualified for native execution: whatsapp__list_templates",
+      "effect_class": null,
+      "binds_visitor": null,
+      "requires_tool_permission": false
+    },
+    {
+      "tool": "whatsapp__send_template",
+      "admitted": false,
+      "error": "Action is not qualified for native execution: whatsapp__send_template",
+      "effect_class": null,
+      "binds_visitor": null,
+      "requires_tool_permission": false
+    },
+    {
+      "tool": "whatsapp__list_flows",
+      "admitted": false,
+      "error": "Action is not qualified for native execution: whatsapp__list_flows",
+      "effect_class": null,
+      "binds_visitor": null,
+      "requires_tool_permission": false
+    },
+    {
+      "tool": "whatsapp__send_flow",
+      "admitted": false,
+      "error": "Action is not qualified for native execution: whatsapp__send_flow",
+      "effect_class": null,
+      "binds_visitor": null,
+      "requires_tool_permission": false
+    }
+  ],
+  "source_sha256": {
+    "jvagent/action/whatsapp/whatsapp_action.py": "sha256:afee77944a2c88e03501e3aef5d29a840220376de4e471a4bb4f7eeaf6b34b08",
+    "jvagent/action/whatsapp/endpoints.py": "sha256:5fadedd32bc82026936bae56cad88315207105f5e5e0eebc998ba5a78697ae1c",
+    "jvagent/action/whatsapp/utils/endpoint_helpers.py": "sha256:cd96da398ce58f418676d15ac25213309742754d81b0dcf3b22bcede5dbf5b2b",
+    "jvagent/action/whatsapp_voice/whatsapp_voice_action.py": "sha256:dd3acbef29bcba5e5237b622a1498efa250e21222b2cb8530794bf6bf19487b5",
+    "jvagent/action/interact/endpoints.py": "sha256:41395746f42b6ae3b63bb205b497e2458479e969b982d84357837c5b5ab68637",
+    "jvagent/tooling/context.py": "sha256:e8b8aa8164afe3a3072aaff4f8db881752ac51ee669b4bcb14688b84eae5f82b",
+    "jvagent/harness/native.py": "sha256:43bbbeb1f7ac78ccda5e2b09e04dc9ea9f53c8572aea7c1215d157f5181af383",
+    "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/whatsapp_service_flows/SKILL.md": "sha256:f6bff3b39cab95c11e247eee846f292b83bcc69fec0a019535c449b80449bd87"
+  }
+}

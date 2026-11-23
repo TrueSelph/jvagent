@@ -79,6 +79,7 @@ async def finalize_proactive_task(
     *,
     interaction: Optional[Any] = None,
     error: Optional[BaseException] = None,
+    native_dispatch: bool = False,
 ) -> str:
     """Complete, requeue, or fail a dispatched proactive task.
 
@@ -94,6 +95,24 @@ async def finalize_proactive_task(
     except ValueError:
         await handle.fail(reason="invalid proactive spec")
         return "failed"
+
+    native = (
+        getattr(interaction, "native_run", None) if interaction is not None else None
+    )
+    if native or native_dispatch:
+        if (
+            error is not None
+            or (native or {}).get("status") != "delivered"
+            or not getattr(interaction, "closed", False)
+            or not getattr(interaction, "emitted", False)
+            or not str(getattr(interaction, "response", "") or "").strip()
+        ):
+            # A notice is not task output. An uncertain attempt/effect/delivery
+            # cannot authorize a second model invocation through queue retries.
+            await handle.fail(reason="native execution requires reconciliation")
+            return "failed"
+        await handle.complete(result=str(interaction.response))
+        return "completed"
 
     if error is not None:
         if int(spec.attempt_count or 0) + 1 < int(spec.max_attempts or 1):

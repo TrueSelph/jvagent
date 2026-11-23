@@ -1,0 +1,1457 @@
+{
+  "parent_revision": "git-commit:5739cf5df86693b60604439cbfa5998e8e4073e3",
+  "fixture": "separate app, graph and browser context; API8136/UI3136; public auth required",
+  "request_preparation": "one-shot browser fetch wrapper injects fixed synthetic envelopes from a loopback-only test host; signing key stays outside browser; request bodies, credentials and session tokens are omitted",
+  "parent_failure": {
+    "page_id": 8,
+    "request_id": 61,
+    "synthetic_malformed_envelope_confirmed": true,
+    "frames": [
+      {
+        "type": "start",
+        "interaction_id": "n.Interaction.0ed661bf2034471ebe4e3281",
+        "session_id": "sess_13baf44683d54efc",
+        "user_id": "o.User.a56900c4094c4f91bdb55af2"
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-1466354e8ea54337896305b92aa773a2",
+          "session_id": "sess_13baf44683d54efc",
+          "user_id": "o.User.a56900c4094c4f91bdb55af2",
+          "interaction_id": "n.Interaction.0ed661bf2034471ebe4e3281",
+          "message_type": "adhoc",
+          "content": "HOST-CONTEXT-VALIDATION-CHECK",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {
+            "host_system_context": {
+              "body": "malformed synthetic host envelope",
+              "signature": "invalid"
+            }
+          },
+          "timestamp": "2026-11-05T08:36:20.348105"
+        }
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-1466354e8ea54337896305b92aa773a2",
+          "session_id": "sess_13baf44683d54efc",
+          "user_id": "o.User.a56900c4094c4f91bdb55af2",
+          "interaction_id": "n.Interaction.0ed661bf2034471ebe4e3281",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T08:36:20.360327"
+        }
+      },
+      {
+        "type": "final",
+        "user_id": "o.User.a56900c4094c4f91bdb55af2",
+        "session_id": "sess_13baf44683d54efc",
+        "response": "HOST-CONTEXT-VALIDATION-CHECK",
+        "interaction": {
+          "id": "n.Interaction.0ed661bf2034471ebe4e3281",
+          "utterance": "Reply only HOST-CONTEXT-VALIDATION-CHECK.",
+          "response": "HOST-CONTEXT-VALIDATION-CHECK",
+          "actions": [
+            "NativeHarnessAction"
+          ],
+          "directives": [],
+          "tasks": [],
+          "parameters": [],
+          "events": [
+            {
+              "action_name": "harness",
+              "content": "correlation_id=corr-1466354e8ea54337896305b92aa773a2"
+            }
+          ],
+          "observability_metrics": [
+            {
+              "event_type": "model_call",
+              "data": {
+                "native_receipt_key": "spend:default|run|*|corr-1466354e8ea54337896305b92aa773a2:1",
+                "native_run_id": "corr-1466354e8ea54337896305b92aa773a2",
+                "native_step_index": 1,
+                "native_spend_receipt": true,
+                "model": "gpt-4.1-2025-04-14",
+                "provider": "openai",
+                "native_receipt_origin": "spend_snapshot",
+                "usage": {
+                  "prompt_tokens": 417,
+                  "completion_tokens": 11,
+                  "total_tokens": 428,
+                  "cached_prompt_tokens": 0,
+                  "cache_write_tokens": 0
+                },
+                "cost_record": {
+                  "amount": 0.000922,
+                  "currency": "USD",
+                  "source": "pydantic_ai_pricing",
+                  "estimated": true,
+                  "pricing_version": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 417,
+            "completion_tokens": 11,
+            "total_tokens": 428,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 1,
+            "model_attempt_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0,
+            "estimated_cost_usd": 0.000922,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 0,
+            "total_cost_usd": 0.000922,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T12:36:20.360757+00:00"
+          },
+          "streamed": true
+        },
+        "report": [
+          {
+            "interaction_created": {
+              "interaction_id": "n.Interaction.0ed661bf2034471ebe4e3281",
+              "user_id": "o.User.a56900c4094c4f91bdb55af2",
+              "session_id": "sess_13baf44683d54efc"
+            }
+          },
+          {
+            "interact_actions_found": {
+              "count": 1,
+              "actions": [
+                "native_harness"
+              ]
+            }
+          },
+          {
+            "action_executed": {
+              "action": "native_harness",
+              "weight": 0,
+              "class": "NativeHarnessAction"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "requests": [
+    {
+      "request_id": 32,
+      "scenario": "authenticated_plain_setup",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 4316.4000000059605,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.e58432c256834f1aa8fa5b9e",
+          "session_id": "sess_b951d1994c394ff8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-de2ec428cb1e4624bd1d079a9ede8000",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.e58432c256834f1aa8fa5b9e",
+            "message_type": "adhoc",
+            "content": "READY",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T08:43:55.634618"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-de2ec428cb1e4624bd1d079a9ede8000",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.e58432c256834f1aa8fa5b9e",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T08:43:55.646598"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b951d1994c394ff8",
+          "response": "READY",
+          "interaction": {
+            "id": "n.Interaction.e58432c256834f1aa8fa5b9e",
+            "utterance": "For a caller identity setup check, reply only READY.",
+            "response": "READY",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-de2ec428cb1e4624bd1d079a9ede8000"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-de2ec428cb1e4624bd1d079a9ede8000:1",
+                  "native_run_id": "corr-de2ec428cb1e4624bd1d079a9ede8000",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage": {
+                    "prompt_tokens": 271,
+                    "completion_tokens": 3,
+                    "total_tokens": 274,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000566,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 271,
+              "completion_tokens": 3,
+              "total_tokens": 274,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.000566,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.000566,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T12:43:55.649189+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.e58432c256834f1aa8fa5b9e",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b951d1994c394ff8"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:43:51.412Z",
+      "completed_at_utc": "2026-11-05T12:43:55.729Z"
+    },
+    {
+      "request_id": 33,
+      "scenario": "unsigned_confirmation_after_automation_arm_error",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 3338.699999988079,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.de541b181db94195859c0009",
+          "session_id": "sess_b951d1994c394ff8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-9e3559d56f4441828b74657e4f784cdf",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.de541b181db94195859c0009",
+            "message_type": "adhoc",
+            "content": "Host context confirmed.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T08:45:29.653394"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-9e3559d56f4441828b74657e4f784cdf",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.de541b181db94195859c0009",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T08:45:29.665348"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b951d1994c394ff8",
+          "response": "Host context confirmed.",
+          "interaction": {
+            "id": "n.Interaction.de541b181db94195859c0009",
+            "utterance": "Please confirm host context.",
+            "response": "Host context confirmed.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-9e3559d56f4441828b74657e4f784cdf"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-9e3559d56f4441828b74657e4f784cdf:1",
+                  "native_run_id": "corr-9e3559d56f4441828b74657e4f784cdf",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage": {
+                    "prompt_tokens": 285,
+                    "completion_tokens": 6,
+                    "total_tokens": 291,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000618,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 285,
+              "completion_tokens": 6,
+              "total_tokens": 291,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.000618,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.000618,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T12:45:29.665955+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.de541b181db94195859c0009",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b951d1994c394ff8"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:45:26.384Z",
+      "completed_at_utc": "2026-11-05T12:45:29.723Z"
+    },
+    {
+      "request_id": 35,
+      "scenario": "valid_signed_host",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 2281.800000011921,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.6854e6595de0437c91b6021e",
+          "session_id": "sess_b951d1994c394ff8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-462b4a7aa4d443a694ee2b8923f9be1e",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.6854e6595de0437c91b6021e",
+            "message_type": "adhoc",
+            "content": "VERIFIED-HOST-CEDAR",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {
+              "run_id": "[REDACTED: host request ID]",
+              "host_system_context": "[REDACTED: host envelope echoed by pre-fix response metadata]"
+            },
+            "timestamp": "2026-11-05T08:46:04.644910"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-462b4a7aa4d443a694ee2b8923f9be1e",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.6854e6595de0437c91b6021e",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T08:46:04.670775"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b951d1994c394ff8",
+          "response": "VERIFIED-HOST-CEDAR",
+          "interaction": {
+            "id": "n.Interaction.6854e6595de0437c91b6021e",
+            "utterance": "Please confirm host context.",
+            "response": "VERIFIED-HOST-CEDAR",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-462b4a7aa4d443a694ee2b8923f9be1e"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-462b4a7aa4d443a694ee2b8923f9be1e:1",
+                  "native_run_id": "corr-462b4a7aa4d443a694ee2b8923f9be1e",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage": {
+                    "prompt_tokens": 322,
+                    "completion_tokens": 9,
+                    "total_tokens": 331,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000716,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 322,
+              "completion_tokens": 9,
+              "total_tokens": 331,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.000716,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.000716,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T12:46:04.671267+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.6854e6595de0437c91b6021e",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b951d1994c394ff8"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:46:02.437Z",
+      "completed_at_utc": "2026-11-05T12:46:04.719Z",
+      "host_envelope_echo_observed_before_privacy_fix": true
+    },
+    {
+      "request_id": 37,
+      "scenario": "replay_while_unexpired",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 165.40000000596046,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "20d168a4",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:47:37.513Z",
+      "completed_at_utc": "2026-11-05T12:47:37.679Z"
+    },
+    {
+      "request_id": 39,
+      "scenario": "foreign_agent",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 161.7999999821186,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "789345bf",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:49:05.423Z",
+      "completed_at_utc": "2026-11-05T12:49:05.584Z"
+    },
+    {
+      "request_id": 41,
+      "scenario": "foreign_user",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 123.59999999403954,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "a32584cc",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:49:06.675Z",
+      "completed_at_utc": "2026-11-05T12:49:06.799Z"
+    },
+    {
+      "request_id": 43,
+      "scenario": "foreign_session",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 120.09999999403954,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "c765f4e4",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:49:07.926Z",
+      "completed_at_utc": "2026-11-05T12:49:08.046Z"
+    },
+    {
+      "request_id": 45,
+      "scenario": "expired",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 122.89999997615814,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "272234d6",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:49:09.157Z",
+      "completed_at_utc": "2026-11-05T12:49:09.280Z"
+    },
+    {
+      "request_id": 47,
+      "scenario": "tampered",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 119.80000001192093,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "886d1efb",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:49:10.377Z",
+      "completed_at_utc": "2026-11-05T12:49:10.496Z"
+    },
+    {
+      "request_id": 49,
+      "scenario": "mismatched_request",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 121.19999998807907,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "ab85bc6d",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:49:11.625Z",
+      "completed_at_utc": "2026-11-05T12:49:11.746Z"
+    },
+    {
+      "request_id": 51,
+      "scenario": "null",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 121,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "4e66c597",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:49:12.851Z",
+      "completed_at_utc": "2026-11-05T12:49:12.972Z"
+    },
+    {
+      "request_id": 53,
+      "scenario": "malformed",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 118.59999999403954,
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "c339226a",
+          "code": "invalid_host_context"
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:49:14.067Z",
+      "completed_at_utc": "2026-11-05T12:49:14.186Z"
+    },
+    {
+      "request_id": 55,
+      "scenario": "nonstream_fixture_schema_error",
+      "http_status": 422,
+      "browser_fetch_duration_ms": 12.900000005960464,
+      "body": {
+        "detail": [
+          {
+            "type": "extra_forbidden",
+            "loc": [
+              "body",
+              "agent_id"
+            ],
+            "msg": "Extra inputs are not permitted",
+            "input": "n.Agent.c3d49de049264acbb24b39c0"
+          }
+        ]
+      },
+      "started_at_utc": "2026-11-05T12:50:32.830Z",
+      "completed_at_utc": "2026-11-05T12:50:32.843Z"
+    },
+    {
+      "request_id": 57,
+      "scenario": "malformed_nonstream",
+      "http_status": 422,
+      "browser_fetch_duration_ms": 53.89999997615814,
+      "body": {
+        "error_code": "validation_error",
+        "message": "Host context could not be verified.",
+        "details": {
+          "reason": "invalid_host_context",
+          "request_id": "2f405203"
+        },
+        "timestamp": "2026-11-05T12:50:53.171551+00:00",
+        "path": "/api/agents/n.Agent.c3d49de049264acbb24b39c0/interact"
+      },
+      "started_at_utc": "2026-11-05T12:50:53.122Z",
+      "completed_at_utc": "2026-11-05T12:50:53.176Z"
+    },
+    {
+      "request_id": 58,
+      "scenario": "ordinary_mcp_after_rejections",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 4243.100000023842,
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.77285c4d44214005be577db7",
+          "session_id": "sess_b951d1994c394ff8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.efbd5dfdc0f248b58ae0e880",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.77285c4d44214005be577db7",
+            "message_type": "adhoc",
+            "content": "mcp_records__lookup_record",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_call",
+            "segment_id": "call_pOSP5x5MigCTRbKx8Qx3Jgdb",
+            "metadata": {
+              "tool_name": "mcp_records__lookup_record",
+              "native_run_id": "corr-1a19775ac159424e90237376e09f915b",
+              "native_agent_name": "jvagent-native",
+              "tool_args": {
+                "reference": "REHEARSAL-47"
+              }
+            },
+            "timestamp": "2026-11-05T08:50:56.292663"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.08260195f63942e68e93a72d",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.77285c4d44214005be577db7",
+            "message_type": "adhoc",
+            "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}",
+            "channel": "default",
+            "category": "thought",
+            "thought_type": "tool_result",
+            "segment_id": "call_pOSP5x5MigCTRbKx8Qx3Jgdb",
+            "metadata": {
+              "tool_name": "mcp_records__lookup_record",
+              "native_run_id": "corr-1a19775ac159424e90237376e09f915b",
+              "native_agent_name": "jvagent-native",
+              "tool_result": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}"
+            },
+            "timestamp": "2026-11-05T08:50:56.373857"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-1a19775ac159424e90237376e09f915b",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.77285c4d44214005be577db7",
+            "message_type": "adhoc",
+            "content": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T08:50:58.271540"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-1a19775ac159424e90237376e09f915b",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.77285c4d44214005be577db7",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T08:50:58.283188"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b951d1994c394ff8",
+          "response": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+          "interaction": {
+            "id": "n.Interaction.77285c4d44214005be577db7",
+            "utterance": "Use the MCP tool to look up REHEARSAL-47 and tell me its room and start time.",
+            "response": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-1a19775ac159424e90237376e09f915b"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-1a19775ac159424e90237376e09f915b:1",
+                  "native_run_id": "corr-1a19775ac159424e90237376e09f915b",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage": {
+                    "prompt_tokens": 339,
+                    "completion_tokens": 24,
+                    "total_tokens": 363,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.00087,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-1a19775ac159424e90237376e09f915b:2",
+                  "native_run_id": "corr-1a19775ac159424e90237376e09f915b",
+                  "native_step_index": 2,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage": {
+                    "prompt_tokens": 393,
+                    "completion_tokens": 20,
+                    "total_tokens": 413,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000946,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 732,
+              "completion_tokens": 44,
+              "total_tokens": 776,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 2,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.001816,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.001816,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T12:50:58.283584+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.77285c4d44214005be577db7",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b951d1994c394ff8"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "started_at_utc": "2026-11-05T12:50:54.100Z",
+      "completed_at_utc": "2026-11-05T12:50:58.343Z"
+    },
+    {
+      "request_id": 60,
+      "scenario": "valid_deferred",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 3476.5999999940395,
+      "started_at_utc": "2026-11-05T13:05:31.701Z",
+      "completed_at_utc": "2026-11-05T13:05:35.178Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.81bbac17a9304291b99d585a",
+          "session_id": "sess_b951d1994c394ff8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-5c8d611dd1c84ec9b03f4f07e3e356d1",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.81bbac17a9304291b99d585a",
+            "message_type": "adhoc",
+            "content": "DEFERRED-HOST-CEDAR",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {
+              "run_id": "[REDACTED: host request ID]",
+              "host_system_context": "[REDACTED: host envelope echoed by pre-fix response metadata]"
+            },
+            "timestamp": "2026-11-05T09:05:35.101166"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-5c8d611dd1c84ec9b03f4f07e3e356d1",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.81bbac17a9304291b99d585a",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T09:05:35.111982"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b951d1994c394ff8",
+          "response": "DEFERRED-HOST-CEDAR",
+          "interaction": {
+            "id": "n.Interaction.81bbac17a9304291b99d585a",
+            "utterance": "Please confirm deferred host context.",
+            "response": "DEFERRED-HOST-CEDAR",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-5c8d611dd1c84ec9b03f4f07e3e356d1"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-5c8d611dd1c84ec9b03f4f07e3e356d1:1",
+                  "native_run_id": "corr-5c8d611dd1c84ec9b03f4f07e3e356d1",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage": {
+                    "prompt_tokens": 444,
+                    "completion_tokens": 10,
+                    "total_tokens": 454,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000968,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 444,
+              "completion_tokens": 10,
+              "total_tokens": 454,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.000968,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.000968,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T13:05:35.112317+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.81bbac17a9304291b99d585a",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b951d1994c394ff8"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "host_envelope_echo_observed_before_privacy_fix": true
+    },
+    {
+      "request_id": 63,
+      "scenario": "replay_deferred",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 145.69999998807907,
+      "started_at_utc": "2026-11-05T13:07:22.897Z",
+      "completed_at_utc": "2026-11-05T13:07:23.043Z",
+      "frames": [
+        {
+          "type": "error",
+          "message": "Host context could not be verified.",
+          "request_id": "6adebd30",
+          "code": "invalid_host_context"
+        }
+      ]
+    },
+    {
+      "request_id": 65,
+      "scenario": "valid_private",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 3828.5,
+      "started_at_utc": "2026-11-05T13:16:25.159Z",
+      "completed_at_utc": "2026-11-05T13:16:28.987Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.1368b7c7615b4335920de2ab",
+          "session_id": "sess_b951d1994c394ff8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-a59cd86ed8494672b7b434857c269440",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.1368b7c7615b4335920de2ab",
+            "message_type": "adhoc",
+            "content": "PRIVATE-HOST-CEDAR",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T09:16:28.922390"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-a59cd86ed8494672b7b434857c269440",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.1368b7c7615b4335920de2ab",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T09:16:28.932910"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b951d1994c394ff8",
+          "response": "PRIVATE-HOST-CEDAR",
+          "interaction": {
+            "id": "n.Interaction.1368b7c7615b4335920de2ab",
+            "utterance": "Please confirm private host context.",
+            "response": "PRIVATE-HOST-CEDAR",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-a59cd86ed8494672b7b434857c269440"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-a59cd86ed8494672b7b434857c269440:1",
+                  "native_run_id": "corr-a59cd86ed8494672b7b434857c269440",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage": {
+                    "prompt_tokens": 464,
+                    "completion_tokens": 8,
+                    "total_tokens": 472,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.000992,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 464,
+              "completion_tokens": 8,
+              "total_tokens": 472,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.000992,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.000992,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T13:16:28.933239+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.1368b7c7615b4335920de2ab",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b951d1994c394ff8"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "host_envelope_echo_observed_after_privacy_fix": false
+    },
+    {
+      "request_id": 68,
+      "scenario": "valid_log_private",
+      "http_status": 200,
+      "browser_fetch_duration_ms": 3385.0999999940395,
+      "started_at_utc": "2026-11-05T13:24:12.315Z",
+      "completed_at_utc": "2026-11-05T13:24:15.700Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.7be361cc7c354e76bc486a1a",
+          "session_id": "sess_b951d1994c394ff8",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-c63a71d8db694e5993cc62c15b5183b2",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.7be361cc7c354e76bc486a1a",
+            "message_type": "adhoc",
+            "content": "LOG-PRIVATE-HOST-CEDAR",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T09:24:15.709351"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-c63a71d8db694e5993cc62c15b5183b2",
+            "session_id": "sess_b951d1994c394ff8",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.7be361cc7c354e76bc486a1a",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T09:24:15.721006"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b951d1994c394ff8",
+          "response": "LOG-PRIVATE-HOST-CEDAR",
+          "interaction": {
+            "id": "n.Interaction.7be361cc7c354e76bc486a1a",
+            "utterance": "Please confirm log-private host context.",
+            "response": "LOG-PRIVATE-HOST-CEDAR",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-c63a71d8db694e5993cc62c15b5183b2"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-c63a71d8db694e5993cc62c15b5183b2:1",
+                  "native_run_id": "corr-c63a71d8db694e5993cc62c15b5183b2",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage": {
+                    "prompt_tokens": 488,
+                    "completion_tokens": 10,
+                    "total_tokens": 498,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.001056,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 488,
+              "completion_tokens": 10,
+              "total_tokens": 498,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "estimated_cost_usd": 0.001056,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.001056,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T13:24:15.721305+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.7be361cc7c354e76bc486a1a",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b951d1994c394ff8"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "host_envelope_echo_observed_after_privacy_fix": false
+    }
+  ],
+  "visible_ui": [
+    {
+      "type": "text",
+      "text": "## Latest page snapshot\nuid=343_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3136/chat/n.Agent.c3d49de049264acbb24b39c0\"\n  uid=344_0 StaticText \"jvchat\"\n  uid=344_1 StaticText \"AGENT TESTING\"\n  uid=344_2 button \"New Conversation\"\n  uid=345_0 StaticText \"1\"\n  uid=345_1 StaticText \" conversation\"\n  uid=345_2 StaticText \"Please confirm log-private host context.\"\n  uid=345_3 button \"Delete conversation\"\n  uid=344_4 button \"Logout\"\n  uid=344_5 button \"Collapse sidebar\"\n  uid=344_6 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=344_7 button \"Native Signed Host Qualification AGENT\" expandable haspopup=\"listbox\"\n  uid=344_8 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=344_9 button \"Copy token\" description=\"Copy access token\"\n  uid=344_10 button \"Switch to light mode\"\n  uid=345_4 StaticText \"For a caller identity setup check, reply only READY.\"\n  uid=345_5 StaticText \"READY\"\n  uid=345_6 button \"gpt-4.1-2025-04-14 · 274 tokens\"\n  uid=346_0 StaticText \"Please confirm host context.\"\n  uid=346_1 StaticText \"Host context confirmed.\"\n  uid=346_2 button \"gpt-4.1-2025-04-14 · 291 tokens\"\n  uid=348_0 StaticText \"Please confirm host context.\"\n  uid=348_1 StaticText \"VERIFIED-HOST-CEDAR\"\n  uid=348_2 button \"gpt-4.1-2025-04-14 · 331 tokens\"\n  uid=349_0 StaticText \"Confirm host context on this repeated request.\"\n  uid=350_0 StaticText \"Host verification rejection check: foreign_agent.\"\n  uid=350_1 StaticText \"Host verification rejection check: foreign_user.\"\n  uid=350_2 StaticText \"Host verification rejection check: foreign_session.\"\n  uid=350_3 StaticText \"Host verification rejection check: expired.\"\n  uid=350_4 StaticText \"Host verification rejection check: tampered.\"\n  uid=350_5 StaticText \"Host verification rejection check: mismatched_request.\"\n  uid=350_6 StaticText \"Host verification rejection check: null.\"\n  uid=350_7 StaticText \"Host verification rejection check: malformed.\"\n  uid=351_0 StaticText \"Use the MCP tool to look up REHEARSAL-47 and tell me its room and start time.\"\n  uid=351_1 button \"1 tool call\" expandable expanded\n  uid=351_2 button \"Used tool: mcp_records__lookup_record\" expandable\n  uid=351_3 StaticText \"REHEARSAL-47 is in room Cedar and starts at 14:30.\"\n  uid=351_4 button \"gpt-4.1-2025-04-14 · 776 tokens\"\n  uid=353_0 StaticText \"Please confirm deferred host context.\"\n  uid=353_1 StaticText \"DEFERRED-HOST-CEDAR\"\n  uid=353_2 button \"gpt-4.1-2025-04-14 · 454 tokens\"\n  uid=355_0 StaticText \"Repeat deferred host context confirmation.\"\n  uid=357_0 StaticText \"Please confirm private host context.\"\n  uid=357_1 StaticText \"PRIVATE-HOST-CEDAR\"\n  uid=357_2 button \"gpt-4.1-2025-04-14 · 472 tokens\"\n  uid=359_0 StaticText \"Please confirm log-private host context.\"\n  uid=359_1 StaticText \"LOG-PRIVATE-HOST-CEDAR\"\n  uid=359_2 button \"gpt-4.1-2025-04-14 · 498 tokens\"\n  uid=359_3 button \"Copy\"\n  uid=359_4 button \"Refresh\"\n  uid=359_5 button \"Debug\"\n  uid=359_6 button \"More\" expandable haspopup=\"menu\"\n  uid=344_13 form\n    uid=344_14 textbox \"Message input\" focusable focused multiline\n    uid=344_15 button \"Add Attachment\"\n    uid=344_16 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=359_7 button \"Send message\" disableable disabled\n"
+    }
+  ],
+  "evidence_redaction": "Private host envelopes and associated host request IDs echoed by pre-fix replies are redacted; finding flags preserve the observed defect."
+}

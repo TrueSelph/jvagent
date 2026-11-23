@@ -19,5 +19,6 @@ package:
     jvagent: ~0.1.2
     actions:
       - jvagent/pageindex_action
+      - jvagent/access_control_action
     pip:
       - httpx

@@ -1,0 +1,57 @@
+{
+  "schema": "jvagent.native-config-migration.v1",
+  "source": "agents/jvagent/orchestrator_agent/agent.yaml",
+  "source_digest": "sha256:d40aac16f24ae1bf23805d6c08c3ef8877b0c5d6bdbd6e920089df3baab267f3",
+  "status": "blocked",
+  "blockers": [
+    "Unmapped execution setting: ack_interval_ms",
+    "Unmapped execution setting: ack_on_first_tool_call",
+    "Unmapped execution setting: ack_statements",
+    "Unmapped execution setting: block_raw_tool_invocation",
+    "Unmapped execution setting: channel_overrides",
+    "Unmapped execution setting: enable_transient_ack",
+    "Unmapped execution setting: first_emit_timeout_ms",
+    "Unmapped execution setting: history_limit",
+    "Unmapped execution setting: lean_presurface_k",
+    "Unmapped execution setting: lean_tool_threshold",
+    "Unmapped execution setting: light_model",
+    "Unmapped execution setting: light_model_action_type",
+    "Unmapped execution setting: light_model_max_tokens",
+    "Unmapped execution setting: light_model_temperature",
+    "Unmapped execution setting: lock_active_flow",
+    "Unmapped execution setting: max_concurrent_tools",
+    "Unmapped execution setting: max_statement_length",
+    "Unmapped execution setting: pinned_tools",
+    "Unmapped execution setting: planning",
+    "Unmapped execution setting: skill_only_tools",
+    "Unmapped execution setting: skills",
+    "Unmapped execution setting: skills_source",
+    "Unmapped execution setting: stream_internal_progress",
+    "Unmapped execution setting: stream_reasoning_trace",
+    "Unmapped execution setting: tool_call_timeout",
+    "Unmapped execution setting: tool_servers",
+    "Unmapped execution setting: tool_tier",
+    "Unmapped execution setting: vision",
+    "Unmapped execution setting: with_event",
+    "Inactive pilot settings require explicit removal or review",
+    "Model service has unqualified callers or provider declarations; review before removal"
+  ],
+  "mappings": {
+    "activation_budget": "max_requests",
+    "max_duration_seconds": "timeout_seconds"
+  },
+  "bounded_defaults": [
+    "timeout_seconds",
+    "max_run_cost_usd",
+    "max_conversation_cost_usd",
+    "max_tokens"
+  ],
+  "preserved_action_count": 17,
+  "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+  "required_review": [
+    "Skills, scripts, Action tools and channel compatibility",
+    "Credentials and native provider settings",
+    "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+    "Fresh isolated bootstrap and actual-provider browser rehearsal"
+  ]
+}

@@ -581,3 +581,23 @@ class TestCockpitDispatchRoutesPerUser:
             )
 
         default_client.call_tool.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_native_owner_refuses_legacy_mcp_selector_before_discovery():
+    action = MCPAction(agent_id="n.Agent.native")
+    with (
+        patch.object(MCPAction, "get_agent", AsyncMock(return_value=object())),
+        patch(
+            "jvagent.core.execution_owner.uses_native_harness",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(MCPAction, "_resolve_tool_inventory", AsyncMock()) as discover,
+        patch.object(MCPAction, "get_model_action", AsyncMock()) as model,
+    ):
+        result = await action.fulfill("Fixture")
+    assert result.is_error
+    assert result.error_kind == "gateway_error"
+    assert "admitted native toolset" in result.text
+    discover.assert_not_awaited()
+    model.assert_not_awaited()

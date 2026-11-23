@@ -30,7 +30,7 @@ def signup_action():
 @pytest.mark.asyncio
 async def test_weekday_slot_skips_training_format(signup_action):
     _, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
 
@@ -45,7 +45,7 @@ async def test_weekday_slot_skips_training_format(signup_action):
 @pytest.mark.asyncio
 async def test_saturday_slot_requires_training_format(signup_action):
     _, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Saturday 9:00 AM - 12:00 PM")
 
@@ -56,7 +56,7 @@ async def test_saturday_slot_requires_training_format(signup_action):
 @pytest.mark.asyncio
 async def test_work_email_branches_to_employer(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "jane@mail.com")
@@ -75,7 +75,7 @@ async def test_work_email_branches_to_employer(signup_action):
 @pytest.mark.asyncio
 async def test_changing_slot_prunes_training_format(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Saturday 9:00 AM - 12:00 PM")
     session.set_value("training_format", "Virtual")

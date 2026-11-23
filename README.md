@@ -93,17 +93,17 @@ Most agent frameworks are **libraries** that orchestrate model calls; you bring 
 
 ```bash
 # From PyPI
-pip install jvagent
+pip install "jvagent[native-harness]"
 ```
 
 ```bash
 # From source (development)
 git clone https://github.com/TrueSelph/jvagent.git
 cd jvagent
-pip install -e ".[dev]"
+pip install -e ".[dev,native-harness]"
 ```
 
-Requires Python 3.8+. Optional extras: `pageindex` (document ingestion/retrieval), `distributed-lock` (Redis / DynamoDB conversation locks), `test`, `dev`.
+Requires Python 3.11+. The `native-harness` extra supplies the default native execution dependencies. Other optional extras: `pageindex` (document ingestion/retrieval), `distributed-lock` (Redis / DynamoDB conversation locks), `test`, `dev`.
 
 > Pre-1.0 release candidates publish to TestPyPI first:
 > ```bash
@@ -120,12 +120,12 @@ jvagent app create --yes \
   --dir ./my_app \
   --app-id my_app \
   --title "My App" \
+  --description "A skill-driven assistant" \
   --author "Your Name" \
-  --agent jvagent/main_bot@minimal \
-  --profile minimal
+  --agent jvagent/main_bot
 ```
 
-This writes `app.yaml`, `agents/`, `profiles/`, and `.env.example`. Built-in agent profiles include `minimal`, `conversational`, `whatsapp_voice`, and `research`. Full CLI reference: [`docs/scaffolding.md`](https://github.com/TrueSelph/jvagent/blob/main/docs/scaffolding.md).
+This writes `app.yaml`, `agents/`, `profiles/`, `.env.example`, and a starter conversation SKILL.md. New agents default to the `native` profile, using official Pydantic AI/Harness execution and JV ReplyAction. Explicit legacy profiles remain transitional; existing applications are not converted by scaffolding. Full CLI reference: [`docs/scaffolding.md`](https://github.com/TrueSelph/jvagent/blob/main/docs/scaffolding.md).
 
 ### 2. Configure the environment
 
@@ -137,7 +137,7 @@ cp .env.example .env
 Set at minimum:
 
 - `JVAGENT_ADMIN_PASSWORD` — the initial admin user's password.
-- `JVSPATIAL_JWT_SECRET_KEY` — JWT signing secret (change from the default for any non-local use).
+- `JVSPATIAL_JWT_SECRET_KEY` — JWT signing secret (generate with `openssl rand -hex 32`; no implicit default).
 
 Add a model provider key (e.g. `OPENAI_API_KEY`) for the agent to reason. See the [configuration reference](https://github.com/TrueSelph/jvagent/blob/main/docs/configuration.md) and [environment keys](https://github.com/TrueSelph/jvagent/blob/main/docs/environment-keys-reference.md).
 

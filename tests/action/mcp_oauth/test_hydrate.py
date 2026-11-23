@@ -96,8 +96,8 @@ def test_hydrate_merges_existing_accounts(tmp_path, monkeypatch):
 
 
 def test_account_email_prefers_payload():
-    assert account_email_from_token({"email": "a@b.com"}, "integral") == "a@b.com"
-    assert account_email_from_token({}, "integral") == "integral"
+    assert account_email_from_token({"email": "a@b.com"}, "default") == "a@b.com"
+    assert account_email_from_token({}, "default") == "default"
 
 
 def test_mcp_auth_url(monkeypatch):
@@ -106,11 +106,11 @@ def test_mcp_auth_url(monkeypatch):
         lambda: "https://agent.example.com",
     )
     assert mcp_google_workspace_auth_url() == (
-        "https://agent.example.com/api/mcp/google_workspace/auth?account=integral"
+        "https://agent.example.com/api/mcp/google_workspace/auth?account=default"
     )
     assert mcp_google_workspace_auth_url(service="gmail") == (
         "https://agent.example.com/api/mcp/google_workspace/auth"
-        "?account=integral&service=gmail"
+        "?account=default&service=gmail"
     )
 
 
@@ -126,11 +126,11 @@ def test_mcp_microsoft_auth_url(monkeypatch):
         lambda: "https://agent.example.com",
     )
     assert mcp_microsoft_365_auth_url() == (
-        "https://agent.example.com/api/mcp/microsoft_365/auth?account=integral"
+        "https://agent.example.com/api/mcp/microsoft_365/auth?account=default"
     )
     assert mcp_microsoft_365_auth_url(service="outlook") == (
         "https://agent.example.com/api/mcp/microsoft_365/auth"
-        "?account=integral&service=outlook"
+        "?account=default&service=outlook"
     )
 
     monkeypatch.setenv("MICROSOFT_CLIENT_ID", "cid")

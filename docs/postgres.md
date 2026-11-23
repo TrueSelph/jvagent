@@ -1,8 +1,8 @@
 # Running jvagent on PostgreSQL
 
-> **Requires `jvspatial >= 0.0.16`** (the pin in [`pyproject.toml`](../pyproject.toml)). On 0.0.15 and earlier, starting jvagent with `JVSPATIAL_DB_TYPE=postgres` fails outright — see [§3](#3-version-requirement).
+> This repository pins **jvspatial 0.1.1** in [`pyproject.toml`](../pyproject.toml). The PostgreSQL driver is its optional `postgres` extra. The historical minimum-version notes remain in [§3](#3-version-requirement).
 >
-> jvagent needs no Postgres-specific code: the backend and every connection setting live in jvspatial. Verified end to end against the released 0.0.16 wheel — see [§4](#4-verifying-your-setup).
+> The backend and connection settings belong to jvspatial. Current native-harness qualification is recorded in the [rebuild evidence](../.planning/plans/2026-11-04-harness-rebuild-progress.md); [§4](#4-verifying-your-setup) gives a setup check.
 
 ---
 
@@ -16,10 +16,12 @@ Postgres is selected the same way as every other backend — `JVSPATIAL_DB_TYPE`
 | `JVSPATIAL_POSTGRES_DSN` | libpq DSN, e.g. `postgresql://user:pass@host:5432/dbname` | `postgresql://postgres:postgres@localhost:5432/jvdb` |
 | `JVSPATIAL_POSTGRES_MIN_POOL_SIZE` | asyncpg pool floor | 0 (serverless) / 2 |
 | `JVSPATIAL_POSTGRES_MAX_POOL_SIZE` | asyncpg pool ceiling | 3 (serverless) / 10 |
+| `JVSPATIAL_POSTGRES_COMMAND_TIMEOUT` | Per-statement timeout in seconds; public `PostgresDB(command_timeout=...)` setting in jvspatial 0.1.1 (`jvspatial/db/postgres.py:388`) | 60 |
 | `JVSPATIAL_POSTGRES_POOLER_MODE` | `session` or `transaction` — set `transaction` behind PgBouncer / RDS Proxy (disables asyncpg's prepared-statement cache) | `session` |
 
 Notes:
 
+- **Statement timeout is not a whole-request deadline.** In jvspatial 0.1.1, pool acquisition uses `pool.acquire()` without an explicit acquisition timeout (`jvspatial/db/postgres.py:546`). This setting does not prove bounded pool acquisition, connection reset, or transaction completion. A timed-out write must not be acknowledged from an in-memory duplicate alone; the JV adapters persist before duplicate acknowledgement (`jvagent/harness/step_store.py:32`, `jvagent/harness/accounting.py:61`).
 - **The driver is an extra.** `pip install asyncpg` (or `jvspatial[postgres]`); it is not pulled in by jvagent's base dependencies.
 - **`JVSPATIAL_DB_PATH` does not apply.** [`server_config.py:161`](../jvagent/cli/server_config.py) only exports a path for `json` / `sqlite`.
 - **`app.yaml` works too.** Every key above also resolves from the `config.database` stanza, with the usual precedence (env wins):

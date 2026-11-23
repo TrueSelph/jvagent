@@ -14,8 +14,8 @@ context:
 
 actions:
   # ── Orchestrator — routes across three coexisting skills ──
-  # product_inquiry_leads (always-active leadgen capture), product_faq, and
-  # product_search share one tool surface. Model floor: gpt-4.1 — a weaker model
+  # product_inquiry_leads (always-active leadgen capture), product-faq, and
+  # product-search share one tool surface. Model floor: gpt-4.1 — a weaker model
   # (gpt-4o-mini) misroutes / stalls once a turn spans skills. See
   # docs/ORCHESTRATOR.md "Model floor".
   - action: jvagent/orchestrator
@@ -31,8 +31,8 @@ actions:
       skills_source: both
       skills:
         - product_inquiry_leads   # always-active leadgen capture (LeadGenAction)
-        - product_faq             # answer common product questions (StorefrontAction)
-        - product_search          # find / compare catalog products (StorefrontAction)
+        - product-faq             # answer common product questions (StorefrontAction)
+        - product-search          # find / compare catalog products (StorefrontAction)
         - example_leadgen
       lock_active_flow: false
       # ui__render is long-tail, so lean surfacing (ADR-0018) hides it and the
@@ -81,7 +81,7 @@ actions:
 
   # ── Mock storefront (app-local, contrib/) — dummy-data FAQ + catalog tools ──
   # Supplies storefront__faq and storefront__search_products, which the
-  # product_faq and product_search skills pin via allowed-tools.
+  # product-faq and product-search skills pin via allowed-tools.
   - action: contrib/storefront
     context:
       enabled: true

@@ -1,0 +1,7 @@
+{
+  "name": "jvagent-native-docx-image",
+  "private": true,
+  "dependencies": {
+    "docx": "9.15.2"
+  }
+}

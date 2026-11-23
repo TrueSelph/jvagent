@@ -7,7 +7,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
-from jvagent.tooling.tool_executor import get_tool_visitor
+from jvagent.tooling.context import get_tool_visitor
 
 from . import sync as sync_mod
 from .hooks import HookExecutionContext, call_hook
@@ -389,10 +389,25 @@ async def handle_capture(
     return json.dumps(result)
 
 
+async def _read_profile(user: Any, spec: LeadGenSpec) -> LeadRecord:
+    """Project current required fields without creating or changing a graph node."""
+    record = await LeadRecord.get_for_user(user)
+    fields = spec.get_required_fields()
+    if record is None:
+        return LeadRecord(required_fields=", ".join(fields or []))
+    if fields and record._get_list_field("required_fields") != fields:
+        record = record.model_copy(update={"required_fields": ", ".join(fields)})
+        missing = record.get_missing_fields()
+        record.score = int(((len(fields) - len(missing)) / len(fields)) * 100)
+    return record
+
+
 async def handle_retrieve(
     action: "LeadGenAction",
     skill: Optional[str] = None,
     visitor: Any = None,
+    *,
+    read_only: bool = False,
     **_: Any,
 ) -> str:
     user, _ = await get_user_and_interaction(visitor)
@@ -400,8 +415,12 @@ async def handle_retrieve(
         return json.dumps({"error": "no user found"})
 
     spec = merge_spec_with_action_defaults(action, resolve_spec(action, skill))
-    record = await LeadRecord.get_or_create_for_user(
-        user, required_fields=spec.get_required_fields() or None
+    record = (
+        await _read_profile(user, spec)
+        if read_only
+        else await LeadRecord.get_or_create_for_user(
+            user, required_fields=spec.get_required_fields() or None
+        )
     )
     profile_data = record.get_yaml() or {}
     clean = {k: v for k, v in profile_data.items() if not k.startswith("_")}
@@ -432,9 +451,7 @@ async def handle_status(
         return json.dumps({"error": "no user found"})
 
     spec = merge_spec_with_action_defaults(action, resolve_spec(action, skill))
-    record = await LeadRecord.get_or_create_for_user(
-        user, required_fields=spec.get_required_fields() or None
-    )
+    record = await _read_profile(user, spec)
     profile_data = record.get_yaml() or {}
     digest = sync_mod.get_stored_digest(profile_data)
 

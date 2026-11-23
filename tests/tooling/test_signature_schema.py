@@ -55,7 +55,9 @@ def test_list_emits_items():
 
 
 def test_optional_unwraps_to_inner():
-    assert python_type_to_json_schema(Optional[int]) == {"type": "integer"}
+    assert python_type_to_json_schema(Optional[int]) == {
+        "anyOf": [{"type": "integer"}, {"type": "null"}]
+    }
 
 
 def test_literal_becomes_enum():
@@ -101,7 +103,7 @@ def test_annotated_optional_combo():
     def fn(x: Annotated[Optional[int], "maybe"] = None): ...
 
     schema = build_parameters_schema(fn)
-    assert schema["properties"]["x"]["type"] == "integer"
+    assert schema["properties"]["x"]["anyOf"] == [{"type": "integer"}, {"type": "null"}]
     assert schema["properties"]["x"]["description"] == "maybe"
     assert "required" not in schema
 
@@ -117,7 +119,18 @@ def test_no_params_has_empty_properties():
     def fn(): ...
 
     schema = build_parameters_schema(fn)
-    assert schema == {"type": "object", "properties": {}}
+    assert schema == {"type": "object", "properties": {}, "additionalProperties": False}
+
+
+def test_nullable_argument_without_default_is_still_required():
+    def fn(value: str | None): ...
+
+    schema = build_parameters_schema(fn)
+    assert schema["required"] == ["value"]
+    assert schema["properties"]["value"]["anyOf"] == [
+        {"type": "string"},
+        {"type": "null"},
+    ]
     assert validate_parameters_schema(schema) == []
 
 

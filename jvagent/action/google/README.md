@@ -26,7 +26,7 @@ This is an **OAuth client JSON** (client id + secret). It is **not** a service-a
    The host must match the public base URL used at runtime (for example an ngrok HTTPS origin). Do **not** use the old `/api/google/callback/` path.
 8. Click **Create**. Download the JSON (client id + secret). This is the OAuth client file, not a service-account key.
 9. Put the file path or the JSON contents in `.env` as `GOOGLE_CLIENT_SECRETS_JSON`, and set `JVAGENT_PUBLIC_BASE_URL` (see below).
-10. Authorize at the action’s MCP URL, for example `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=sheets`.
+10. Authorize at the action’s MCP URL, for example `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=sheets`.
 
 ## Set `.env`
 
@@ -40,7 +40,7 @@ GOOGLE_CLIENT_SECRETS_JSON=/absolute/path/to/client_secret.json
 
 `redirect_uris` in the downloaded JSON / Cloud Console must be the **MCP** callback (`/api/mcp/google_workspace/auth/callback`), not `/api/google/callback/`.
 
-On register, reload, and startup, each `GoogleAction` sets `auth_url` to `/api/mcp/google_workspace/auth?account=integral&service=...`.
+On register, reload, and startup, each `GoogleAction` sets `auth_url` to `/api/mcp/google_workspace/auth?account=default&service=...`.
 
 ## OAuth flow
 

@@ -45,6 +45,16 @@ def signal_pageindex_cancel(event: Optional[threading.Event]) -> None:
         event.set()
 
 
+def attach_native_pdf_bridge(bridge: Any) -> None:
+    """Scope the native callback to the classic parser worker."""
+    _tls.native_pdf_bridge = bridge
+
+
+def get_native_pdf_bridge() -> Any:
+    """Return the explicitly bound worker callback, when present."""
+    return getattr(_tls, "native_pdf_bridge", None)
+
+
 _pageindex_model_action: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
     "_pageindex_model_action", default=None
 )
@@ -97,6 +107,9 @@ async def llm_acompletion_with_usage(
         "total_tokens": 0,
     }
     check_pageindex_cancelled()
+    if (bridge := get_native_pdf_bridge()) is not None:
+        text, _, usage = bridge.call(prompt)
+        return text, usage
     action = get_pageindex_model_action()
     if action:
         try:
@@ -138,6 +151,11 @@ def llm_completion(
 ) -> Union[str, tuple]:
     """Sync litellm-style call: jvagent model when in context, else core utils."""
     check_pageindex_cancelled()
+    if (bridge := get_native_pdf_bridge()) is not None:
+        text, finish, _ = bridge.call(
+            prompt, chat_history, partial=return_finish_reason
+        )
+        return (text, finish) if return_finish_reason else text
     if chat_history:
         if _real_impl:
             return _real_impl(model, prompt, chat_history, return_finish_reason)

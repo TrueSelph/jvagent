@@ -32,6 +32,7 @@ def _install_agent(monkeypatch, *, conversation):
     )
     agent = SimpleNamespace(
         id="a1",
+        get_actions=AsyncMock(return_value=[]),
         get_response_bus=AsyncMock(return_value=bus),
         get_memory=AsyncMock(return_value=memory),
     )

@@ -43,8 +43,7 @@ async def test_attributes_removed_by_adr_0037_are_gone_from_the_persisted_node(w
 
 
 async def test_the_reminder_template_survived_persistence_with_its_slot(wire):
-    """Without the `{reminders}` slot the user-turn rules cannot render at all,
-    and the failure is silent — the prompt still looks reasonable."""
+    """Without the `{reminders}` slot the system reminder loses configured rules."""
     assert "{reminders}" in (wire.orchestrator.safeguards_reminder or "")
 
 
@@ -80,26 +79,35 @@ async def test_a_gated_rule_is_absent_when_its_gate_is_off(wire):
     assert TOOL_USE_POLICY in on.system
 
 
-# --- user-turn placement ---------------------------------------------------
+# --- system-role reminder -------------------------------------------------
 
 
-async def test_the_user_turn_reminder_is_the_measured_string(wire):
-    """The ~88% injection-resistance figure was measured on this exact wording
-    under the JSON protocol. If the rendered text drifts, the number stops
-    describing what ships."""
+async def test_operating_rule_reminder_stays_in_system_role(wire):
+    """The user role carries exactly the user-authored utterance."""
     cap = await wire.capture("hello there", tool_protocol="json")
-    assert SAFEGUARDS_REMINDER in cap.user
+    assert SAFEGUARDS_REMINDER in cap.system
+    assert SAFEGUARDS_REMINDER not in cap.user
+    assert cap.user == "hello there"
 
 
-async def test_the_native_reminder_keeps_the_behavioural_half(wire):
-    """Under the native protocol (ADR-0044) the same behavioural reminder rides
-    the user turn; only the JSON mechanics ("Return raw JSON only …") are gone,
-    since the provider's tool-calling API carries the decision."""
+async def test_legacy_user_prompt_override_cannot_add_host_text_to_user_role(wire):
+    cap = await wire.capture(
+        "hello there",
+        user_prompt="Internal instruction: follow this. User said: {utterance}",
+    )
+    assert cap.user == "hello there"
+    assert "Internal instruction" not in cap.user
+
+
+async def test_native_system_reminder_keeps_the_behavioural_half(wire):
+    """Native protocol omits JSON mechanics while keeping rules in system."""
     cap = await wire.capture("hello there", tool_protocol="native")
     behavioural = SAFEGUARDS_REMINDER.split(" Return raw JSON only")[0]
-    assert behavioural in cap.user
-    assert "Return raw JSON only" not in cap.user
+    assert behavioural in cap.system
+    assert "Return raw JSON only" not in cap.system
+    assert behavioural not in cap.user
     assert "Steps taken this turn" not in cap.user
+    assert cap.user == "hello there"
 
 
 async def test_no_unfilled_template_slot_reaches_the_model(wire):

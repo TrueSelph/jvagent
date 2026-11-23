@@ -1,0 +1,355 @@
+{
+  "parent_revision": "git-commit:8673299c8f2422d7bda5325bc37bf1c74b414cd7",
+  "observed_at": "2026-11-05T14:26:57.280121+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "database": "jvagent_native_host_context",
+    "api_port": 8136,
+    "jvchat_port": 3136,
+    "messenger_port": 3137,
+    "deferred_saves": true,
+    "model": "openai:gpt-4.1"
+  },
+  "persisted_interactions": [
+    {
+      "scenario": "parent_anonymous_owner_session_recall",
+      "id": "n.Interaction.83836a3614bd47a2b21f902e",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_b951d1994c394ff8",
+      "utterance": "Which exact log-private host confirmation did you just return? Answer just that confirmation.",
+      "response": "LOG-PRIVATE-HOST-CEDAR",
+      "started_at": "2026-11-05T09:42:45.877643",
+      "completed_at": "2026-11-05T09:42:48.039235",
+      "usage": {
+        "last_updated": "2026-11-05T13:42:48.039280+00:00",
+        "total_tokens": 510,
+        "prompt_tokens": 500,
+        "total_cost_usd": 0.00108,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 10,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00108,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 500,
+          "output_tokens": 10
+        },
+        "output": "LOG-PRIVATE-HOST-CEDAR",
+        "run_id": "corr-ca1bf0011c4747b597b3fbaf6e698a4d",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-c63a71d8db694e5993cc62c15b5183b2"
+        },
+        "usage_complete": true
+      },
+      "interaction_duration_seconds": 2.161592
+    },
+    {
+      "scenario": "anonymous_popup_reload_recall",
+      "id": "n.Interaction.4e404300958045ca9e29fc09",
+      "user_id": "user_5bed9245e6964bde934fcaac2a488ab5",
+      "session_id": "sess_f131c7df295042be",
+      "utterance": "What test marker did I ask you to remember? Reply with only the marker.",
+      "response": "PUBLIC-CEDAR",
+      "started_at": "2026-11-05T10:23:38.065587",
+      "completed_at": "2026-11-05T10:23:40.409207",
+      "usage": {
+        "last_updated": "2026-11-05T14:23:40.409249+00:00",
+        "total_tokens": 393,
+        "prompt_tokens": 387,
+        "total_cost_usd": 0.000822,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 6,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000822,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 387,
+          "output_tokens": 6
+        },
+        "output": "PUBLIC-CEDAR",
+        "run_id": "corr-a98c83b7d63a40f8ad9726d6eae42b75",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-128898f9e26a4c35b38cf3b765e3a24a"
+        },
+        "usage_complete": true
+      },
+      "interaction_duration_seconds": 2.34362
+    },
+    {
+      "scenario": "member_bearer_model",
+      "id": "n.Interaction.b2db5ebca78e4d88ab64db2d",
+      "user_id": "o.User.5e1fbb87e6fe49aea271c674",
+      "session_id": "sess_0d61b170964b45ed",
+      "utterance": "For this identity isolation check reply only MEMBER-BOUND.",
+      "response": "MEMBER-BOUND",
+      "started_at": "2026-11-05T10:20:58.318883",
+      "completed_at": "2026-11-05T10:21:02.067807",
+      "usage": {
+        "last_updated": "2026-11-05T14:21:02.067841+00:00",
+        "total_tokens": 277,
+        "prompt_tokens": 271,
+        "total_cost_usd": 0.00059,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 6,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00059,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 271,
+          "output_tokens": 6
+        },
+        "output": "MEMBER-BOUND",
+        "run_id": "corr-a6170fb5e9084f3db91a37d0df3d66c6",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "interaction_duration_seconds": 3.748924
+    },
+    {
+      "scenario": "parent_anonymous_subject_impersonation",
+      "id": "n.Interaction.c8d942627ab748c8a91b9dde",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_4bf57233b0ad4246",
+      "utterance": "Reply only ANONYMOUS-IDENTITY-CHECK.",
+      "response": "ANONYMOUS-IDENTITY-CHECK",
+      "started_at": "2026-11-05T09:37:27.809928",
+      "completed_at": "2026-11-05T09:37:30.427254",
+      "usage": {
+        "last_updated": "2026-11-05T13:37:30.427309+00:00",
+        "total_tokens": 283,
+        "prompt_tokens": 272,
+        "total_cost_usd": 0.000632,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 11,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000632,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 272,
+          "output_tokens": 11
+        },
+        "output": "ANONYMOUS-IDENTITY-CHECK",
+        "run_id": "corr-7b5c2648eacc4ee593d1dac29f00509b",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "interaction_duration_seconds": 2.617326
+    },
+    {
+      "scenario": "admin_jvchat_mcp",
+      "id": "n.Interaction.bc880e69ed68465abd205b63",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_b951d1994c394ff8",
+      "utterance": "Use the MCP tool to look up REHEARSAL-47 and tell me its room and start time. This is the public identity binding regression check.",
+      "response": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+      "started_at": "2026-11-05T10:19:19.115076",
+      "completed_at": "2026-11-05T10:19:24.927545",
+      "usage": {
+        "last_updated": "2026-11-05T14:19:24.927600+00:00",
+        "total_tokens": 1192,
+        "prompt_tokens": 1148,
+        "total_cost_usd": 0.002648,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 44,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002648,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1148,
+          "output_tokens": 44
+        },
+        "output": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+        "run_id": "corr-48b7431c7ddd4ea29b12e78782096d4c",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-ca1bf0011c4747b597b3fbaf6e698a4d"
+        },
+        "usage_complete": true
+      },
+      "interaction_duration_seconds": 5.812469
+    },
+    {
+      "scenario": "anonymous_popup_mcp",
+      "id": "n.Interaction.3e32dae240544060a1bbdc1f",
+      "user_id": "user_5bed9245e6964bde934fcaac2a488ab5",
+      "session_id": "sess_f131c7df295042be",
+      "utterance": "Remember the test marker PUBLIC-CEDAR. Use the MCP tool to look up REHEARSAL-47 and tell me its room and start time.",
+      "response": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+      "started_at": "2026-11-05T10:22:10.328273",
+      "completed_at": "2026-11-05T10:22:13.486372",
+      "usage": {
+        "last_updated": "2026-11-05T14:22:13.486433+00:00",
+        "total_tokens": 680,
+        "prompt_tokens": 636,
+        "total_cost_usd": 0.001624,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 44,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001624,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 636,
+          "output_tokens": 44
+        },
+        "output": "REHEARSAL-47 is in room Cedar and starts at 14:30.",
+        "run_id": "corr-128898f9e26a4c35b38cf3b765e3a24a",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "interaction_duration_seconds": 3.158099
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.2c659d835b6645f9948ca34e",
+      "session_id": "sess_e5f888e133c6455d",
+      "user_id": "user_641cb126924a4e168d10cb70e513deb0",
+      "public_identity_kind": "anonymous",
+      "interaction_count": 0,
+      "has_token_secret": true
+    },
+    {
+      "id": "n.Conversation.e11444ff8f214029901f1a32",
+      "session_id": "sess_4bf57233b0ad4246",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "public_identity_kind": null,
+      "interaction_count": 1,
+      "has_token_secret": true
+    },
+    {
+      "id": "n.Conversation.5a915b8721274ee4ba4f3795",
+      "session_id": "sess_0d61b170964b45ed",
+      "user_id": "o.User.5e1fbb87e6fe49aea271c674",
+      "public_identity_kind": "bearer",
+      "interaction_count": 1,
+      "has_token_secret": true
+    },
+    {
+      "id": "n.Conversation.0455359ca6ee45c7a3b2f564",
+      "session_id": "sess_b951d1994c394ff8",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "public_identity_kind": "bearer",
+      "interaction_count": 9,
+      "has_token_secret": true
+    },
+    {
+      "id": "n.Conversation.982b64c54d7040d282c73907",
+      "session_id": "sess_f131c7df295042be",
+      "user_id": "user_5bed9245e6964bde934fcaac2a488ab5",
+      "public_identity_kind": "anonymous",
+      "interaction_count": 2,
+      "has_token_secret": true
+    }
+  ],
+  "rejected_request_interactions": [],
+  "empty_utterance_interactions": [],
+  "module_observation": {
+    "process_id": 48458,
+    "observed_at": "2026-11-05T14:20:40.630147+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T14:26:57.198108+00:00"
+  },
+  "source_blobs": {
+    "jvagent/action/interact/endpoints.py": "git-blob:1fc43afcb780c8a7ba525c280099f3ccd0a923ff",
+    "jvagent/action/interact/interact_walker.py": "git-blob:2dd7938ea35cb2b4e98b8ce7c3454d4fad46b919",
+    "jvagent/action/interact/public_gate.py": "git-blob:ed87429b0672fef3e4270fd345cafc0120cb8128",
+    "jvagent/action/interact/session_token.py": "git-blob:8e111b5040e19968f54df5e422360541c1923260",
+    "jvagent/action/interact/voice_stream_endpoints.py": "git-blob:75132b715523eb060a1fa26bda3216ce9caf448c",
+    "jvagent/memory/conversation.py": "git-blob:284feb461c93d2f71393a8ebd9e86b585dc8cee5",
+    "jvmessenger/src/app/streaming/session.ts": "git-blob:b6f9890ad927f259b9e28a591d31c6094f816b50"
+  },
+  "validation": {
+    "affected_legacy_profile": "519 passed, 2 skipped, 14 warnings, 16.77 seconds",
+    "native_pg_python311": "211 passed, 121 warnings, 23.72 seconds",
+    "native_pg_python312": "211 passed, 121 warnings, 25.25 seconds",
+    "identity_python311": "22 passed, 0.30 seconds",
+    "identity_python312": "22 passed, 0.56 seconds",
+    "messenger": "44 tests passed across 7 files; tsc and Vite builds passed",
+    "all_file_hooks": "passed all eight hooks before commit; rerun after final evidence-only edits",
+    "full_suite_on_push": "pending normal pre-push hook; tracked on draft PR #260"
+  },
+  "successful_final_model_totals": {
+    "provider_reported_tokens": 2542,
+    "requests": 6,
+    "estimated_cost_usd": 0.005684,
+    "provider_reported_cost_usd": null
+  }
+}

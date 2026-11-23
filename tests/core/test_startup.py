@@ -59,3 +59,22 @@ async def test_failed_startup_retries_after_backoff_window(monkeypatch):
 
     assert app.initialize_actions.await_count == 2
     startup._startup_last_failure = 0.0
+
+
+@pytest.mark.asyncio
+async def test_enumeration_failure_is_not_an_empty_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from jvagent.core.agents import Agents
+    from jvagent.core.app import App
+
+    monkeypatch.setattr(startup, "_startup_completed", False)
+    monkeypatch.setattr(startup, "_startup_last_failure", 0.0)
+    app = App()
+    manager = SimpleNamespace(
+        get_connected_agents=AsyncMock(side_effect=OSError("graph unavailable"))
+    )
+    monkeypatch.setattr(Agents, "get", AsyncMock(return_value=manager))
+    monkeypatch.setattr(App, "get", AsyncMock(return_value=app))
+    assert await startup.run_app_startup() is False
+    assert startup._startup_completed is False

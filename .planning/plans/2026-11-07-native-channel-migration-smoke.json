@@ -1,0 +1,435 @@
+{
+  "parent_revision": "git-commit:ef22dabec9af3a5dfe58143f3b3c17bb325de396",
+  "scope": "Actual GPT-4.1/jvchat3140 on public-CLI-generated native candidate, isolated PostgreSQL/backend8181. Default browser channel; no actual voice/Meta transport.",
+  "source_blobs": {
+    "jvagent/cli/harness_migrate.py": "git-blob:284bea054e8b4365fe6a3b4bf9d3fea173a3fd11",
+    "jvagent/cli/harness_migration_channels.py": "git-blob:605fc3cfa3d27ab4a814ebeb435169381391da31",
+    "jvagent/harness/run_limits.py": "git-blob:81ceca6695a3418cd788f0fb3abba10de3fe6abf",
+    "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:48b891e0c1ee4299086a6d14d96f3a96c847c8c2"
+  },
+  "acceptance": {
+    "required": [
+      "Public CLI writes new0600 candidate without mutating source",
+      "Generated candidate preserves exact selected instructions and tightening limits",
+      "Real GPT-4.1 browser skill load/answer and follow-up succeed under two-request ceiling",
+      "Cold restart and cached reload preserve graph rows/results/spend",
+      "Unknown channel instructions absent from actual SDK factory input"
+    ],
+    "limitations": [
+      "Disposable configuration-only cutover, not retained production-state migration",
+      "No actual voice/Meta or external-effect deadline equivalence"
+    ]
+  },
+  "turns": [
+    {
+      "utterance": "Load the general skill and calculate 19 times 7.",
+      "response": "MIGRATED-CHANNEL-29. 19 times 7 is 133.",
+      "closed": true,
+      "channel": "default",
+      "session_id": "sess_19ffb1ce22cd4306",
+      "conversation_id": "n.Conversation.bee58f67c7034258b5ef7607",
+      "started_at": "2026-11-07T00:19:48.538935",
+      "completed_at": "2026-11-07T00:19:52.547124",
+      "usage": {
+        "last_updated": "2026-11-07T04:19:52.547227+00:00",
+        "total_tokens": 293,
+        "prompt_tokens": 273,
+        "total_cost_usd": 0.000706,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 20,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000706,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.324,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.324,
+        "unmeasured_model_attempt_count": 0
+      },
+      "interaction_id": "n.Interaction.01a3fce759a24073a0b51c9e",
+      "elapsed_seconds": 4.008189,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 273,
+          "output_tokens": 20
+        },
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 2,
+          "max_tool_calls": 40,
+          "timeout_seconds": 30,
+          "max_run_cost_usd": "0.25",
+          "max_output_tokens": null
+        },
+        "output": "MIGRATED-CHANNEL-29. 19 times 7 is 133.",
+        "run_id": "corr-088dd873e9074384b36e698d9ca12bf4",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "timestamp": "2026-11-07T04:19:50.113459Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T04:19:50.451532Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T04:19:51.775985Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "timestamp": "2026-11-07T04:19:52.313351Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        }
+      ]
+    },
+    {
+      "utterance": "What is 20 times 7?",
+      "response": "MIGRATED-CHANNEL-29. 20 times 7 is 140.",
+      "closed": true,
+      "channel": "default",
+      "session_id": "sess_19ffb1ce22cd4306",
+      "conversation_id": "n.Conversation.bee58f67c7034258b5ef7607",
+      "started_at": "2026-11-07T00:20:29.776570",
+      "completed_at": "2026-11-07T00:20:32.895934",
+      "usage": {
+        "last_updated": "2026-11-07T04:20:32.896033+00:00",
+        "total_tokens": 327,
+        "prompt_tokens": 307,
+        "total_cost_usd": 0.000774,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 20,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000774,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.552,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.552,
+        "unmeasured_model_attempt_count": 0
+      },
+      "interaction_id": "n.Interaction.9d56354583f144f3b80637d8",
+      "elapsed_seconds": 3.119364,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 307,
+          "output_tokens": 20
+        },
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 2,
+          "max_tool_calls": 40,
+          "timeout_seconds": 30,
+          "max_run_cost_usd": "0.25",
+          "max_output_tokens": null
+        },
+        "output": "MIGRATED-CHANNEL-29. 20 times 7 is 140.",
+        "run_id": "corr-57442ca645394fcd9c8505830ce5b010",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-088dd873e9074384b36e698d9ca12bf4"
+        },
+        "usage_complete": true
+      },
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "timestamp": "2026-11-07T04:20:30.359258Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T04:20:30.602217Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T04:20:32.153952Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "timestamp": "2026-11-07T04:20:32.634600Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        }
+      ]
+    },
+    {
+      "utterance": "Continue after restart: what is 21 times 7?",
+      "response": "MIGRATED-CHANNEL-29. 21 times 7 is 147.",
+      "closed": true,
+      "channel": "default",
+      "session_id": "sess_19ffb1ce22cd4306",
+      "conversation_id": "n.Conversation.bee58f67c7034258b5ef7607",
+      "started_at": "2026-11-07T00:22:47.438395",
+      "completed_at": "2026-11-07T00:22:51.478866",
+      "usage": {
+        "last_updated": "2026-11-07T04:22:51.478961+00:00",
+        "total_tokens": 365,
+        "prompt_tokens": 345,
+        "total_cost_usd": 0.00085,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 20,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00085,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.041,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.041,
+        "unmeasured_model_attempt_count": 0
+      },
+      "interaction_id": "n.Interaction.ce37784722304921b919e896",
+      "elapsed_seconds": 4.040471,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 345,
+          "output_tokens": 20
+        },
+        "limits": {
+          "max_tokens": 100000,
+          "max_requests": 2,
+          "max_tool_calls": 40,
+          "timeout_seconds": 30,
+          "max_run_cost_usd": "0.25",
+          "max_output_tokens": null
+        },
+        "output": "MIGRATED-CHANNEL-29. 21 times 7 is 147.",
+        "run_id": "corr-3ffc458cf52d4c32ab71995e66a87517",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-57442ca645394fcd9c8505830ce5b010"
+        },
+        "usage_complete": true
+      },
+      "effects": [],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "timestamp": "2026-11-07T04:22:49.427017Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "timestamp": "2026-11-07T04:22:49.668763Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "timestamp": "2026-11-07T04:22:50.709708Z",
+          "tool_name": null,
+          "step_index": 1,
+          "tool_call_id": null
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "timestamp": "2026-11-07T04:22:51.242874Z",
+          "tool_name": null,
+          "step_index": 0,
+          "tool_call_id": null
+        }
+      ]
+    }
+  ],
+  "conversation_spend": [
+    {
+      "usd": "0.002330",
+      "tokens": 985,
+      "requests": 3,
+      "unpriced_requests": 0
+    }
+  ],
+  "totals": {
+    "requests": 3,
+    "provider_reported_tokens": 985,
+    "estimated_cost_usd": "0.002330",
+    "reported_cost_usd": "0",
+    "unknown_cost_calls": 0
+  },
+  "readback": {
+    "cold_first_two_rows_and_conversation_exact": true,
+    "reload_three_rows_conversation_and_registrations_exact": true
+  },
+  "candidate_review": {
+    "source_sha256": "sha256:d0c7952900d851502ea44acb235df16822849fd160a4a8557d66c7831810a7ce",
+    "candidate_sha256": "sha256:8d45a3bf265e1744808a57a2b2c8101b11aceedc54ff2dd9beff1807e58b44b6",
+    "candidate_mode": "0600",
+    "reviewed": true
+  },
+  "migration_report": {
+    "schema": "jvagent.native-config-migration.v1",
+    "source": "agents/demo/assistant/agent.yaml",
+    "source_digest": "sha256:d0c7952900d851502ea44acb235df16822849fd160a4a8557d66c7831810a7ce",
+    "status": "candidate",
+    "blockers": [],
+    "mappings": {
+      "lock_active_flow": "retired",
+      "tool_tier": "declared clock service",
+      "max_concurrent_tools": "tool_execution_mode",
+      "activation_budget": "max_requests",
+      "max_duration_seconds": "timeout_seconds",
+      "max_turn_cost_usd": "max_run_cost_usd",
+      "channel_overrides": "channel_instructions/channel_limits; explicit inactive or engine-control retirement",
+      "model": "model",
+      "model_action_type": "native provider",
+      "system_prompt_extra": "instructions",
+      "model_temperature": "model_settings.temperature",
+      "model_max_tokens": "model_settings.max_tokens",
+      "enabled": "enabled"
+    },
+    "bounded_defaults": [
+      "tool_execution_mode",
+      "max_conversation_cost_usd",
+      "max_tokens"
+    ],
+    "preserved_action_count": 1,
+    "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+    "required_review": [
+      "Skills, scripts, Action tools and channel compatibility",
+      "Credentials and native provider settings",
+      "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+      "Fresh isolated bootstrap and actual-provider browser rehearsal",
+      "Qualify skill detours/resumption and domain validation; retained legacy flow/task locks require separate state migration",
+      "Review explicit control retirements and native single-model/context/event behavior before cutover",
+      "Review explicit AgentUtils clock declaration, app timezone, skill tool ownership and host permissions",
+      "Review channel instructions as model guidance, move domain procedures into skills, and qualify retired channel heuristics before cutover; channel labels grant no authority"
+    ],
+    "retired_settings": {
+      "lock_active_flow": "Retired deterministic turn routing; official SDK skill ownership and persisted domain task state support model-led continuation, not a hard turn lock",
+      "tool_tier": "Retired core-tool tier; clock refresh is an AgentUtils service governed by active skill tools and host permission"
+    },
+    "selected_skill_count": 1,
+    "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification",
+    "retired_channel_settings": [
+      "ack_statements",
+      "first_emit_timeout_ms",
+      "history_limit",
+      "pinned_tools"
+    ],
+    "candidate_written": true
+  },
+  "planner_final_candidate_equal_to_browser_tested": true,
+  "planner_final_source_blobs": {
+    "jvagent/cli/harness_migrate.py": "git-blob:284bea054e8b4365fe6a3b4bf9d3fea173a3fd11",
+    "jvagent/cli/harness_migration_channels.py": "git-blob:f5705af385bd7c560d42bca070dae04a69a05653"
+  },
+  "factory_observation": [
+    {
+      "instructions": "Agent identity: Native Channel Migration Qualification\n\nAnswer accurately. Use the general skill when asked.\n\nBegin every final answer with MIGRATED-CHANNEL-29.\n\nKeep final replies within 280 characters when practical.\n\nHost attachment input policy: none. Files outside this MIME list cannot be accepted.\n\nImage uploads: disabled. PDF uploads: disabled. Do not suggest uploads in a disabled format.",
+      "tools": [
+        {
+          "name": "reply",
+          "effect_class": null
+        },
+        {
+          "name": "respond",
+          "effect_class": null
+        }
+      ],
+      "pid": 5859
+    },
+    {
+      "instructions": "Agent identity: Native Channel Migration Qualification\n\nAnswer accurately. Use the general skill when asked.\n\nBegin every final answer with MIGRATED-CHANNEL-29.\n\nKeep final replies within 280 characters when practical.\n\nHost attachment input policy: none. Files outside this MIME list cannot be accepted.\n\nImage uploads: disabled. PDF uploads: disabled. Do not suggest uploads in a disabled format.",
+      "tools": [
+        {
+          "name": "reply",
+          "effect_class": null
+        },
+        {
+          "name": "respond",
+          "effect_class": null
+        }
+      ],
+      "pid": 5859
+    },
+    {
+      "instructions": "Agent identity: Native Channel Migration Qualification\n\nAnswer accurately. Use the general skill when asked.\n\nBegin every final answer with MIGRATED-CHANNEL-29.\n\nKeep final replies within 280 characters when practical.\n\nHost attachment input policy: none. Files outside this MIME list cannot be accepted.\n\nImage uploads: disabled. PDF uploads: disabled. Do not suggest uploads in a disabled format.",
+      "tools": [
+        {
+          "name": "reply",
+          "effect_class": null
+        },
+        {
+          "name": "respond",
+          "effect_class": null
+        }
+      ],
+      "pid": 6139
+    }
+  ],
+  "module_observation": {
+    "process_id": 6139,
+    "observed_at": "2026-11-07T04:23:55.073445+00:00",
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "fixture_sha256": {
+    "agents/demo/assistant/agent.yaml": "sha256:8d45a3bf265e1744808a57a2b2c8101b11aceedc54ff2dd9beff1807e58b44b6",
+    "agents/demo/assistant/skills/general/SKILL.md": "sha256:7de208c6779081caffd62072c8797d5069bea82b0e495d159fbc7463f5efcca7"
+  },
+  "setup_notes": [
+    "An initial unit regression found source-key-order-dependent prompt composition; explicit ordering now preserves literal extras before length guidance.",
+    "Only report diagnostics changed after candidate generation. Final planner reproduces the identical browser-tested candidate.",
+    "The single primary skill is activated by official SDK capability loading; no deferred load_capability tool event is expected."
+  ]
+}

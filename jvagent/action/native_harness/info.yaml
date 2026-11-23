@@ -1,0 +1,21 @@
+package:
+  name: jvagent/native_harness
+  author: TrueSelph Inc.
+  archetype: NativeHarnessAction
+  version: 0.1.0
+  meta:
+    title: Native Pydantic AI Harness
+    description: Development native execution entrypoint
+    group: jvagent
+    type: interact_action
+  config:
+    singleton: true
+    order:
+      weight: -200
+  manifest:
+    purpose: Execute native Pydantic AI skills and Action tools
+    routable_by_anchor: false
+    pattern_orchestrator: true
+  dependencies:
+    actions:
+      - jvagent/reply

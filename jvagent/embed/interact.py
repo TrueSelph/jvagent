@@ -11,11 +11,14 @@ from jvspatial.api.exceptions import (
     ValidationError,
 )
 
+from jvagent.action.interact.task_cleanup import request_interaction_cancellation
+
 logger = logging.getLogger(__name__)
 
 # In-flight embed interact walker tasks keyed by host thread_id and/or
 # jvagent session_id — enables explicit cancel from the host API.
 _interact_tasks: Dict[str, asyncio.Task[Any]] = {}
+_native_interact_tasks: set[asyncio.Task[Any]] = set()
 
 
 def _interact_task_lock() -> asyncio.Lock:
@@ -24,14 +27,18 @@ def _interact_task_lock() -> asyncio.Lock:
     return get_loop_lock("embed_interact_tasks")
 
 
-async def _register_interact_task(key: str, task: asyncio.Task[Any]) -> None:
+async def _register_interact_task(
+    key: str, task: asyncio.Task[Any], *, native: bool = False
+) -> None:
     if not key:
         return
     async with _interact_task_lock():
         existing = _interact_tasks.get(key)
         if existing is not None and not existing.done() and existing is not task:
-            existing.cancel()
+            request_interaction_cancellation(existing)
         _interact_tasks[key] = task
+        if native:
+            _native_interact_tasks.add(task)
 
 
 async def _clear_interact_task(key: str, task: asyncio.Task[Any]) -> None:
@@ -40,6 +47,8 @@ async def _clear_interact_task(key: str, task: asyncio.Task[Any]) -> None:
     async with _interact_task_lock():
         if _interact_tasks.get(key) is task:
             del _interact_tasks[key]
+        if task not in _interact_tasks.values():
+            _native_interact_tasks.discard(task)
 
 
 def cancel_interact(
@@ -49,19 +58,22 @@ def cancel_interact(
 ) -> bool:
     """Cancel an in-flight :func:`interact_stream` walker task, if any.
 
-    Task handle cancel is the delivery interrupt. TurnRun is the source of
-    truth: the matching session journal is marked ``recovery_required``.
+    Native cancellation is settled by the SDK/graph execution adapter. Only
+    transitional tasks mark the legacy session journal ``recovery_required``.
     """
     cancelled = False
+    legacy_keys: List[str] = []
     for key in (thread_id, session_id):
         if not key:
             continue
         task = _interact_tasks.get(key)
         if task is not None and not task.done():
-            task.cancel()
+            request_interaction_cancellation(task)
             cancelled = True
-    if cancelled:
-        _mark_embed_recovery(session_id=session_id, thread_id=thread_id)
+            if task not in _native_interact_tasks:
+                legacy_keys.append(key)
+    for key in legacy_keys:
+        _mark_embed_recovery(session_id=key)
     return cancelled
 
 
@@ -111,7 +123,8 @@ async def interact(
         agent_id: jvspatial node id of the target Agent. Use
             :func:`get_agent_id_by_name` to resolve from a dotted
             ``namespace/name`` instead.
-        utterance: User's input text. Must be non-empty.
+        utterance: User's input text. May be empty only when ``data`` carries
+            authenticated host context for a host-initiated turn.
         user_id: Optional user identifier. If omitted, jvagent creates an
             anonymous User on demand and returns the generated id in the
             response.
@@ -131,8 +144,8 @@ async def interact(
 
     Raises:
         ResourceNotFoundError: ``agent_id`` does not resolve.
-        ValidationError: ``utterance`` is empty / whitespace-only or the
-            walker fails to produce an Interaction.
+        ValidationError: ``utterance`` is empty / whitespace-only without
+            valid authenticated host context, or the walker fails to produce an Interaction.
         Anything the InteractWalker raises during traversal propagates
         unchanged so the host can apply its own error mapping.
 
@@ -144,10 +157,18 @@ async def interact(
           endpoint until a streaming embed callable lands.
     """
     if not utterance or not utterance.strip():
-        raise ValidationError(
-            message="utterance is required and cannot be empty",
-            details={"utterance": utterance},
-        )
+        from jvagent.core.host_context import allows_empty_host_utterance
+
+        if not allows_empty_host_utterance(
+            data,
+            agent_id=agent_id,
+            user_id=str(user_id or ""),
+            session_id=str(session_id or ""),
+        ):
+            raise ValidationError(
+                message="utterance is required and cannot be empty",
+                details={"utterance": utterance},
+            )
 
     if data:
         from jvagent.harness.contracts import (
@@ -308,7 +329,7 @@ async def get_agent_id_by_name(
     """Resolve an Agent node id from its ``name`` (and optional ``namespace``).
 
     Convenience wrapper around :func:`list_agents` for hosts that wire
-    chat threads against a stable dotted identifier (``"integral/integral_agent"``)
+    chat threads against a stable dotted identifier (``"workspace/agent"``)
     rather than a jvspatial node id, which changes per environment.
 
     Accepts either:
@@ -377,17 +398,23 @@ async def interact_stream(
             first-token latency low, large enough to avoid CPU spin.
 
     Raises:
-        ValidationError: ``utterance`` is empty / whitespace-only. Raised
-            *before* the generator yields its first envelope.
+        ValidationError: ``utterance`` is empty / whitespace-only without
+            valid authenticated host context. Raised *before* the generator yields
+            its first envelope.
     """
     if not utterance or not utterance.strip():
-        trigger = (data or {}).get("trigger")
-        if trigger != "agent_workstream":
+        from jvagent.core.host_context import allows_empty_host_utterance
+
+        if not allows_empty_host_utterance(
+            data,
+            agent_id=agent_id,
+            user_id=str(user_id or ""),
+            session_id=str(session_id or ""),
+        ):
             raise ValidationError(
                 message="utterance is required and cannot be empty",
                 details={"utterance": utterance},
             )
-        utterance = (data or {}).get("system_utterance") or "[agent workstream]"
 
     from jvspatial import create_task, flush_deferred_entities
 
@@ -430,6 +457,10 @@ async def interact_stream(
         stream=True,
     )
 
+    from jvagent.core.execution_owner import uses_native_harness
+
+    native = await uses_native_harness(agent)
+
     walk_task: Optional[asyncio.Task[Any]] = None
     task_keys: List[str] = []
     try:
@@ -444,18 +475,16 @@ async def interact_stream(
         if session_id:
             task_keys.append(session_id)
         for key in task_keys:
-            await _register_interact_task(key, walk_task)
+            await _register_interact_task(key, walk_task, native=native)
 
-        # Wait up to 5s for InteractWalker to instantiate the Interaction.
-        max_wait = 5.0
-        waited = 0.0
-        while not walker.interaction and waited < max_wait:
+        # Admission may queue behind an active conversation turn. Observe its
+        # task and host disconnect instead of guessing a five-second deadline.
+        while not walker.interaction and not walk_task.done():
             if await _disc():
                 if walk_task and not walk_task.done():
                     walk_task.cancel()
                 return
-            await asyncio.sleep(0.1)
-            waited += 0.1
+            await asyncio.sleep(poll_interval)
 
         if not walker.interaction:
             # Drain the walker for diagnostics, surface as terminal error.
@@ -484,6 +513,13 @@ async def interact_stream(
                         "message": "Access denied.",
                     }
                     return
+            if error_code == "invalid_host_context":
+                yield {
+                    "type": "error",
+                    "code": error_code,
+                    "message": "Host context could not be verified.",
+                }
+                return
             msg = "Interaction was not created during traversal"
             if error_code:
                 msg = f"{msg} [{error_code}]"
@@ -512,15 +548,18 @@ async def interact_stream(
             sid = walker.session_id
             if sid not in task_keys:
                 task_keys.append(sid)
-                await _register_interact_task(sid, walk_task)
-            try:
-                from jvagent.harness.runtime import get_runtime
+                await _register_interact_task(sid, walk_task, native=native)
+            if not native:
+                try:
+                    from jvagent.harness.runtime import get_runtime
 
-                corr = getattr(walker, "correlation_id", "") or ""
-                if corr:
-                    get_runtime().bind_lease(sid, corr)
-            except Exception:
-                logger.debug("embed.interact_stream: lease bind skip", exc_info=True)
+                    corr = getattr(walker, "correlation_id", "") or ""
+                    if corr:
+                        get_runtime().bind_lease(sid, corr)
+                except Exception:
+                    logger.debug(
+                        "embed.interact_stream: lease bind skip", exc_info=True
+                    )
 
         # Stream messages off the response bus until the walker finishes.
         if walker.response_bus and walker.session_id:
@@ -540,7 +579,7 @@ async def interact_stream(
             # ``response/message.py``.
             seen_message_ids: set = set()
 
-            async def _on_message(message: Any) -> None:
+            def _on_message(message: Any) -> None:
                 if getattr(message, "interaction_id", None) != interaction.id:
                     return
                 mtype = getattr(message, "message_type", "")
@@ -550,10 +589,11 @@ async def interact_stream(
                         if mid in seen_message_ids:
                             return
                         seen_message_ids.add(mid)
-                await message_queue.put(message)
+                message_queue.put_nowait(message)
 
+            replay = {"replay_interaction_id": interaction.id} if native else {}
             await walker.response_bus.subscribe(
-                walker.session_id, _on_message, receive_chunks=True
+                walker.session_id, _on_message, receive_chunks=True, **replay
             )
             try:
                 while True:
@@ -643,8 +683,20 @@ async def interact_stream(
             pass
     finally:
         if walk_task is not None:
-            for key in task_keys:
-                await _clear_interact_task(key, walk_task)
+            import anyio
+
+            from jvagent.action.interact.task_cleanup import (
+                cancel_and_drain_interaction,
+            )
+
+            with anyio.CancelScope(shield=True):
+                try:
+                    await cancel_and_drain_interaction(walk_task)
+                except Exception:
+                    logger.exception("embed.interact_stream: walker cleanup failed")
+                finally:
+                    for key in task_keys:
+                        await _clear_interact_task(key, walk_task)
         try:
             from jvagent.core.cache import maybe_cleanup_on_request
 
@@ -728,7 +780,7 @@ async def list_user_conversations(
     """Return jvagent ``Conversation`` summaries for a host user.
 
     Useful for admin / debug surfaces that want to see what the agent
-    "knows" about a user's conversation history. The host (integral)
+    "knows" about a user's conversation history. The embedding host
     already keeps its own thread list keyed on the same identifiers; this
     is the agent-side complement.
 

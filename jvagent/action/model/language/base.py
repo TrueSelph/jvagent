@@ -5,6 +5,7 @@ and related types for text generation and multimodal interactions.
 """
 
 import asyncio
+import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -812,6 +813,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             result = await self._execute_with_retry(
                 lambda: impl_stream(messages, tools, **stream_kwargs),
                 op_name="lm_query_stream_init",
+                emit_success=False,
             )
             result._thinking_queue = thinking_queue
             initial_stream = result.stream
@@ -819,6 +821,7 @@ class LanguageModelAction(BaseModelAction, ABC):
             async def stream_with_retry() -> AsyncGenerator[str, None]:
                 retries_left = self.max_retries
                 failure_attempt = 0
+                stream_attempt_number = 1
                 current_stream = initial_stream
                 outer_result = result
 
@@ -826,20 +829,47 @@ class LanguageModelAction(BaseModelAction, ABC):
                     if not current_stream:
                         return
                     got_any_chunk = False
+                    attempt_started = asyncio.get_running_loop().time()
                     it = current_stream.__aiter__()
                     try:
                         try:
                             chunk = await it.__anext__()
                         except StopAsyncIteration:
+                            await self._emit_model_attempt(
+                                "lm_query_stream",
+                                stream_attempt_number,
+                                "succeeded",
+                                asyncio.get_running_loop().time() - attempt_started,
+                            )
                             return
                         got_any_chunk = True
                         yield chunk
                         async for chunk in it:
                             yield chunk
+                        await self._emit_model_attempt(
+                            "lm_query_stream",
+                            stream_attempt_number,
+                            "succeeded",
+                            asyncio.get_running_loop().time() - attempt_started,
+                        )
                         return
                     except asyncio.CancelledError:
+                        await self._emit_model_attempt(
+                            "lm_query_stream",
+                            stream_attempt_number,
+                            "cancelled",
+                            asyncio.get_running_loop().time() - attempt_started,
+                        )
+                        outer_result.close_thinking_stream()
                         raise
                     except Exception as e:
+                        await self._emit_model_attempt(
+                            "lm_query_stream",
+                            stream_attempt_number,
+                            "failed",
+                            asyncio.get_running_loop().time() - attempt_started,
+                            e,
+                        )
                         if not self._is_retryable_exception(e):
                             logger.error(
                                 "lm_query_stream failed (non-retryable): %s",
@@ -870,7 +900,12 @@ class LanguageModelAction(BaseModelAction, ABC):
                         )
                         await asyncio.sleep(delay)
                         ModelActionResult.drain_thinking_queue_sync(thinking_queue)
-                        new_result = await impl_stream(messages, tools, **stream_kwargs)
+                        stream_attempt_number += 1
+                        new_result = await self._execute_with_retry(
+                            lambda: impl_stream(messages, tools, **stream_kwargs),
+                            op_name="lm_query_stream_init",
+                            emit_success=False,
+                        )
                         outer_result.model = new_result.model
                         outer_result.provider = new_result.provider
                         outer_result.finish_reason = new_result.finish_reason
@@ -971,10 +1006,25 @@ class LanguageModelAction(BaseModelAction, ABC):
                             pass
                         # After stream completes, estimate tokens if the provider
                         # did not already attach usage (e.g. Anthropic message_stop).
-                        if chunks:
+                        # Tool-only provider responses have no text chunks, but
+                        # LiteLLM assembles their final tool calls and usage
+                        # receipt when the source iterator is exhausted. Track
+                        # those calls too; otherwise the orchestrator can use
+                        # the usage internally while Interaction/jvchat report
+                        # zero tokens and zero cost for every tool-selection turn.
+                        has_provider_usage = any(
+                            result.metrics.get(key, 0) > 0
+                            for key in (
+                                "prompt_tokens",
+                                "completion_tokens",
+                                "total_tokens",
+                            )
+                        )
+                        if chunks or result.tool_calls or has_provider_usage:
                             full_response = "".join(chunks)
                             # Store response for later use
-                            result.response = full_response
+                            if full_response:
+                                result.response = full_response
 
                             # Calculate actual duration (from query start to stream completion)
                             stream_end_time = time.time()
@@ -1027,8 +1077,13 @@ class LanguageModelAction(BaseModelAction, ABC):
                                     prompt_tokens = estimate_prompt_tokens(
                                         messages, model, provider
                                     )
+                                    completion_content = full_response
+                                    if not completion_content and result.tool_calls:
+                                        completion_content = json.dumps(
+                                            result.tool_calls, ensure_ascii=False
+                                        )
                                     completion_tokens = estimate_completion_tokens(
-                                        full_response, model, provider
+                                        completion_content, model, provider
                                     )
                                     total_tokens = prompt_tokens + completion_tokens
 

@@ -15,7 +15,7 @@ from tests.action.interview.conftest import SIGNUP_INTERVIEW_SKILL_DIR
 @pytest.mark.asyncio
 async def test_build_next_field_includes_guidance():
     spec = load_interview_spec_from_skill(SIGNUP_INTERVIEW_SKILL_DIR)
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
 
     next_field = await build_next_field(session, spec, lambda _name: None)
 

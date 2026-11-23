@@ -35,14 +35,14 @@ async def test_on_skill_activate_notes_skill_procedure(signup_action):
     action._get_conversation = AsyncMock(return_value=None)
 
     note = await action.on_skill_activate(
-        "signup_interview",
+        "signup-interview",
         user_message=_OPENING,
     )
 
     assert note is not None
     parsed = json.loads(note)
     assert parsed["ok"] is True
-    assert parsed["interview_type"] == "signup_interview"
+    assert parsed["interview_type"] == "signup-interview"
     assert parsed["start_field"] == "user_name"
     assert parsed["field_reference"][0]["key"] == "user_name"
     assert "field_definitions" not in parsed
@@ -58,7 +58,7 @@ async def test_activation_set_fields_then_model_chains_next_field(signup_action)
 
     action._save_session = AsyncMock()
 
-    await action._handle_start("signup_interview", visitor, user_message=_OPENING)
+    await action._handle_start("signup-interview", visitor, user_message=_OPENING)
 
     set_result = json.loads(
         await action._handle_set_fields(
@@ -81,7 +81,7 @@ async def test_set_field_idempotent_when_field_already_stored(signup_action):
 
     action._save_session = AsyncMock()
 
-    await action._handle_start("signup_interview", visitor, user_message=_OPENING)
+    await action._handle_start("signup-interview", visitor, user_message=_OPENING)
 
     first = json.loads(
         await action._handle_set_fields(

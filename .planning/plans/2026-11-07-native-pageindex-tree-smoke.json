@@ -1,0 +1,1261 @@
+{
+  "parent_revision": "git-commit:3cc37c8246be60e4a4c92cecb4d35f35b31567f6",
+  "fixture": {
+    "app": "native_pageindex_tree",
+    "index": "isolated JSON with native-public and different-tenant collections",
+    "graph": "disposable PostgreSQL",
+    "backend_port": 8184,
+    "frontend_port": 3145
+  },
+  "source_epochs": [
+    {
+      "process_id": 13320,
+      "observed_at": "2026-11-07T05:39:43.644385+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:d57b9e7fa7aae597c7b946bd7f37071b6e6a27b8",
+        "jvagent/action/pageindex/retrieval.py": "git-blob:624f57fb2ee7fd67e224fc4c7bb8d5673c73b006",
+        "jvagent/action/pageindex_read/pageindex_read_action.py": "git-blob:c0c242fe3fd26ac76dd74c7a2f820d091f967140",
+        "jvagent/harness/native.py": "git-blob:af2e15794ee0945e7e8fb8dbcf2c157667c48177",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 13379,
+      "observed_at": "2026-11-07T05:40:18.126164+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:d57b9e7fa7aae597c7b946bd7f37071b6e6a27b8",
+        "jvagent/action/pageindex/retrieval.py": "git-blob:624f57fb2ee7fd67e224fc4c7bb8d5673c73b006",
+        "jvagent/action/pageindex_read/pageindex_read_action.py": "git-blob:c0c242fe3fd26ac76dd74c7a2f820d091f967140",
+        "jvagent/harness/native.py": "git-blob:af2e15794ee0945e7e8fb8dbcf2c157667c48177",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 13455,
+      "observed_at": "2026-11-07T05:41:48.538913+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:d57b9e7fa7aae597c7b946bd7f37071b6e6a27b8",
+        "jvagent/action/pageindex/retrieval.py": "git-blob:4472a1ba65145a433c0935a947e30ded4aeb7151",
+        "jvagent/action/pageindex_read/pageindex_read_action.py": "git-blob:c0c242fe3fd26ac76dd74c7a2f820d091f967140",
+        "jvagent/harness/native.py": "git-blob:af2e15794ee0945e7e8fb8dbcf2c157667c48177",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 13635,
+      "observed_at": "2026-11-07T05:44:22.540483+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:d57b9e7fa7aae597c7b946bd7f37071b6e6a27b8",
+        "jvagent/action/pageindex/retrieval.py": "git-blob:4472a1ba65145a433c0935a947e30ded4aeb7151",
+        "jvagent/action/pageindex_read/pageindex_read_action.py": "git-blob:c0c242fe3fd26ac76dd74c7a2f820d091f967140",
+        "jvagent/harness/native.py": "git-blob:9c9c8007ce475d6087ef04b6c620c5b0c940748a",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 14285,
+      "observed_at": "2026-11-07T05:53:06.550447+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:d57b9e7fa7aae597c7b946bd7f37071b6e6a27b8",
+        "jvagent/action/pageindex/retrieval.py": "git-blob:4472a1ba65145a433c0935a947e30ded4aeb7151",
+        "jvagent/action/pageindex_read/pageindex_read_action.py": "git-blob:c0c242fe3fd26ac76dd74c7a2f820d091f967140",
+        "jvagent/harness/completion_tool.py": "git-blob:481357096abc7faff735296b6261540e5558a0dd",
+        "jvagent/harness/native.py": "git-blob:1a682609da70a2c011eee574a3afda73e03c9bc0",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 14417,
+      "observed_at": "2026-11-07T05:54:12.687502+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:d57b9e7fa7aae597c7b946bd7f37071b6e6a27b8",
+        "jvagent/action/pageindex/retrieval.py": "git-blob:4472a1ba65145a433c0935a947e30ded4aeb7151",
+        "jvagent/action/pageindex_read/pageindex_read_action.py": "git-blob:c0c242fe3fd26ac76dd74c7a2f820d091f967140",
+        "jvagent/harness/completion_tool.py": "git-blob:481357096abc7faff735296b6261540e5558a0dd",
+        "jvagent/harness/native.py": "git-blob:1a682609da70a2c011eee574a3afda73e03c9bc0",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 14531,
+      "observed_at": "2026-11-07T05:55:03.225314+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:d57b9e7fa7aae597c7b946bd7f37071b6e6a27b8",
+        "jvagent/action/pageindex/retrieval.py": "git-blob:4472a1ba65145a433c0935a947e30ded4aeb7151",
+        "jvagent/action/pageindex_read/pageindex_read_action.py": "git-blob:c0c242fe3fd26ac76dd74c7a2f820d091f967140",
+        "jvagent/harness/completion_tool.py": "git-blob:481357096abc7faff735296b6261540e5558a0dd",
+        "jvagent/harness/native.py": "git-blob:1a682609da70a2c011eee574a3afda73e03c9bc0",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "final_source": {
+    "process_id": 14417,
+    "observed_at": "2026-11-07T05:55:24.696516+00:00",
+    "source_blobs": {
+      "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:d57b9e7fa7aae597c7b946bd7f37071b6e6a27b8",
+      "jvagent/action/pageindex/retrieval.py": "git-blob:4472a1ba65145a433c0935a947e30ded4aeb7151",
+      "jvagent/action/pageindex_read/pageindex_read_action.py": "git-blob:c0c242fe3fd26ac76dd74c7a2f820d091f967140",
+      "jvagent/harness/completion_tool.py": "git-blob:481357096abc7faff735296b6261540e5558a0dd",
+      "jvagent/harness/native.py": "git-blob:1a682609da70a2c011eee574a3afda73e03c9bc0",
+      "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+      "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+      "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "frontend_sha256": {
+    "assets/ChatInterface-CpKl2eGN.css": "sha256:1ea370447682afc2ab43cf4081772232f21acdf30dc25f400a60588480a5dafe",
+    "assets/ChatInterface-lrdnIXCk.js": "sha256:5ec8757ae9a44c99f0fcd808e6b94a9c80fedb3183e68b49c506bda523b50e77",
+    "assets/ChatRedirect-CYIr8iVr.js": "sha256:656de6e8b5c79f83ffcfd50b5557a3c9dd37473d9f4ec6f58131f2f57c82e6b2",
+    "assets/DebugInteractions-B-4dqr-p.js": "sha256:9b948f885a03215f086bc1bf1a8c5513f60793b0903f79f29604429ca057ce0b",
+    "assets/Login-DleGSgbG.js": "sha256:1d2eaaee5f03dfc91f8cc09544b12a27aa0d005d26fea73bde34c7c0eb555d81",
+    "assets/main-DH_gRVsF.css": "sha256:bab3487136e783d0d622f35a60d56e116d9b339f246eb5f61ea5cac340ef1a87",
+    "assets/main-DeN3J7NC.js": "sha256:dcf5a6b7d624b63c7d45c76cf4b416875a0e7ebc6c3c9447bd24bac38caa612e",
+    "assets/useAgents-DO1FNsk2.js": "sha256:0e73a066a2fc2e42a8b04f94166246cb4061331ac41f2df393daf4fead510efc",
+    "assets/useAuth-rV1-X0d0.js": "sha256:302acccc87d8e4f7039c13bd3381dae598a0c390f11ed183c4a777cfe4af7155",
+    "assets/vendor-cytoscape-CUqq0XTU.js": "sha256:9bb1dbac73bc986536b9d4f3c6509da2c104606dc115b3e03114361719388b7c",
+    "assets/vendor-d3-DznK3MmS.js": "sha256:56633e29226472b3d4affcaf13cca2721065d796d2c25d6e366eaa84dfead42e",
+    "assets/vendor-dagre-bridge-B2IYeVxy.js": "sha256:ba057e6ea4e77c708d44fcf1b1bd1a20d2c487d95ff107a94c25f218a124597d",
+    "assets/vendor-graphviz-C9sQj0WI.js": "sha256:892db92bc653ae6c8457fa1798d56cf055bfe327c96f1cecc2c288394f09c5bb",
+    "assets/vendor-markdown-B9moJQqy.js": "sha256:fd0c3342290dfd51549ef179e3065c58c3c5c08b5759d1a25095b99cc9ffd976",
+    "assets/vendor-react-CEqf_TvG.js": "sha256:8d7514ae05f82ab1e79f2f94261eeead2ee410d37b3ee0a37bd16aa61e4b4e60",
+    "index.html": "sha256:283ded0089eeb68e801e85648244db8d960814114484714ab74b99eed14031dc"
+  },
+  "reload_readback_exact": {
+    "rows": true,
+    "conversations": true,
+    "registrations": true
+  },
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.ba01468c654d4f97a74ef908",
+      "closed": true,
+      "utterance": "Search the Willow Staff Handbook using the PageIndex skill. What room is Willow induction in and what booking code should I use? Cite the handbook.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "elapsed_seconds": 6.763008,
+      "outcome": "failed",
+      "effective_limits": {
+        "max_tokens": 100000,
+        "max_requests": 20,
+        "max_tool_calls": 40,
+        "timeout_seconds": 180.0,
+        "max_run_cost_usd": "2.00",
+        "max_output_tokens": null
+      },
+      "failure_type": "ModuleNotFoundError",
+      "failure_origin": "utils.py:33:count_tokens",
+      "usage": {
+        "last_updated": "2026-11-07T05:40:59.394751+00:00",
+        "total_tokens": 2072,
+        "prompt_tokens": 2019,
+        "total_cost_usd": 0.004462,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 53,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004462,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.328,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.328,
+        "unmeasured_model_attempt_count": 0
+      },
+      "lineage": [
+        {
+          "run_id": "corr-bfb85cec860942acba0ff046694d09e4",
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "conversation_id": "sess_8749cfa06cbb4d75"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_failed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_calls": [
+        {
+          "native_run_id": "corr-bfb85cec860942acba0ff046694d09e4",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 314,
+            "prompt_tokens": 293,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000754,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-bfb85cec860942acba0ff046694d09e4",
+          "native_step_index": 2,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1758,
+            "prompt_tokens": 1726,
+            "completion_tokens": 32,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.003708,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.004462",
+        "tokens": 2072,
+        "requests": 2,
+        "unpriced_requests": 0
+      },
+      "foreign_canary_absent": true,
+      "source_url_in_persisted_turn": false
+    },
+    {
+      "interaction_id": "n.Interaction.44b5e187af5d4ed681f24090",
+      "closed": true,
+      "utterance": "Search the Willow Staff Handbook using PageIndex. What room is Willow induction in and what booking code should I use? Cite the handbook.",
+      "response": "The Willow induction is scheduled to take place in the Fern room. The booking code you should use is WILLOW-57[1].\n\nReferences / Sources\n[1] Willow Staff Handbook",
+      "elapsed_seconds": 10.590634,
+      "outcome": "delivered",
+      "effective_limits": {
+        "max_tokens": 100000,
+        "max_requests": 20,
+        "max_tool_calls": 40,
+        "timeout_seconds": 180.0,
+        "max_run_cost_usd": "2.00",
+        "max_output_tokens": null
+      },
+      "failure_type": null,
+      "failure_origin": null,
+      "usage": {
+        "last_updated": "2026-11-07T05:42:10.362092+00:00",
+        "total_tokens": 4246,
+        "prompt_tokens": 4071,
+        "total_cost_usd": 0.007046,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 175,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.007046,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 1664,
+        "total_duration_seconds": 5.471,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 5.471,
+        "unmeasured_model_attempt_count": 0
+      },
+      "lineage": [
+        {
+          "run_id": "corr-40f9dcc9d9234a3ca511c610ae63bfc1",
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "conversation_id": "sess_9b221581a82943e2"
+        },
+        {
+          "run_id": "01a1b487-3fe9-77d5-bc18-50035bea7836",
+          "agent_name": "pageindex__search",
+          "parent_run_id": "corr-40f9dcc9d9234a3ca511c610ae63bfc1",
+          "conversation_id": "sess_9b221581a82943e2"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_calls": [
+        {
+          "native_run_id": "corr-40f9dcc9d9234a3ca511c610ae63bfc1",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 312,
+            "prompt_tokens": 291,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.00075,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-40f9dcc9d9234a3ca511c610ae63bfc1",
+          "native_step_index": 2,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1756,
+            "prompt_tokens": 1724,
+            "completion_tokens": 32,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.003704,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "01a1b487-3fe9-77d5-bc18-50035bea7836",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 264,
+            "prompt_tokens": 182,
+            "completion_tokens": 82,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.00102,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-40f9dcc9d9234a3ca511c610ae63bfc1",
+          "native_step_index": 3,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1914,
+            "prompt_tokens": 1874,
+            "completion_tokens": 40,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.001572,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.007046",
+        "tokens": 4246,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "foreign_canary_absent": true,
+      "source_url_in_persisted_turn": true
+    },
+    {
+      "interaction_id": "n.Interaction.e6977c0e1a7b4edd98b0fdcb",
+      "closed": true,
+      "utterance": "Find the exact document named Other Handbook in the internal PageIndex using the retrieval skill. Report whether it is available in this collection. Do not guess.",
+      "response": "The document named \"Other Handbook\" is not available in the internal PageIndex collection.",
+      "elapsed_seconds": 5.86946,
+      "outcome": "delivered",
+      "effective_limits": {
+        "max_tokens": 100000,
+        "max_requests": 20,
+        "max_tool_calls": 40,
+        "timeout_seconds": 180.0,
+        "max_run_cost_usd": "2.00",
+        "max_output_tokens": null
+      },
+      "failure_type": null,
+      "failure_origin": null,
+      "usage": {
+        "last_updated": "2026-11-07T05:43:01.510418+00:00",
+        "total_tokens": 3848,
+        "prompt_tokens": 3784,
+        "total_cost_usd": 0.005584,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 64,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005584,
+        "model_attempt_count": 3,
+        "cached_prompt_tokens": 1664,
+        "total_duration_seconds": 3.167,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.167,
+        "unmeasured_model_attempt_count": 0
+      },
+      "lineage": [
+        {
+          "run_id": "corr-6195a37bc92c441885f42b1f01064c9f",
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "conversation_id": "sess_6f46d954a5594378"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_calls": [
+        {
+          "native_run_id": "corr-6195a37bc92c441885f42b1f01064c9f",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 315,
+            "prompt_tokens": 294,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000756,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-6195a37bc92c441885f42b1f01064c9f",
+          "native_step_index": 2,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1751,
+            "prompt_tokens": 1727,
+            "completion_tokens": 24,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.003646,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-6195a37bc92c441885f42b1f01064c9f",
+          "native_step_index": 3,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1782,
+            "prompt_tokens": 1763,
+            "completion_tokens": 19,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.001182,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.005584",
+        "tokens": 3848,
+        "requests": 3,
+        "unpriced_requests": 0
+      },
+      "foreign_canary_absent": true,
+      "source_url_in_persisted_turn": false
+    },
+    {
+      "interaction_id": "n.Interaction.4e28c0da9d684113997a7b86",
+      "closed": true,
+      "utterance": "Find Willow Staff Handbook with the PageIndex skill and give the booking code. Include the exact clickable Markdown link from the returned doc_url.",
+      "response": "The booking code for the Willow Staff Handbook induction is WILLOW-57. You can access the handbook using this exact clickable link: [Willow Staff Handbook](https://example.com/willow-handbook) [1].\n\nReferences / Sources\n- [1] Willow Staff Handbook, https://example.com/willow-handbook",
+      "elapsed_seconds": 7.321364,
+      "outcome": "delivered",
+      "effective_limits": {
+        "max_tokens": 100000,
+        "max_requests": 20,
+        "max_tool_calls": 40,
+        "timeout_seconds": 180.0,
+        "max_run_cost_usd": "2.00",
+        "max_output_tokens": null
+      },
+      "failure_type": null,
+      "failure_origin": null,
+      "usage": {
+        "last_updated": "2026-11-07T05:43:30.652291+00:00",
+        "total_tokens": 4238,
+        "prompt_tokens": 4059,
+        "total_cost_usd": 0.00955,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 179,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00955,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.738,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.738,
+        "unmeasured_model_attempt_count": 0
+      },
+      "lineage": [
+        {
+          "run_id": "corr-f003d818b8104c9498ab6a3b77dc4359",
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "conversation_id": "sess_ebc65d6e5ae34b4a"
+        },
+        {
+          "run_id": "01a1b488-7e89-758f-aefe-b8ab6fd7b75e",
+          "agent_name": "pageindex__search",
+          "parent_run_id": "corr-f003d818b8104c9498ab6a3b77dc4359",
+          "conversation_id": "sess_ebc65d6e5ae34b4a"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_calls": [
+        {
+          "native_run_id": "corr-f003d818b8104c9498ab6a3b77dc4359",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 312,
+            "prompt_tokens": 291,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.00075,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-f003d818b8104c9498ab6a3b77dc4359",
+          "native_step_index": 2,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1746,
+            "prompt_tokens": 1724,
+            "completion_tokens": 22,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.003624,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "01a1b488-7e89-758f-aefe-b8ab6fd7b75e",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 249,
+            "prompt_tokens": 180,
+            "completion_tokens": 69,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000912,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-f003d818b8104c9498ab6a3b77dc4359",
+          "native_step_index": 3,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1931,
+            "prompt_tokens": 1864,
+            "completion_tokens": 67,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.004264,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.009550",
+        "tokens": 4238,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "foreign_canary_absent": true,
+      "source_url_in_persisted_turn": true
+    },
+    {
+      "interaction_id": "n.Interaction.167b168c8d234b5e900b6c0b",
+      "closed": true,
+      "utterance": "Use the PageIndex retrieval skill for the exact Willow Staff Handbook. Return the induction room, booking code, and a clickable citation using its doc_url.",
+      "response": "The Willow induction is scheduled for 26 November 2026 in the Fern room. The booking code is WILLOW-57[1].\n\nReferences / Sources\n[1] Willow Staff Handbook, https://example.com/willow-handbook",
+      "elapsed_seconds": 9.507877,
+      "outcome": "delivered",
+      "effective_limits": {
+        "max_tokens": 100000,
+        "max_requests": 20,
+        "max_tool_calls": 40,
+        "timeout_seconds": 180.0,
+        "max_run_cost_usd": "2.00",
+        "max_output_tokens": null
+      },
+      "failure_type": null,
+      "failure_origin": null,
+      "usage": {
+        "last_updated": "2026-11-07T05:49:49.703864+00:00",
+        "total_tokens": 4257,
+        "prompt_tokens": 4078,
+        "total_cost_usd": 0.009588,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 179,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.009588,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 4.401,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 4.401,
+        "unmeasured_model_attempt_count": 0
+      },
+      "lineage": [
+        {
+          "run_id": "corr-88aa98dfec7541b9b7f85c6bf4368b5d",
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "conversation_id": "sess_864e1c8671e048e0"
+        },
+        {
+          "run_id": "01a1b48e-459f-7494-a584-d1344b1832eb",
+          "agent_name": "pageindex__search",
+          "parent_run_id": "corr-88aa98dfec7541b9b7f85c6bf4368b5d",
+          "conversation_id": "sess_864e1c8671e048e0"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_calls": [
+        {
+          "native_run_id": "corr-88aa98dfec7541b9b7f85c6bf4368b5d",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 315,
+            "prompt_tokens": 294,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000756,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-88aa98dfec7541b9b7f85c6bf4368b5d",
+          "native_step_index": 2,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1758,
+            "prompt_tokens": 1727,
+            "completion_tokens": 31,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.003702,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "01a1b48e-459f-7494-a584-d1344b1832eb",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 258,
+            "prompt_tokens": 181,
+            "completion_tokens": 77,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000978,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-88aa98dfec7541b9b7f85c6bf4368b5d",
+          "native_step_index": 3,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1926,
+            "prompt_tokens": 1876,
+            "completion_tokens": 50,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.004152,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.009588",
+        "tokens": 4257,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "foreign_canary_absent": true,
+      "source_url_in_persisted_turn": true
+    },
+    {
+      "interaction_id": "n.Interaction.7eee1ea5525a4c77ad1b4eda",
+      "closed": true,
+      "utterance": "Use PageIndex to look up the exact Willow Staff Handbook. Give the verified induction room, booking code, and clickable source URL.",
+      "response": "The Willow induction is scheduled for 26 November 2026 in the Fern room. The booking code is WILLOW-57. You can find this information in the Willow Staff Handbook at the following link: Willow Staff Handbook[1].\n\nReferences / Sources\n[1] Willow Staff Handbook, https://example.com/willow-handbook",
+      "elapsed_seconds": 10.827327,
+      "outcome": "delivered",
+      "effective_limits": {
+        "max_tokens": 100000,
+        "max_requests": 20,
+        "max_tool_calls": 40,
+        "timeout_seconds": 180.0,
+        "max_run_cost_usd": "2.00",
+        "max_output_tokens": null
+      },
+      "failure_type": null,
+      "failure_origin": null,
+      "usage": {
+        "last_updated": "2026-11-07T05:53:41.081980+00:00",
+        "total_tokens": 4263,
+        "prompt_tokens": 4068,
+        "total_cost_usd": 0.0072,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 195,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0072,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 1664,
+        "total_duration_seconds": 5.419,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 5.419,
+        "unmeasured_model_attempt_count": 0
+      },
+      "lineage": [
+        {
+          "run_id": "corr-60872dc1d23a4305a76b419a7030c778",
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "conversation_id": "sess_536b41c7566442ef"
+        },
+        {
+          "run_id": "01a1b491-ca01-7727-8ac8-9e0a9500577b",
+          "agent_name": "pageindex__search",
+          "parent_run_id": "corr-60872dc1d23a4305a76b419a7030c778",
+          "conversation_id": "sess_536b41c7566442ef"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_calls": [
+        {
+          "native_run_id": "corr-60872dc1d23a4305a76b419a7030c778",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 311,
+            "prompt_tokens": 290,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000748,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-60872dc1d23a4305a76b419a7030c778",
+          "native_step_index": 2,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1755,
+            "prompt_tokens": 1723,
+            "completion_tokens": 32,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.003702,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "01a1b491-ca01-7727-8ac8-9e0a9500577b",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 255,
+            "prompt_tokens": 182,
+            "completion_tokens": 73,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000948,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-60872dc1d23a4305a76b419a7030c778",
+          "native_step_index": 3,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1942,
+            "prompt_tokens": 1873,
+            "completion_tokens": 69,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.001802,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.007200",
+        "tokens": 4263,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "foreign_canary_absent": true,
+      "source_url_in_persisted_turn": true
+    },
+    {
+      "interaction_id": "n.Interaction.131b910b261a4852a8f8c364",
+      "closed": true,
+      "utterance": "Find the Willow Staff Handbook using the PageIndex retrieval skill. Return the booking code only if the tool verifies it.",
+      "response": "The booking code for the Willow Staff Handbook is WILLOW-57, as verified in the handbook itself[1].\n\nReferences:\n[1] Willow Staff Handbook",
+      "elapsed_seconds": 9.891048,
+      "outcome": "delivered",
+      "effective_limits": {
+        "max_tokens": 100000,
+        "max_requests": 20,
+        "max_tool_calls": 40,
+        "timeout_seconds": 180.0,
+        "max_run_cost_usd": "2.00",
+        "max_output_tokens": null
+      },
+      "failure_type": null,
+      "failure_origin": null,
+      "usage": {
+        "last_updated": "2026-11-07T05:54:36.825771+00:00",
+        "total_tokens": 4193,
+        "prompt_tokens": 4047,
+        "total_cost_usd": 0.006766,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 146,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.006766,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 1664,
+        "total_duration_seconds": 4.393,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 4.393,
+        "unmeasured_model_attempt_count": 0
+      },
+      "lineage": [
+        {
+          "run_id": "corr-bc490b9ae2f8439b9452a3bc3a22b9a5",
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "conversation_id": "sess_2cc6f550daf54f62"
+        },
+        {
+          "run_id": "01a1b492-a6fa-75b0-b13c-6c12e95b971f",
+          "agent_name": "pageindex__search",
+          "parent_run_id": "corr-bc490b9ae2f8439b9452a3bc3a22b9a5",
+          "conversation_id": "sess_2cc6f550daf54f62"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_calls": [
+        {
+          "native_run_id": "corr-bc490b9ae2f8439b9452a3bc3a22b9a5",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 308,
+            "prompt_tokens": 287,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000742,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-bc490b9ae2f8439b9452a3bc3a22b9a5",
+          "native_step_index": 2,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1742,
+            "prompt_tokens": 1720,
+            "completion_tokens": 22,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.003616,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "01a1b492-a6fa-75b0-b13c-6c12e95b971f",
+          "native_step_index": 1,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 249,
+            "prompt_tokens": 180,
+            "completion_tokens": 69,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.000912,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "native_run_id": "corr-bc490b9ae2f8439b9452a3bc3a22b9a5",
+          "native_step_index": 3,
+          "provider": "openai",
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1894,
+            "prompt_tokens": 1860,
+            "completion_tokens": 34,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "usage_status": "provider_reported",
+          "cost_record": {
+            "amount": 0.001496,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.006766",
+        "tokens": 4193,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "foreign_canary_absent": true,
+      "source_url_in_persisted_turn": true
+    }
+  ],
+  "browser_observations": [
+    "Initial LiteLLM preflight failure showed unconfirmed search and a service configuration error.",
+    "Authorized retrieval showed successful load and search, room and booking code.",
+    "Other collection lookup showed successful search and no available match.",
+    "Explicit citation requests rendered the stored source URL.",
+    "Merge sync kept the persisted 20-request setting for the attempted two-request fixture. That turn is a normal success under the effective policy."
+  ],
+  "limits": [
+    "No browser qualification of HTTP tree search, ingestion, callbacks or retained-state cutover.",
+    "No provider-billed dollar figure; SDK pricing estimates."
+  ]
+}

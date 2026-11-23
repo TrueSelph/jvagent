@@ -1,0 +1,60 @@
+{
+  "parent_revision": "git-commit:9747a1d084f630dd225e04af93e13867b8175c55",
+  "source_blobs": {
+    "jvagent/cli/main.py": "git-blob:478df3e3ae6dbb42f46e24c7de78b0802130002e",
+    "tests/cli/test_main_dispatch.py": "git-blob:656b1342f27078b0b9b29e3b4a1502a237bb0504"
+  },
+  "environment": "explicit development; isolated migration graph only",
+  "before": {
+    "node_count": 15,
+    "node_digest": "sha256:be2a1b4a48e4e0f5cd544644d98b276994a1330d880494f9380edec962d4fa38"
+  },
+  "after": {
+    "node_count": 15,
+    "node_digest": "sha256:be2a1b4a48e4e0f5cd544644d98b276994a1330d880494f9380edec962d4fa38"
+  },
+  "source_yaml_unchanged": true,
+  "cases": [
+    {
+      "flags": [
+        "--purge",
+        "--yes",
+        "harness-migrate"
+      ],
+      "exit_code": 2,
+      "duration_seconds": 0.5974271660088561,
+      "message": "harness-migrate refuses global graph mutation flags"
+    },
+    {
+      "flags": [
+        "harness-migrate",
+        "--purge",
+        "--yes"
+      ],
+      "exit_code": 2,
+      "duration_seconds": 0.5083173750026617,
+      "message": "harness-migrate refuses global graph mutation flags"
+    },
+    {
+      "flags": [
+        "--update",
+        "--source",
+        "--yes",
+        "harness-migrate"
+      ],
+      "exit_code": 2,
+      "duration_seconds": 0.538887499977136,
+      "message": "harness-migrate refuses global graph mutation flags"
+    },
+    {
+      "flags": [
+        "harness-migrate",
+        "--update",
+        "--merge"
+      ],
+      "exit_code": 2,
+      "duration_seconds": 0.5102479999768548,
+      "message": "harness-migrate refuses global graph mutation flags"
+    }
+  ]
+}

@@ -9,9 +9,15 @@ Cross-refs: [`SPEC.md`](../SPEC.md) for invariants, [`GLOSSARY.md`](../GLOSSARY.
 ## 1. Decide what kind of action you need
 
 ```
-Need to wrap an LLM provider?
-└─ Subclass LanguageModelAction
-   (jvagent/action/model/language/base.py:24)
+Need to configure the harness execution model?
+└─ Configure NativeHarnessAction.model / model_settings
+   (jvagent/action/native_harness/native_harness_action.py:105)
+
+Need a new execution-model provider?
+└─ Use public Pydantic AI provider/model interfaces through the native factory
+   (jvagent/harness/native.py:20)
+   Existing LanguageModelAction transports are transitional compatibility;
+   do not add another provider execution path.
 
 Need to expose an embedding model?
 └─ Subclass BaseModelAction
@@ -422,6 +428,11 @@ The decorator derives everything from the function:
 | `name` | `{action_name}__{method}` (here `my_action__do_thing`) | `@tool(name="…")` per tool, or a class-level `tool_namespace = "…"` to change the prefix for all of the action's tools (set `tool_namespace = ""` for bare, unprefixed names) |
 | `description` | method docstring, first paragraph | `@tool(description="…")` |
 | `parameters_schema` | the signature; `Annotated[T, "desc"]` supplies per-arg docs | — |
+| `effect_class` | unset for the legacy surface | `@tool(effect_class="read")`, `"write"`, or `"external"` |
+| `timeout_seconds` | no per-tool deadline | `@tool(timeout_seconds=15)`; native execution uses the public SDK timer |
+
+See [native tool deadlines](../runbooks/native-tool-deadlines.md) for validation,
+direct-call behavior, uncertain effects and the separate legacy migration gate.
 
 The prefix resolves in order: a class-level `tool_namespace` (when declared) → the loader package name (`metadata["name"]`) → the action `label` → a class-name fallback (`WebFetchAction` → `web_fetch`), so names stay stable even when an instance is built without loader metadata.
 
@@ -437,6 +448,52 @@ registers them with an `action__` prefix on the unified tool surface. See
 **Manual `Tool()` still works.** Override `get_tools()` only when a tool can't be
 a decorated method (dynamic tool sets, etc.); combine both by calling
 `collect_tools(self)` and extending the result.
+
+The opt-in Pydantic research driver requires every additional Action tool to be
+declared by the skill and explicitly classified `effect_class="read"`. This
+classification is a reviewed Action contract, not automatic proof that the
+implementation is side-effect-free. The pilot still requires its host-qualified
+web-search and web-fetch evidence tools; write/external tools, MCP, and visitor-
+bound tools remain outside its authority surface. The legacy Orchestrator does
+not use this classification to change existing tool behavior.
+
+The native rebuild separately admits reviewed, nonterminal read tools declared
+by the selected skill (`jvagent/harness/native.py:114`). For an existing tool
+that needs the host walker, set `binds_visitor=True` on its `Tool`, or retain the
+Action's `binds_tools_to_visitor=True` contract. The native adapter removes the
+root `visitor` schema argument, rejects model-supplied authority arguments,
+checks access, and injects the caller-bound visitor. The official native Tool
+uses `sequential=True` for this case (`jvagent/harness/native.py:75`); it does not
+serialize independent users or provide a distributed lock. Host scope must
+remain unchanged (`jvagent/tooling/context.py:50`).
+
+Reviewed native writes can declare a [native mutation tool](../GLOSSARY.md#native-mutation-tool)
+through `get_native_tools()`. Set a stable effect summary, `effect_class="write"`
+and `binds_visitor=True`; domain code must enforce scope and acknowledge its
+actual write. The factory uses public SDK `annotate_tool_effect` before dispatch,
+then verifies the record. It excludes these tools from delegated children and
+refuses writes without SDK persistence (`jvagent/harness/native.py:115`, `:181`).
+Failed mutations cannot recover from a pre-write input snapshot; markers and
+terminal effect identities are retained (`jvagent/harness/recovery.py:209`,
+`jvagent/harness/step_store.py:63`). The declaration grants no automatic replay
+or generic external-write qualification. The bounded local File Interface write
+also requires a named host tool permission; see its
+[qualification and remaining operator gate](../plans/2026-11-06-native-file-write.md).
+
+Only LeadGen's `leadgen__status` has been reviewed in this visitor-bound cohort
+(`jvagent/action/leadgen/tools.py:136`). Status reads an unsaved view of current
+requirements without creating or migrating a profile
+(`jvagent/action/leadgen/engine.py:424`). Capture, retrieve, sync, flow and external
+effects remain outside this qualification. A read classification requires review
+of the implementation, including hidden writes and legacy ownership fallback
+(`jvagent/action/leadgen/store.py:235`).
+
+Configured root and child skills must also be model-invocable under the official
+Skills specification. The host checks `Skills.load()`'s public catalog before
+any model request (`jvagent/harness/native.py:143`); library-skipped invalid assets
+are configuration failures. JV metadata admission does not replace library
+frontmatter validation. See the [qualification record](../plans/2026-11-04-harness-qualification-matrix.md)
+for tested scope and remaining gaps.
 
 ---
 
@@ -530,3 +587,17 @@ not a junk-drawer `action/utils`.
 
 CI guard: `tests/action/test_action_import_guard.py`.
 Audit snapshot: [action-modularization-audit.md](action-modularization-audit.md).
+## Caller context in modular tools
+
+Import caller helpers from `jvagent.tooling.context`. Prefer the immutable
+`get_dispatch_context()` for identity. Use `require_tool_visitor()` when a
+visitor-bound native service needs the checked live visitor. The native Action
+binds this service around library execution; direct tool callers must establish
+their own host-controlled binding. A context helper is not a permission grant:
+the native adapter still checks active skill and host access. Sources:
+`jvagent/tooling/context.py:11`, `jvagent/harness/native.py:95`.
+
+Legacy imports through `jvagent.tooling.tool_executor` remain aliases during the
+transition; new Action code should not import an execution engine to obtain caller
+identity. Current scope and deletion prerequisites are in
+[the extraction record](../plans/2026-11-06-native-context-decoupling.md).

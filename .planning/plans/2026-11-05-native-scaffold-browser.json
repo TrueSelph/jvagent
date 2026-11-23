@@ -1,0 +1,54 @@
+{
+  "observed_at": "2026-11-06T02:10:24.449Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nNATIVE-SCAFFOLD-CHECK: What ticket ID did I ask you to remember? Reply with the ID only.\n\nLogout\nAS\nAssistant\n\nAgent Assistant for Native Scaffold Qualification\n\nsession ID\ntoken\n\nNATIVE-SCAFFOLD-CHECK: Remember the ticket ID JUNIPER-64 for this conversation. Reply with that ID only.\n\nJUNIPER-64\n\ngpt-4.1-2025-04-14 · 1 attempt · 270 tokens · 1.4s · 5.7 tok/s\n\nNATIVE-SCAFFOLD-CHECK: What ticket ID did I ask you to remember? Reply with the ID only.\n\nJUNIPER-64\n\ngpt-4.1-2025-04-14 · 1 attempt · 309 tokens · 1.4s · 5.7 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "resources": [
+    {
+      "url": "http://127.0.0.1:8141/api/agents/n.Agent.5e4b07c42ce34be1aec9db77/interact",
+      "duration_ms": 4115.5999999940395,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8141/api/agents/n.Agent.5e4b07c42ce34be1aec9db77/interact",
+      "duration_ms": 2110.300000011921,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8141/api/agents/n.Agent.5e4b07c42ce34be1aec9db77/interact",
+      "duration_ms": 7282.4000000059605,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8141/api/agents/n.Agent.5e4b07c42ce34be1aec9db77/interact",
+      "duration_ms": 53,
+      "initiator": "fetch"
+    },
+    {
+      "url": "http://127.0.0.1:8141/api/agents/n.Agent.5e4b07c42ce34be1aec9db77/interact",
+      "duration_ms": 16.600000023841858,
+      "initiator": "fetch"
+    }
+  ],
+  "scripts": [
+    "http://127.0.0.1:3136/assets/main-DIJxsOi5.js"
+  ],
+  "identity_probes": [
+    {
+      "name": "existing_session_without_capability",
+      "status": 401,
+      "duration_ms": 55.69999998807907,
+      "observed_at": "2026-11-06T02:09:03.901Z"
+    },
+    {
+      "name": "invalid_bearer_cannot_downgrade",
+      "status": 401,
+      "duration_ms": 17.299999982118607,
+      "observed_at": "2026-11-06T02:09:03.918Z"
+    }
+  ],
+  "anonymous_first_contact": {
+    "status": 200,
+    "duration_ms": 7284.300000011921,
+    "observed_at": "2026-11-06T02:07:40.577Z",
+    "note": "Initial test premise assumed login-only ingress; existing public capability contract permits fresh anonymous conversations. Actual model attempt retained and accounted."
+  }
+}

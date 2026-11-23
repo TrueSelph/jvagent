@@ -1,0 +1,22 @@
+{
+  "page_id": 49,
+  "url": "http://127.0.0.1:3140/chat/n.Agent.b7ed88665c154db4a320191d",
+  "context": "native-effect-recovery",
+  "observed": "2026-11-06",
+  "snapshot": [
+    {
+      "type": "text",
+      "text": "## Latest page snapshot\nuid=667_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3140/chat/n.Agent.b7ed88665c154db4a320191d\"\n  uid=667_1 StaticText \"jvchat\"\n  uid=667_2 StaticText \"AGENT TESTING\"\n  uid=667_3 button \"New Conversation\"\n  uid=667_4 StaticText \"2\"\n  uid=667_5 StaticText \" conversation\"\n  uid=667_6 StaticText \"s\"\n  uid=667_7 StaticText \"Now write exactly NORMAL-AFTER-RECOVERY-62 to next.txt and confirm the tool result.\"\n  uid=667_8 button \"Delete conversation\"\n  uid=667_9 StaticText \"Do not repeat the write. Remember recovery code ORCHID-62 for my next question.\"\n  uid=667_10 button \"Delete conversation\"\n  uid=667_11 button \"Logout\"\n  uid=667_12 button \"Collapse sidebar\"\n  uid=667_13 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=667_14 button \"Native Effect Recovery Qualification AGENT\" expandable haspopup=\"listbox\"\n  uid=667_15 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=667_16 button \"Copy token\" description=\"Copy access token\"\n  uid=667_17 button \"Switch to light mode\"\n  uid=668_0 StaticText \"The administrator has verified the interrupted write. Confirm what is known about verified.txt without writing it again, and tell me the recovery code from my blocked message.\"\n  uid=668_1 button \"1 tool call\" expandable\n  uid=668_2 StaticText \"The file verified.txt contains exactly VERIFIED-RECOVERY-62, as confirmed by the administrator's verification of the interrupted write. The recovery code from your blocked message is ORCHID-62.\"\n  uid=668_3 button \"gpt-4.1-2025-04-14 · 1 attempt · 606 tokens · 1.4s · 29.3 tok/s\"\n  uid=668_4 StaticText \"Now write exactly NORMAL-AFTER-RECOVERY-62 to next.txt and confirm the tool result.\"\n  uid=668_5 button \"1 tool call\" expandable\n  uid=668_6 StaticText \"The file next.txt was successfully written with exactly NORMAL-AFTER-RECOVERY-62.\"\n  uid=668_7 button \"gpt-4.1-2025-04-14 · 2 attempts · 1.5k tokens · 2.5s · 20.6 tok/s\"\n  uid=668_8 button \"Copy\"\n  uid=668_9 button \"Refresh\"\n  uid=668_10 button \"More\" expandable haspopup=\"menu\"\n  uid=667_20 form\n    uid=667_21 textbox \"Message input\" multiline\n    uid=667_22 button \"Add Attachment\"\n    uid=667_23 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=667_24 button \"Send message\" disableable disabled\n"
+    }
+  ],
+  "assertions": {
+    "restored_completed_reply": true,
+    "blocked_message_code_recalled": true,
+    "visible_usage": true,
+    "ordinary_followup_write": true
+  },
+  "limits": [
+    "Restored SDK acknowledgement is displayed in a tool group; no second execution is inferred.",
+    "Interrupted original and host-blocked notices are not restored by completed native reply readback."
+  ]
+}

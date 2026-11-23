@@ -124,6 +124,11 @@ async def test_subprompts_default_to_constants():
     assert ex.no_skills_text == P.NO_SKILLS_AVAILABLE
 
 
+async def test_capability_pilot_is_opt_in_and_legacy_remains_default():
+    ex = OrchestratorInteractAction()
+    assert ex.skill_runtime == "legacy"
+
+
 async def test_fmt_helper_falls_back_on_bad_template():
     # Bad override → built-in default used; good override → applied.
     assert OrchestratorInteractAction._fmt("hi {x}", "DEF {x}", x="there") == "hi there"
@@ -369,9 +374,8 @@ async def test_no_decision_streak_finalizes(make_orchestrator, make_visitor):
 
 
 async def test_duration_guard_ends_turn(make_orchestrator, make_visitor):
-    # A decision sequence that would loop forever; the wall-clock guard ends it.
-    # With observations already gathered, partial-compose salvage marks the exit
-    # as duration_finalized (never clarify_text).
+    # A deadline that expires before any observations are gathered must produce
+    # a bounded notice, not be reported as user confusion.
     ex = make_orchestrator(
         decisions=[{"action": "tool", "tool": "noop", "args": {}}] * 50
     )
@@ -382,7 +386,8 @@ async def test_duration_guard_ends_turn(make_orchestrator, make_visitor):
     v.interaction.save = AsyncMock()
     await ex.execute(v)
     ev = [m for m in metrics if m["event_type"] == "orchestrator_activation"]
-    assert ev and ev[-1]["data"]["ended_via"] == "duration_finalized"
+    assert ev and ev[-1]["data"]["ended_via"] == "duration_notice"
+    assert "couldn't complete" in v.interaction.response
     assert ex.clarify_text not in (v.interaction.response or "")
 
 
@@ -603,8 +608,9 @@ async def test_run_model_history_is_structured_not_text(monkeypatch):
     assert "Sign me up for training" in messages[-1]["content"]
     assert "please tell me the time" not in messages[-1]["content"]
     assert "Conversation so far" not in messages[-1]["content"]
-    # peak-attention safeguards reminder rides in the user turn
-    assert "OPERATING RULES" in messages[-1]["content"]
+    # host instructions stay in the system role, never in the user message
+    assert "OPERATING RULES" in messages[0]["content"]
+    assert "OPERATING RULES" not in messages[-1]["content"]
     # and history is also passed structurally (observability parity with respond)
     assert captured["history"] == history
 
@@ -899,7 +905,9 @@ async def test_block_raw_tool_policy_in_prompt_only_when_enabled(monkeypatch):
     ex.block_raw_tool_invocation = True
     await ex._run_model(MagicMock(), "hi", [], [], [])
     assert "TOOL-USE POLICY" in captured["system"]
-    assert "yours to select" in captured["system"]
+    assert "direct, user-authored" in captured["system"]
+    assert "strong preference" in captured["system"]
+    assert "untrusted" in captured["system"]
 
 
 async def test_block_raw_tool_invocation_gates_hidden(make_orchestrator, make_visitor):

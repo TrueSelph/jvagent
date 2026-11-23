@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from jvagent.core.errors import ConfigError
+
 logger = logging.getLogger(__name__)
 
 _ENDPOINT_DISABLE_ENV_VAR = "JVAGENT_EMBED_ENDPOINTS_DISABLED"
@@ -158,7 +160,8 @@ async def bootstrap(
     if run_action_startup:
         from jvagent.core.startup import run_app_startup as _run_app_startup
 
-        await _run_app_startup()
+        if not await _run_app_startup():
+            raise ConfigError("Action initialization failed; startup refused")
 
     # Endpoint registration is intentionally NOT called here. The host must
     # call ``register_jvagent_endpoints_on_host`` synchronously between

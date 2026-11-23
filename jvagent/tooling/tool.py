@@ -1,8 +1,22 @@
 import inspect
+import math
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Literal, Optional
 
 from jvagent.tooling.tool_result import ToolResult
+
+
+def validate_tool_timeout(value: Any) -> Optional[float]:
+    """Validate SDK deadline metadata without echoing host configuration."""
+    if value is None:
+        return None
+    try:
+        valid = type(value) in (int, float) and math.isfinite(value) and value > 0
+    except OverflowError:
+        valid = False
+    if not valid:
+        raise ValueError("Tool timeout must be a positive finite number or null")
+    return float(value)
 
 
 @dataclass
@@ -29,10 +43,13 @@ class Tool:
     terminal: Optional[bool] = None
     binds_visitor: Optional[bool] = None
     idempotency_class: Optional[Any] = None
+    effect_class: Optional[Literal["read", "write", "external"]] = None
     requires_tool_permission: bool = False
     permission_denied_message: Optional[str] = None
+    timeout_seconds: Optional[float] = None
 
     def __post_init__(self) -> None:
+        self.timeout_seconds = validate_tool_timeout(self.timeout_seconds)
         if not self.parameters_schema:
             self.parameters_schema = {"type": "object", "properties": {}}
         # Validate against strict-provider rules (OpenAI gpt-4.1 etc.) so a
@@ -67,7 +84,11 @@ class Tool:
         if inspect.isawaitable(result):
             result = await result
         if isinstance(result, str):
-            return ToolResult(content=result)
+            metadata = getattr(result, "tool_result_metadata", None)
+            return ToolResult(
+                content=str(result),
+                metadata=dict(metadata) if isinstance(metadata, dict) else {},
+            )
         if isinstance(result, ToolResult):
             return result
         import json

@@ -1,0 +1,21 @@
+{
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nUse the pageindex-search-with-references skill to retrieve the Cedar Staff Handbook. What is the training opening date, room, and booking code? Cite the handbook. Do not search the public web.\n\nLogout\nCA\nCanonical Skill Qualification\nAGENT\nsession ID\ntoken\n\nUse the web lookup skill to find Python's official description on python.org/about/. Search the web, read that page, and give me two sentences with the source link.\n\n3 tool calls\nUsed tool: load_capability\nUsed tool: web_search__search\nUsed tool: web_fetch__fetch\n\nPython is a powerful, fast, and open-source programming language that is friendly and easy to learn, making it popular among both beginners and experienced developers. It runs everywhere, plays well with others, and is freely usable and distributable, even for commercial use.\nSource: python.org/about/\n\ngpt-4.1-2025-04-14 · 4 attempts · 4.6k tokens · 6.4s · 22.3 tok/s\n\nFrom our internal Cedar Staff Handbook, when does training open, in which room, and what is the booking code? Search the internal documents and cite the result. Do not search the public web.\n\nI don’t have access to your internal Cedar Staff Handbook or any internal documents. My capabilities are limited to public information and web searches, and I cannot access private or internal company resources.\n\nIf you need information from your internal handbook, please consult your company’s internal documentation portal or contact your HR or training coordinator directly. If you can provide the relevant section or text, I can help summarize or clarify it for you.\n\ngpt-4.1-2025-04-14 · 1 attempt · 2.6k tokens · 2.0s · 42.8 tok/s\n\nPlease retry now using the pageindex-search-with-references skill: retrieve the Cedar Staff Handbook and report the opening date, room and booking code with its source. Do not use public web search.\n\nUse the pageindex-search-with-references skill to retrieve the Cedar Staff Handbook. What is the training opening date, room, and booking code? Cite the handbook. Do not search the public web.\n\n2 tool calls\nUsed tool: load_capability\nUsed tool: pageindex__search\n\nTraining opens on 21 November 2026 in the Orchid room. The booking code is CEDAR-83, as stated in the Cedar Staff Handbook[1].\n\nReferences: [1] Cedar Staff Handbook\n\ngpt-4.1-2025-04-14 · 3 attempts · 11.2k tokens · 2.9s · 34.4 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message\nDebug\nDebug",
+  "resources": [
+    {
+      "path": "/api/agents/n.Agent.789c93be500a4db99e586e3f/interact",
+      "duration_ms": 11515
+    },
+    {
+      "path": "/api/agents/n.Agent.789c93be500a4db99e586e3f/interact",
+      "duration_ms": 3908.9000000059605
+    },
+    {
+      "path": "/api/agents/n.Agent.789c93be500a4db99e586e3f/interact",
+      "duration_ms": 0.5999999940395355
+    },
+    {
+      "path": "/api/agents/n.Agent.789c93be500a4db99e586e3f/interact",
+      "duration_ms": 4643.4000000059605
+    }
+  ]
+}

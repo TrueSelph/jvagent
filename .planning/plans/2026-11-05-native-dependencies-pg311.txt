@@ -1,0 +1,162 @@
+........................................................................ [ 20%]
+........................................................................ [ 40%]
+........................................................................ [ 60%]
+........................................................................ [ 80%]
+......................................................................   [100%]
+=============================== warnings summary ===============================
+../../../../../../private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/PyPDF2/__init__.py:21
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/PyPDF2/__init__.py:21: DeprecationWarning: PyPDF2 is deprecated. Please move to the pypdf library instead.
+    warnings.warn(
+
+tests/harness/native/test_blocked_history.py: 15 warnings
+tests/harness/native/test_cancellation.py: 8 warnings
+tests/harness/native/test_completion.py: 2 warnings
+tests/harness/native/test_context.py: 3 warnings
+tests/harness/native/test_delegation.py: 7 warnings
+tests/harness/native/test_postgres_store.py: 18 warnings
+tests/harness/native/test_proactive.py: 6 warnings
+tests/harness/native/test_reconciliation.py: 8 warnings
+tests/harness/native/test_recovery.py: 21 warnings
+  <string>:14: HarnessDeprecationWarning: `SpendLimits.on_spend` is deprecated; subscribe to `SpendRecordedEvent` with `@agent.on_event` instead, or with `@on_event` on a capability of your own.
+
+tests/harness/native/test_blocked_history.py: 15 warnings
+tests/harness/native/test_context.py: 6 warnings
+tests/harness/native/test_native.py: 2 warnings
+tests/harness/native/test_postgres_store.py: 4 warnings
+tests/harness/native/test_reconciliation.py: 8 warnings
+tests/harness/native/test_recovery.py: 22 warnings
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: example: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_cancellation.py: 10 warnings
+tests/harness/native/test_postgres_store.py: 8 warnings
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: test: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_completion.py::test_length_limited_output_fails_with_its_usage_preserved[False]
+tests/harness/native/test_completion.py::test_length_limited_output_fails_with_its_usage_preserved[True]
+tests/harness/native/test_completion.py::test_length_limit_stops_output_function_before_it_runs
+tests/harness/native/test_model_settings.py::test_declared_settings_reach_the_native_model_unchanged
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: conversation: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_delegation.py: 7 warnings
+tests/harness/native/test_recovery.py: 1 warning
+tests/harness/native/test_skill_preflight.py: 2 warnings
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: delegate: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_delegation.py::test_native_children_share_limits_and_preserve_scope[2-2.00-True]
+tests/harness/native/test_delegation.py::test_native_children_share_limits_and_preserve_scope[2-2.00-False]
+tests/harness/native/test_delegation.py::test_native_children_share_limits_and_preserve_scope[6-2.00-True]
+tests/harness/native/test_delegation.py::test_native_children_share_limits_and_preserve_scope[6-2.00-False]
+tests/harness/native/test_delegation.py::test_native_children_share_limits_and_preserve_scope[6-0.0015-True]
+tests/harness/native/test_delegation.py::test_native_children_share_limits_and_preserve_scope[6-0.0015-False]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: reader: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_delegation.py::test_delegation_access_denial_precedes_child_run
+tests/harness/native/test_native.py::test_native_runner_preserves_history_usage_and_events
+tests/harness/native/test_native_action.py::test_native_receipt_precedes_delivery[True-True]
+tests/harness/native/test_native_action.py::test_native_receipt_precedes_delivery[False-True]
+tests/harness/native/test_native_action.py::test_native_receipt_precedes_delivery[None-True]
+tests/harness/native/test_native_action.py::test_native_receipt_precedes_delivery[None-False]
+tests/harness/native/test_native_action.py::test_native_receipt_precedes_delivery[intent_write_failed-True]
+tests/harness/native/test_native_action.py::test_native_receipt_precedes_delivery[settlement_write_failed-True]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/usage.py:673: CostNotFoundWarning: A `cost_limit` is set but cannot be enforced because no cost was calculated for this run. This usually means there is no pricing data for the model or provider in use. If the model is newer than your install, `pydantic_ai.prices.update_in_background()` can download current prices.
+    warnings.warn(
+
+tests/harness/native/test_interview.py: 15 warnings
+tests/harness/native/test_postgres_store.py: 4 warnings
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: profile: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_interview.py::test_failed_run_after_mutation_never_falls_back_to_prewrite_input[False]
+tests/harness/native/test_interview.py::test_failed_run_after_mutation_never_falls_back_to_prewrite_input[True]
+tests/harness/native/test_interview.py::test_mutation_acknowledgement_and_scope_fail_closed[save]
+tests/harness/native/test_interview.py::test_mutation_acknowledgement_and_scope_fail_closed[flush]
+tests/harness/native/test_interview.py::test_mutation_acknowledgement_and_scope_fail_closed[scope]
+tests/harness/native/test_interview.py::test_cancelled_mutation_keeps_an_unresolved_effect
+tests/harness/native/test_interview.py::test_denied_conversation_mutation_is_terminal_before_execution
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: mutate: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_interview_branches.py::test_native_branch_pivot_preserves_shared_fields_and_rebinds_review
+tests/harness/native/test_interview_branches.py::test_native_branch_pivot_preserves_shared_fields_and_rebinds_review
+tests/harness/native/test_interview_branches.py::test_native_branch_pivot_preserves_shared_fields_and_rebinds_review
+tests/harness/native/test_postgres_store.py::test_native_branch_pivot_and_review_bindings_persist[False]
+tests/harness/native/test_postgres_store.py::test_native_branch_pivot_and_review_bindings_persist[False]
+tests/harness/native/test_postgres_store.py::test_native_branch_pivot_and_review_bindings_persist[False]
+tests/harness/native/test_postgres_store.py::test_native_branch_pivot_and_review_bindings_persist[True]
+tests/harness/native/test_postgres_store.py::test_native_branch_pivot_and_review_bindings_persist[True]
+tests/harness/native/test_postgres_store.py::test_native_branch_pivot_and_review_bindings_persist[True]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: branch: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_interview_repeats.py::test_native_repeated_item_reorder_validation_and_confirmation
+tests/harness/native/test_interview_repeats.py::test_native_repeated_item_reorder_validation_and_confirmation
+tests/harness/native/test_interview_repeats.py::test_native_repeated_item_reorder_validation_and_confirmation
+tests/harness/native/test_postgres_store.py::test_native_repeated_item_records_and_task_persist[False]
+tests/harness/native/test_postgres_store.py::test_native_repeated_item_records_and_task_persist[False]
+tests/harness/native/test_postgres_store.py::test_native_repeated_item_records_and_task_persist[False]
+tests/harness/native/test_postgres_store.py::test_native_repeated_item_records_and_task_persist[True]
+tests/harness/native/test_postgres_store.py::test_native_repeated_item_records_and_task_persist[True]
+tests/harness/native/test_postgres_store.py::test_native_repeated_item_records_and_task_persist[True]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: repeat: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_interview_repeats.py::test_native_repeated_writes_cannot_bypass_validation_or_item_scope
+tests/harness/native/test_visitor_tools.py::test_host_bound_visitor_injection[True]
+tests/harness/native/test_visitor_tools.py::test_host_bound_visitor_injection[False]
+tests/harness/native/test_visitor_tools.py::test_missing_or_changed_host_context_prevents_execution[missing]
+tests/harness/native/test_visitor_tools.py::test_missing_or_changed_host_context_prevents_execution[visitor]
+tests/harness/native/test_visitor_tools.py::test_missing_or_changed_host_context_prevents_execution[interaction]
+tests/harness/native/test_visitor_tools.py::test_model_cannot_supply_the_host_visitor
+tests/harness/native/test_visitor_tools.py::test_parallel_callers_keep_separate_host_visitors
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: scope: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_leadgen_status.py::test_native_status_uses_graph_caller_and_ignores_model_identity
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: status: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_mcp.py::test_native_mcp_transport_and_policy[REHEARSAL-47-True]
+tests/harness/native/test_mcp.py::test_native_mcp_transport_and_policy[absent-True]
+tests/harness/native/test_mcp.py::test_native_mcp_transport_and_policy[REHEARSAL-47-False]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: records: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_mcp_admission.py::test_missing_remote_tool_fails_before_model_and_closes_server
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: read: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_native.py::test_native_explicit_named_permission_requires_host_tool_check[None]
+tests/harness/native/test_native.py::test_native_explicit_named_permission_requires_host_tool_check[False]
+tests/harness/native/test_native.py::test_native_explicit_named_permission_requires_host_tool_check[True]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: named: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_native.py::test_action_argument_named_ctx_does_not_shadow_sdk_context
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: context-argument: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_pageindex_access.py: 12 warnings
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: answer: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_research_policy.py::test_native_research_uses_fresh_receipts_on_reused_agent[False]
+tests/harness/native/test_research_policy.py::test_native_research_uses_fresh_receipts_on_reused_agent[True]
+tests/harness/native/test_research_policy.py::test_concurrent_research_runs_cannot_cross_cite
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: research: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_skill_assets.py::test_official_skill_loads_projected_sop_and_checks_inherited_tools
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Ignoring unsupported Agent Skill behavioral frontmatter fields: child: allowed-tools
+    results[index] = await coro
+
+tests/harness/native/test_skill_preflight.py::test_unloadable_skill_is_rejected_before_model_request[True-False]
+  /private/tmp/jvagent-unified-test-311/lib/python3.11/site-packages/pydantic_ai/_utils.py:315: UserWarning: Skipping /private/var/folders/5w/9kl274kx0ws67rs2k5mn5vxc0000gn/T/pytest-of-eldonmarks/pytest-871/test_unloadable_skill_is_rejec2/invalid_name/SKILL.md: Invalid skill name 'invalid_name' in /private/var/folders/5w/9kl274kx0ws67rs2k5mn5vxc0000gn/T/pytest-of-eldonmarks/pytest-871/test_unloadable_skill_is_rejec2/invalid_name/SKILL.md; expected at most 64 lowercase Unicode letters or numbers and single hyphens, without a leading or trailing hyphen.
+    results[index] = await coro
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+358 passed, 270 warnings in 66.12s (0:01:06)

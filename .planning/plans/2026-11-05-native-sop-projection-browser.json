@@ -1,0 +1,231 @@
+{
+  "page": 18,
+  "isolated_context": "native-sop-inheritance",
+  "request": {
+    "path": "/api/agents/n.Agent.c3d49de049264acbb24b39c0/interact",
+    "http_status": 200
+  },
+  "ui": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Script ran on page and returned:\n```json\n{\"ui\":\"jvchat\\nAGENT TESTING\\nNew Conversation\\n1 conversation\\n\\nSOP-PROJECTION-CHECK: Please look up the rehearsal record using your inherited procedure and report its verification marker, room and start time.\\n\\nLogout\\nNA\\nNative Signed Host Qualification\\nAGENT\\nsession ID\\ntoken\\n\\nSOP-PROJECTION-CHECK: Please look up the rehearsal record using your inherited procedure and report its verification marker, room and start time.\\n\\n1 tool call\\nUsed tool: mcp_records__lookup_record\\n\\nVerification marker: SOP-INHERITED-29\\nRoom: Cedar\\nStart time: 14:30\\n\\ngpt-4.1-2025-04-14 · 775 tokens\\nCopy\\nRefresh\\nDebug\\nAdd Attachment\\nSend message\",\"resources\":[{\"duration_ms\":6055.800000011921,\"responseEnd\":122884.10000002384}],\"startedAt\":\"2026-11-05T16:20:28.843Z\"}\n```"
+      }
+    ]
+  },
+  "frames": [
+    {
+      "type": "start",
+      "interaction_id": "n.Interaction.def613d221cc4a20b1a183f9",
+      "session_id": "sess_f8a37e134b1741bb",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+    },
+    {
+      "type": "message",
+      "message": {
+        "id": "o.ResponseMessage.9a5ec2d1f31d4a3ab9cfc5b8",
+        "session_id": "sess_f8a37e134b1741bb",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+        "interaction_id": "n.Interaction.def613d221cc4a20b1a183f9",
+        "message_type": "adhoc",
+        "content": "mcp_records__lookup_record",
+        "channel": "default",
+        "category": "thought",
+        "thought_type": "tool_call",
+        "segment_id": "call_XXkGMTggIb4JRPuMpKgrN5wQ",
+        "metadata": {
+          "tool_name": "mcp_records__lookup_record",
+          "native_run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "native_agent_name": "jvagent-native",
+          "tool_args": {
+            "reference": "REHEARSAL-47"
+          }
+        },
+        "timestamp": "2026-11-05T12:20:33.111585"
+      }
+    },
+    {
+      "type": "message",
+      "message": {
+        "id": "o.ResponseMessage.f5666330d32b457eb473d01d",
+        "session_id": "sess_f8a37e134b1741bb",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+        "interaction_id": "n.Interaction.def613d221cc4a20b1a183f9",
+        "message_type": "adhoc",
+        "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}",
+        "channel": "default",
+        "category": "thought",
+        "thought_type": "tool_result",
+        "segment_id": "call_XXkGMTggIb4JRPuMpKgrN5wQ",
+        "metadata": {
+          "tool_name": "mcp_records__lookup_record",
+          "native_run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+          "native_agent_name": "jvagent-native",
+          "tool_result": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}"
+        },
+        "timestamp": "2026-11-05T12:20:33.167893"
+      }
+    },
+    {
+      "type": "message",
+      "message": {
+        "id": "o.ResponseMessage.corr-7bf92f7104f04b899c1d49bd783c7f47",
+        "session_id": "sess_f8a37e134b1741bb",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+        "interaction_id": "n.Interaction.def613d221cc4a20b1a183f9",
+        "message_type": "adhoc",
+        "content": "Verification marker: SOP-INHERITED-29  \nRoom: Cedar  \nStart time: 14:30",
+        "channel": "default",
+        "category": "user",
+        "thought_type": null,
+        "segment_id": null,
+        "metadata": {},
+        "timestamp": "2026-11-05T12:20:35.086289"
+      }
+    },
+    {
+      "type": "message",
+      "message": {
+        "id": "o.ResponseMessage.corr-7bf92f7104f04b899c1d49bd783c7f47",
+        "session_id": "sess_f8a37e134b1741bb",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+        "interaction_id": "n.Interaction.def613d221cc4a20b1a183f9",
+        "message_type": "final",
+        "content": "",
+        "channel": "default",
+        "category": "user",
+        "thought_type": null,
+        "segment_id": null,
+        "metadata": {},
+        "timestamp": "2026-11-05T12:20:35.098715"
+      }
+    },
+    {
+      "type": "final",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_f8a37e134b1741bb",
+      "response": "Verification marker: SOP-INHERITED-29  \nRoom: Cedar  \nStart time: 14:30",
+      "interaction": {
+        "id": "n.Interaction.def613d221cc4a20b1a183f9",
+        "utterance": "SOP-PROJECTION-CHECK: Please look up the rehearsal record using your inherited procedure and report its verification marker, room and start time.",
+        "response": "Verification marker: SOP-INHERITED-29  \nRoom: Cedar  \nStart time: 14:30",
+        "actions": [
+          "NativeHarnessAction"
+        ],
+        "directives": [],
+        "tasks": [],
+        "parameters": [],
+        "events": [
+          {
+            "action_name": "harness",
+            "content": "correlation_id=corr-7bf92f7104f04b899c1d49bd783c7f47"
+          }
+        ],
+        "observability_metrics": [
+          {
+            "event_type": "model_call",
+            "data": {
+              "native_receipt_key": "spend:default|run|*|corr-7bf92f7104f04b899c1d49bd783c7f47:1",
+              "native_run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+              "native_step_index": 1,
+              "native_spend_receipt": true,
+              "model": "gpt-4.1-2025-04-14",
+              "provider": "openai",
+              "native_receipt_origin": "spend_snapshot",
+              "usage_status": "provider_reported",
+              "usage": {
+                "prompt_tokens": 337,
+                "completion_tokens": 24,
+                "total_tokens": 361,
+                "cached_prompt_tokens": 0,
+                "cache_write_tokens": 0
+              },
+              "cost_record": {
+                "amount": 0.000866,
+                "currency": "USD",
+                "source": "pydantic_ai_pricing",
+                "estimated": true,
+                "pricing_version": null
+              }
+            }
+          },
+          {
+            "event_type": "model_call",
+            "data": {
+              "native_receipt_key": "spend:default|run|*|corr-7bf92f7104f04b899c1d49bd783c7f47:2",
+              "native_run_id": "corr-7bf92f7104f04b899c1d49bd783c7f47",
+              "native_step_index": 2,
+              "native_spend_receipt": true,
+              "model": "gpt-4.1-2025-04-14",
+              "provider": "openai",
+              "native_receipt_origin": "spend_snapshot",
+              "usage_status": "provider_reported",
+              "usage": {
+                "prompt_tokens": 391,
+                "completion_tokens": 23,
+                "total_tokens": 414,
+                "cached_prompt_tokens": 0,
+                "cache_write_tokens": 0
+              },
+              "cost_record": {
+                "amount": 0.000966,
+                "currency": "USD",
+                "source": "pydantic_ai_pricing",
+                "estimated": true,
+                "pricing_version": null
+              }
+            }
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 728,
+          "completion_tokens": 47,
+          "total_tokens": 775,
+          "cached_prompt_tokens": 0,
+          "cache_write_tokens": 0,
+          "model_call_count": 2,
+          "model_attempt_count": 0,
+          "failed_model_attempt_count": 0,
+          "cancelled_model_attempt_count": 0,
+          "model_attempt_duration_seconds": 0,
+          "estimated_cost_usd": 0.001832,
+          "reported_cost_usd": 0,
+          "litellm_cost_usd": 0,
+          "unknown_cost_call_count": 0,
+          "total_cost_usd": 0.001832,
+          "total_duration_seconds": 0,
+          "last_updated": "2026-11-05T16:20:35.099007+00:00"
+        },
+        "streamed": true
+      },
+      "report": [
+        {
+          "interaction_created": {
+            "interaction_id": "n.Interaction.def613d221cc4a20b1a183f9",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "session_id": "sess_f8a37e134b1741bb"
+          }
+        },
+        {
+          "interact_actions_found": {
+            "count": 1,
+            "actions": [
+              "native_harness"
+            ]
+          }
+        },
+        {
+          "action_executed": {
+            "action": "native_harness",
+            "weight": 0,
+            "class": "NativeHarnessAction"
+          }
+        }
+      ]
+    }
+  ],
+  "privacy": {
+    "headers_omitted": true,
+    "session_capability_removed": true
+  }
+}

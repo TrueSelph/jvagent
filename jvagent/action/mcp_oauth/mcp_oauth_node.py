@@ -26,7 +26,7 @@ class MCPOAuthToken(Node):
     account_name: str = attribute(
         indexed=True,
         default="default",
-        description="Account identifier used within the MCP server config (e.g., integral).",
+        description="Account identifier used within the MCP server config (for example, default).",
     )
 
     token_json: str = attribute(

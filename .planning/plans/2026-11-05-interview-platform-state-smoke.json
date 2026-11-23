@@ -1,0 +1,206 @@
+{
+  "parent_revision": "git-commit:d664e4dbc80bac4d95937b6cfe3d994240a3e4df",
+  "source_blobs": {
+    "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+    "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+    "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+    "tests/harness/native/test_cancellation.py": "git-blob:4b0a74c69f46e21c665e070aa130db0c50b501dd",
+    "tests/harness/native/test_postgres_store.py": "git-blob:44989d57a36148fb3be0cf1f54dbd5a2c06ccce8",
+    "tests/action/interact/test_native_host_context.py": "git-blob:0d3811c948fc3e2fac45cfcdd7b7b9b6df1b1b60",
+    "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+    "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff"
+  },
+  "observed_at": "2026-11-05T15:56:53.594201+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "database": "jvagent_native_host_context",
+    "api_port": 8136,
+    "ui_port": 3136,
+    "model": "openai:gpt-4.1 (Responses API)",
+    "temporary_route": "/api/qualification/embed",
+    "auth": "platform login, administrator role, caller identity from server-owned authentication service",
+    "shipped_product_route": false,
+    "host_fixture_source": "\"\"\"Disposable authenticated embedding host; no execution functions are patched.\"\"\"\nimport json\nfrom pathlib import Path\nfrom typing import Any\n\nfrom fastapi import Request\nfrom fastapi.responses import StreamingResponse\nfrom jvspatial.api import endpoint, get_auth_service\nfrom jvspatial.api.exceptions import AuthenticationError\n\nfrom jvagent.action.response.streaming import format_sse_chunk\nfrom jvagent.embed import interact_stream\n\nscope = json.loads(Path('/private/tmp/jvagent-native-host-context-smoke/host-scope.json').read_text())\n\n@endpoint('/qualification/embed', methods=['POST'], auth=True, roles=['admin'])\nasync def embedding_host(request: Request) -> Any:\n    bearer = (request.headers.get('authorization') or '').removeprefix('Bearer ')\n    principal = await get_auth_service().validate_token(bearer)\n    if principal is None:\n        raise AuthenticationError(message='Host login is required')\n    body = await request.json()\n    supplied = body.get('data') or {}\n    metadata = {'qualification_host':'native-embed'}\n    if 'host_system_context' in supplied:\n        metadata.update({k:supplied[k] for k in ('host_system_context','run_id') if k in supplied})\n\n    async def frames():\n        async for frame in interact_stream(\n            agent_id=scope['agent_id'], user_id=principal.id,\n            session_id=body.get('session_id'), utterance=body.get('utterance',''),\n            data=metadata,\n            is_disconnected=request.is_disconnected,\n        ):\n            yield format_sse_chunk(frame)\n\n    return StreamingResponse(frames(), media_type='text/event-stream')\n\n\nasync def caller(request: Request):\n    bearer=(request.headers.get('authorization') or '').removeprefix('Bearer ')\n    principal=await get_auth_service().validate_token(bearer)\n    if principal is None:\n        raise AuthenticationError(message='Host login is required')\n    return principal\n\n\n@endpoint('/qualification/interview/setup', methods=['POST'], auth=True, roles=['admin'])\nasync def setup_interview_nonce(request: Request) -> Any:\n    from jvagent.core.cache import get_cached_agent\n    from jvagent.core.host_context import sign_host_system_context\n    principal=await caller(request)\n    agent=await get_cached_agent(scope['agent_id'])\n    memory=await agent.get_memory()\n    _,conversation,uid,sid,_=await memory.get_session(user_id=principal.id,channel='default')\n    data=sign_host_system_context('For this platform-state check reply exactly INTERVIEW-PLATFORM-READY.',agent_id=scope['agent_id'],user_id=uid,session_id=sid)\n    return {'session_id':sid,'user_id':uid,'data':data}\n\n\n@endpoint('/qualification/interview/clear', methods=['POST'], auth=True, roles=['admin'])\nasync def clear_interview_scratch(request: Request) -> Any:\n    from jvspatial import flush_deferred_entities\n    from jvagent.core.cache import get_cached_agent\n    from jvagent.core.host_context import HOST_CONTEXT_REPLAY_KEY\n    from jvagent.memory.distributed_conversation_lock import conversation_mutation_lock\n    from jvagent.memory.conversation import Conversation\n    from jvagent.action.interview.session import clear_interview_context\n    principal=await caller(request)\n    body=await request.json()\n    agent=await get_cached_agent(scope['agent_id'])\n    memory=await agent.get_memory()\n    conversation=await memory.get_conversation_by_session(body.get('session_id'))\n    if conversation is None or conversation.user_id != principal.id:\n        raise AuthenticationError(message='Owner session is required')\n    async with conversation_mutation_lock(conversation.id):\n        conversation=await Conversation.find_one({'id':conversation.id})\n        before=len(conversation.context.get(HOST_CONTEXT_REPLAY_KEY,{}))\n        conversation.context['interview']={'status':'completed'}\n        conversation.context['scratch']='disposable'\n        clear_interview_context(conversation)\n        await conversation.save()\n        await flush_deferred_entities(conversation,strict=True)\n    return {'replay_entries_before':before,'replay_entries_after':len(conversation.context.get(HOST_CONTEXT_REPLAY_KEY,{})),'interview_removed':'interview' not in conversation.context,'scratch_removed':'scratch' not in conversation.context}\n"
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.20b41ed2fa6c41f78f5698d1",
+      "session_id": "sess_2aaa139e5db44c0e",
+      "interview_present": false,
+      "scratch_present": false,
+      "nonce_count": 1
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.4a4a7ae5a59840369789f527",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_2aaa139e5db44c0e",
+      "utterance": "INTERVIEW-PLATFORM-CHECK: Confirm the trusted platform policy for this disposable session.",
+      "response": "INTERVIEW-PLATFORM-READY",
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 293,
+          "output_tokens": 9
+        },
+        "output": "INTERVIEW-PLATFORM-READY",
+        "run_id": "corr-68db12506efa4ee6a74f52d0105d95c1",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T15:51:11.732482+00:00",
+        "total_tokens": 302,
+        "prompt_tokens": 293,
+        "total_cost_usd": 0.000658,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 9,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000658,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T11:51:08.186164",
+      "completed_at": "2026-11-05T11:51:11.732422",
+      "closed": true,
+      "emitted": true,
+      "observability_metrics": [
+        {
+          "data": {
+            "model": "gpt-4.1-2025-04-14",
+            "usage": {
+              "total_tokens": 302,
+              "prompt_tokens": 293,
+              "completion_tokens": 9,
+              "cache_write_tokens": 0,
+              "cached_prompt_tokens": 0
+            },
+            "provider": "openai",
+            "cost_record": {
+              "amount": 0.000658,
+              "source": "pydantic_ai_pricing",
+              "currency": "USD",
+              "estimated": true,
+              "pricing_version": null
+            },
+            "usage_status": "provider_reported",
+            "native_run_id": "corr-68db12506efa4ee6a74f52d0105d95c1",
+            "native_step_index": 1,
+            "native_receipt_key": "spend:default|run|*|corr-68db12506efa4ee6a74f52d0105d95c1:1",
+            "native_spend_receipt": true,
+            "native_receipt_origin": "spend_snapshot"
+          },
+          "event_type": "model_call"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-68db12506efa4ee6a74f52d0105d95c1",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T15:51:09.278231Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_2aaa139e5db44c0e",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-68db12506efa4ee6a74f52d0105d95c1",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T15:51:09.771068Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_2aaa139e5db44c0e",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-68db12506efa4ee6a74f52d0105d95c1",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T15:51:11.399247Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_2aaa139e5db44c0e",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-68db12506efa4ee6a74f52d0105d95c1",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T15:51:11.524020Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_2aaa139e5db44c0e",
+          "idempotency_key": "3:0:run_completed:"
+        }
+      ],
+      "effects": [],
+      "duration_seconds": 3.546258
+    }
+  ],
+  "replay_interaction_count": 0,
+  "module_observation": {
+    "source_blobs": {
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:0fa8f6455c2e30178617b54308f04a8ce3b700d8",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff"
+    },
+    "process_id": 56789,
+    "observed_at": "2026-11-05T15:49:44.390632+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T15:56:53.527798+00:00"
+  },
+  "validation": {
+    "native_postgres_python311": "238 passed, 155 warnings, 32.00 seconds",
+    "native_postgres_python312": "238 passed, 155 warnings, 35.82 seconds",
+    "affected": "308 passed, 2.33 seconds",
+    "postgres_fault_matrix": "16 passed, 16 warnings, 10.55 seconds",
+    "all_file_hooks": "passed; staged evidence included",
+    "full_suite_on_push": "pending"
+  },
+  "limits": [
+    "Cleanup security prerequisite only; native interview activation, mutating tools, hooks, continuation and full workflow remain unqualified.",
+    "Provider model was invoked through authenticated disposable embedding fixture. Signed envelopes and nonce values are omitted."
+  ]
+}

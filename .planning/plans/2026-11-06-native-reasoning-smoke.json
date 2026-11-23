@@ -1,0 +1,312 @@
+{
+  "observed_at": "2026-11-06T18:36:06.674287+00:00",
+  "parent_revision": "git-commit:de92d6e9dd873b7967975f5f180edbcfa91b3bc7",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-reasoning-smoke",
+    "backend": 8164,
+    "ui": 3140,
+    "graph": "disposable PostgreSQL",
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    }
+  },
+  "runtime_epochs": [
+    {
+      "process_id": 47398,
+      "observed_at": "2026-11-06T18:29:17.784671+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:8e73b1d58fd5f855e75ddc4653f8eb4b706568ef",
+        "jvagent/cli/harness_migrate.py": "git-blob:f8999b9e5108b03fe0f2642ce790ca7a0d34a4d3"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 47615,
+      "observed_at": "2026-11-06T18:30:37.301500+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/README.md": "git-blob:e3b9523065fe5a05a36800131f8625fec1c8d802",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:8e73b1d58fd5f855e75ddc4653f8eb4b706568ef",
+        "jvagent/cli/harness_migrate.py": "git-blob:f8999b9e5108b03fe0f2642ce790ca7a0d34a4d3"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.acc3bef9ad4b4de18b668f69",
+      "publish_reasoning": true,
+      "request_outcome": "passed",
+      "utterance": "Read the current configured time freshly using the clock skill. Return the exact ISO timestamp and timezone.",
+      "response": "The current configured time is 2026-11-06T14:29:20.427883-04:00 (timezone: America/Guyana).",
+      "started_at": "2026-11-06T14:29:17.785843-04:00",
+      "completed_at": "2026-11-06T14:29:21.609820-04:00",
+      "duration_seconds": 3.823977,
+      "run_status": "delivered",
+      "history_source": {},
+      "worker_pid": "47398",
+      "sdk_digest": "sha256:fae9cbf79a76b9d86503330771b15367b56522e953460f35d52ea47ce7713ffa",
+      "registered_sdk_runs": 1,
+      "snapshot_count": 6,
+      "trace": [
+        {
+          "content": "get_current_datetime",
+          "message_id": "o.ResponseMessage.425605c00fd541ab948e8aa0",
+          "segment_id": "call_rtS2TiRQP8yLKnVKZebT3UGH",
+          "started_at": "2026-11-06T18:29:20.411661+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:29:20.411669+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "ISO 8601: 2026-11-06T14:29:20.427883-04:00\nDate: Friday, November 06, 2026\nTime: 14:29:20\nTimezone: America/Guyana",
+          "message_id": "o.ResponseMessage.cce050fc38cb4a3191593764",
+          "segment_id": "call_rtS2TiRQP8yLKnVKZebT3UGH",
+          "started_at": "2026-11-06T18:29:20.442641+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:29:20.442646+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T18:29:21.609871+00:00",
+        "total_tokens": 762,
+        "prompt_tokens": 715,
+        "total_cost_usd": 0.001806,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 47,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001806,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.275,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.275,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 334,
+            "prompt_tokens": 322,
+            "completion_tokens": 12,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00074,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-e98fa481df25461bab7acaaff54acb42",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-e98fa481df25461bab7acaaff54acb42:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 428,
+            "prompt_tokens": 393,
+            "completion_tokens": 35,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001066,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-e98fa481df25461bab7acaaff54acb42",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-e98fa481df25461bab7acaaff54acb42:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.b76b1e85723146569b594e13",
+      "publish_reasoning": false,
+      "request_outcome": "passed",
+      "utterance": "Read the current time freshly again with the clock skill, not from history. Return the exact ISO timestamp and timezone.",
+      "response": "The current configured time is 2026-11-06T14:30:54.528116-04:00 (timezone: America/Guyana).",
+      "started_at": "2026-11-06T14:30:51.470698-04:00",
+      "completed_at": "2026-11-06T14:30:55.973114-04:00",
+      "duration_seconds": 4.502416,
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-e98fa481df25461bab7acaaff54acb42"
+      },
+      "worker_pid": "47615",
+      "sdk_digest": "sha256:1de7b004716f2ef821dd7d281a47f17a420f280b8e6255cd6738beab13777f10",
+      "registered_sdk_runs": 1,
+      "snapshot_count": 6,
+      "trace": [
+        {
+          "content": "get_current_datetime",
+          "message_id": "o.ResponseMessage.ba16d73f0a1a41789c2d3847",
+          "segment_id": "call_CgFopib1BKEHb92BlrdbRSXC",
+          "started_at": "2026-11-06T18:30:54.508423+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:30:54.508429+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "ISO 8601: 2026-11-06T14:30:54.528116-04:00\nDate: Friday, November 06, 2026\nTime: 14:30:54\nTimezone: America/Guyana",
+          "message_id": "o.ResponseMessage.4c79b58d24364897b8219aea",
+          "segment_id": "call_CgFopib1BKEHb92BlrdbRSXC",
+          "started_at": "2026-11-06T18:30:54.544452+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T18:30:54.544458+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T18:30:55.973189+00:00",
+        "total_tokens": 1032,
+        "prompt_tokens": 985,
+        "total_cost_usd": 0.002346,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 47,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002346,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.647,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.647,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 469,
+            "prompt_tokens": 457,
+            "completion_tokens": 12,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00101,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-87fd80dee8364012bdfff229a8274baf",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-87fd80dee8364012bdfff229a8274baf:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 563,
+            "prompt_tokens": 528,
+            "completion_tokens": 35,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001336,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-87fd80dee8364012bdfff229a8274baf",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-87fd80dee8364012bdfff229a8274baf:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    }
+  ],
+  "conversation": {
+    "id": "n.Conversation.6151a0e8028749639b950363",
+    "spend": {
+      "usd": "0.004152",
+      "tokens": 1794,
+      "requests": 4,
+      "unpriced_requests": 0
+    },
+    "task_count": 0
+  },
+  "restart_audit": {
+    "interaction_records_unchanged": true,
+    "conversation_spend_unchanged": true,
+    "publish_reasoning": false,
+    "sdk_run_records_unchanged": true
+  },
+  "reload_audit": {
+    "interaction_records_unchanged": true,
+    "conversation_spend_unchanged": true,
+    "sdk_run_records_unchanged": true
+  },
+  "operator_policies": [
+    {
+      "publish_reasoning": true,
+      "permissions_match_reviewed_declaration": true,
+      "interaction_rows_unchanged": true
+    },
+    {
+      "publish_reasoning": false,
+      "permissions_match_reviewed_declaration": true,
+      "interaction_rows_unchanged": true
+    }
+  ],
+  "totals": {
+    "empty_denied_conversations": 2,
+    "registered_sdk_runs": 2,
+    "model_turns": 2,
+    "provider_requests": 4,
+    "provider_reported_tokens": 1794,
+    "estimated_cost_usd": "0.004152",
+    "unknown_cost_calls": 0
+  },
+  "fixture_failures_retained": [
+    "First bootstrap refused a noncanonical access-control Action name. Correcting the disposable declaration permitted startup.",
+    "Malformed fixture any rule denied two browser requests before model work; no Interaction or SDK registration was created.",
+    "Merge bootstrap deliberately retained the old persisted permission value. A privileged public graph update applied the reviewed clock policy; the runtime was not patched.",
+    "The fill automation initially changed textarea DOM value without React state; the actual composer change handler was then invoked before clicking Send."
+  ],
+  "limits": [
+    "GPT-4.1 supplies no reasoning text: actual-provider evidence qualifies absent-reasoning behavior and tool/history/accounting preservation only.",
+    "Positive ThinkingPart completion, opt-out, signature/metadata exclusion, display bound and interrupted-stream cases use the public SDK FunctionModel; an actual reasoning-capable provider/UI/child/cancellation matrix remains open.",
+    "Per-part display bound does not establish total trace retention/capacity or channel compatibility.",
+    "No general latency, cost or dependency-footprint optimization is claimed. Legacy/pilot deletion, state cutover and enterprise qualification remain open."
+  ]
+}

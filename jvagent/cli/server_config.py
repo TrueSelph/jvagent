@@ -29,6 +29,7 @@ from jvagent.core.config import (
     resolve_db_path,
     resolve_log_db_path,
 )
+from jvagent.core.errors import ConfigError
 from jvagent.core.scheduler_bootstrap import app_has_task_monitor
 
 logger = logging.getLogger(__name__)
@@ -735,7 +736,8 @@ async def pre_startup_bootstrap(
             ) or app_has_task_monitor(app_root):
                 await ensure_scheduler_for_server(server)
             # Initialize all actions (channel adapters, TaskMonitor registration, …)
-            await run_app_startup()
+            if not await run_app_startup():
+                raise ConfigError("Action initialization failed; startup refused")
 
         # Ensure admin user exists
         admin_exists = await ensure_admin_user()

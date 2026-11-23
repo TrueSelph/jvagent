@@ -19,27 +19,12 @@ logger = logging.getLogger(__name__)
 
 def _datetime_tool(action: Any) -> SkillTool:
     async def _run(args: Dict[str, Any], _action: Any = action) -> str:
-        try:
-            from datetime import datetime, timezone
+        from jvagent.core.clock import read_app_clock
 
-            now = None
-            get_app = getattr(_action, "get_app", None)
-            if callable(get_app):
-                app = await get_app()
-                if app is not None and hasattr(app, "now"):
-                    now = await app.now()
-            if not isinstance(now, datetime):
-                now = datetime.now(timezone.utc)
-        except Exception as exc:  # pragma: no cover - defensive
+        try:
+            return await read_app_clock(await _action.get_app())
+        except Exception as exc:
             return f"(datetime error: {exc})"
-        tz = getattr(now.tzinfo, "key", None) or (
-            str(now.tzinfo) if now.tzinfo else "UTC"
-        )
-        return (
-            f"ISO 8601: {now.isoformat()}\n"
-            f"Date: {now.strftime('%A, %B %d, %Y')}\n"
-            f"Time: {now.strftime('%H:%M:%S')}\nTimezone: {tz}"
-        )
 
     return SkillTool(
         name="get_current_datetime",

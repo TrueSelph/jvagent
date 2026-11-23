@@ -313,8 +313,8 @@ interact stream plus a small public surface:
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
-| `POST /api/agents/{id}/interact` | session-token per mode | Streaming chat (SSE). |
-| `POST /api/agents/{id}/interact/session/open` | — | Create/resume web session + mint token (no utterance). |
+| `POST /api/agents/{id}/interact` | bearer/session token on native resume; legacy per mode | Streaming chat (SSE). |
+| `POST /api/agents/{id}/interact/session/open` | bearer or session token on resume | Create/resume web session + mint token (no utterance). |
 | `POST /api/agents/{id}/interact/session/refresh` | — | Renew the session token. |
 | `GET  /api/agents/{id}/profile` | none | Agent avatar + name + description (public branding). |
 | `POST /api/agents/{id}/voice/stt` | **X-Session-Token required** | Transcribe a base64 clip, batch (reuses `BaseSTTAction`). |
@@ -335,6 +335,21 @@ branding, served read-only. New public routes live in the interact package
 [`upload_endpoints.py`](../jvagent/action/interact/upload_endpoints.py),
 [`avatar_endpoints.py`](../jvagent/action/interact/avatar_endpoints.py)) and reuse
 its rate limiter + session-token gate ([`public_gate.py`](../jvagent/action/interact/public_gate.py)).
+
+NativeHarnessAction requires caller proof for existing public sessions regardless
+of the transitional legacy auth mode. Anonymous creation receives a server-issued
+user ID; supplying an existing user ID does not confer ownership. Reopening a
+session sends its capability in `X-Session-Token`, including attachment/voice
+initialization ([client](../jvmessenger/src/app/streaming/session.ts:221),
+[admission](../jvagent/action/interact/session_token.py:450)).
+
+Historical sessions have unbound public ownership. A login JWT for the owner can
+bind one and rotate its capability secret; old capabilities then remain invalid.
+An old anonymous session without owner proof must start a new session. There is no
+automatic promotion of historical tokens or guessing from client user IDs
+([binding](../jvagent/action/interact/session_token.py:604)). Trusted embedding
+hosts retain responsibility for their own caller boundary. Qualification and
+remaining limits are in the [public identity record](../.planning/plans/2026-11-05-public-identity-binding.md).
 
 ### Real-time STT (streaming)
 

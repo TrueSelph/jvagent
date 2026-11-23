@@ -10,6 +10,7 @@ from jvagent.cli.agent_commands import (
     list_agents,
     uninstall_agent,
 )
+from jvagent.cli.harness_migrate import handle_harness_migrate
 from jvagent.cli.server import (
     bootstrap_only,
     load_app_env,
@@ -28,6 +29,7 @@ __all__ = [
     "handle_agent_command",
     "handle_bundle_command",
     "handle_skill_command",
+    "handle_harness_migrate",
     "list_actions",
     "list_agents",
     "load_app_env",

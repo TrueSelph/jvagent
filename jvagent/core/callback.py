@@ -1,7 +1,9 @@
+import asyncio
 import ipaddress
 import logging
 import os
 import socket
+from contextvars import ContextVar
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
@@ -9,13 +11,35 @@ import httpx
 from jvspatial import create_task
 
 logger = logging.getLogger(__name__)
+_callback_http_log: ContextVar[bool] = ContextVar(
+    "jvagent_callback_http_log", default=False
+)
+
+
+class _CallbackHTTPFilter(logging.Filter):
+    """Keep HTTPX summaries from exporting private callback URLs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if _callback_http_log.get():
+            record.msg = "Callback HTTP transport event"
+            record.args = ()
+            record.exc_info = None
+            record.stack_info = None
+        return True
+
+
+_http_logger = logging.getLogger("httpx")
+if not any(
+    getattr(f, "name", None) == "jv-callback-http" for f in _http_logger.filters
+):
+    _http_logger.addFilter(_CallbackHTTPFilter("jv-callback-http"))
 
 # Outbound webhook scheme allow-list. Anything else (file://, gopher://, etc.)
 # is rejected before DNS resolution. AUDIT-core C-4.
 _ALLOWED_WEBHOOK_SCHEMES = frozenset({"http", "https"})
 
 
-def _is_unsafe_ip(ip: ipaddress._BaseAddress) -> bool:
+def _is_unsafe_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Return True for any IP that must not be a webhook target.
 
     Uses ipaddress' own classification (covers RFC1918, link-local, loopback,
@@ -93,6 +117,8 @@ def _resolve_and_validate(webhook_url: str) -> Tuple[str, List[str]]:
     safe: List[str] = []
     for _, _, _, _, sockaddr in addrs:
         ip_str = sockaddr[0]
+        if not isinstance(ip_str, str):
+            continue
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
@@ -124,7 +150,7 @@ async def _post_webhook_pinned_async(
     For HTTPS the SNI server-name is forwarded via the per-request extension
     so certificate validation still uses the original hostname.
     """
-    hostname, safe_ips = _resolve_and_validate(webhook_url)
+    hostname, safe_ips = await asyncio.to_thread(_resolve_and_validate, webhook_url)
     parsed = urlparse(webhook_url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     target_ip = safe_ips[0]
@@ -142,19 +168,27 @@ async def _post_webhook_pinned_async(
         # the certificate's CN/SAN even though we connect to the IP directly.
         extensions["sni_hostname"] = hostname
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        request = client.build_request(
-            "POST", pinned_url, json=payload, headers=headers
-        )
-        return await client.send(request, extensions=extensions or None)
+    token = _callback_http_log.set(True)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            request = client.build_request(
+                "POST", pinned_url, json=payload, headers=headers, extensions=extensions
+            )
+            return await client.send(request, follow_redirects=False)
+    finally:
+        _callback_http_log.reset(token)
 
 
 def _safe_webhook_target(webhook_url: str) -> str:
     """Return a redacted webhook target for logs."""
     try:
         parsed = urlparse(webhook_url)
-        if parsed.scheme and parsed.netloc:
-            return f"{parsed.scheme}://{parsed.netloc}"
+        if parsed.scheme and parsed.hostname:
+            host = parsed.hostname
+            authority = f"[{host}]" if ":" in host else host
+            if parsed.port is not None:
+                authority += f":{parsed.port}"
+            return f"{parsed.scheme}://{authority}"
     except Exception:
         pass
     return "[invalid-webhook-url]"
@@ -212,7 +246,7 @@ async def trigger_task_created_callback(
             return
 
         # 3. Fire Webhook (Background)
-        async def _fire():
+        async def _fire() -> None:
             try:
                 payload = {
                     "agent_id": str(agent.id),
@@ -241,13 +275,15 @@ async def trigger_task_created_callback(
                 response.raise_for_status()
                 logger.debug(f"Webhook response: {response.status_code}")
             except Exception as e:
-                logger.error(f"Failed to fire task creation webhook: {e}")
+                logger.error(
+                    "Failed to fire task creation webhook: %s", type(e).__name__
+                )
 
         # Use jvspatial.create_task to fire-and-forget safely in background
         await create_task(_fire(), name=f"task_webhook_{task_entry.get('task_id')}")
 
     except Exception as e:
-        logger.error(f"Error in trigger_task_created_callback: {e}")
+        logger.error("Error in trigger_task_created_callback: %s", type(e).__name__)
 
 
 def _event_env_var(event_name: str) -> str:
@@ -300,7 +336,7 @@ async def _trigger_task_event_callback(
             return
         callback_name = _event_callback_name(event_name)
 
-        async def _fire():
+        async def _fire() -> None:
             try:
                 payload = {
                     "agent_id": str(agent.id),
@@ -330,14 +366,14 @@ async def _trigger_task_event_callback(
                 logger.error(
                     "Failed to fire %s webhook: %s",
                     callback_name,
-                    e,
+                    type(e).__name__,
                 )
 
         await create_task(
             _fire(), name=f"{callback_name}_webhook_{task_entry.get('task_id')}"
         )
     except Exception as e:
-        logger.error("Error in %s callback: %s", event_name, e)
+        logger.error("Error in %s callback: %s", event_name, type(e).__name__)
 
 
 async def trigger_task_updated_callback(

@@ -21,6 +21,8 @@ from jvspatial.core.context import (
 from jvspatial.db import get_database_manager
 from jvspatial.env import env
 
+from jvagent.harness.completion_tool import CompleteText
+
 from .config import (
     PAGEINDEX_DB_NAME,
     get_pageindex_candidate_k,
@@ -346,6 +348,7 @@ async def _search_via_tree_search(
     max_tree_prompt_tokens: Optional[int] = None,
     only_enabled: bool = True,
     include: Optional[List[str]] = None,
+    complete: CompleteText | None = None,
 ) -> List[Dict[str, Any]]:
     """LLM-based tree search with lexical pre-selection of documents."""
     from .core.utils import (
@@ -391,8 +394,11 @@ async def _search_via_tree_search(
         return []
 
     model = model or env("PAGEINDEX_TREE_SEARCH_MODEL", default="gpt-4o-mini")
-    api_key = env("OPENAI_API_KEY")
-    if not api_key and not get_pageindex_model_action():
+    if (
+        complete is None
+        and not get_pageindex_model_action()
+        and not env("OPENAI_API_KEY")
+    ):
         logger.warning(
             "PageIndex tree search requires OPENAI_API_KEY or a model action in context; "
             "falling back to direct search"
@@ -438,7 +444,13 @@ async def _search_via_tree_search(
             tree_no_text = deduped
 
             tree_str = json.dumps(tree_no_text, separators=(",", ":"))
-            tree_tokens = count_tokens(tree_str, model=model or "gpt-4o-mini")
+            # Conservative local preflight for native ranking. The SDK accounts
+            # for actual tokens after the provider call.
+            tree_tokens = (
+                len(tree_str.encode("utf-8"))
+                if complete is not None
+                else count_tokens(tree_str, model=model)
+            )
             if tree_tokens > max_tokens:
                 logger.warning(
                     f"PageIndex tree for doc '{doc_name_val}' exceeds token budget "
@@ -476,8 +488,14 @@ Please reply in the following JSON format:
 Directly return the final JSON structure. Do not output anything else.
 """
 
-            response = await llm_acompletion(model=model, prompt=prompt)
+            response = (
+                await complete(prompt)
+                if complete is not None
+                else await llm_acompletion(model=model, prompt=prompt)
+            )
             if not response:
+                if complete is not None:
+                    raise ValueError("PageIndex completion returned no ranking")
                 logger.warning(
                     "PageIndex tree search LLM call failed; falling back to direct"
                 )
@@ -499,6 +517,8 @@ Directly return the final JSON structure. Do not output anything else.
                 node_list = []
 
             unique_nids = list(dict.fromkeys(str(nid) for nid in node_list[:limit]))
+            if complete is not None:
+                unique_nids = [nid for nid in unique_nids if nid in tree_seen]
             if unique_nids:
                 nodes = await DocumentNode.find(
                     {
@@ -517,6 +537,8 @@ Directly return the final JSON structure. Do not output anything else.
                         break
 
         except (json.JSONDecodeError, KeyError, ValueError) as e:
+            if complete is not None:
+                raise
             logger.warning(
                 f"PageIndex tree search parse error: {e}; falling back to direct"
             )
@@ -531,6 +553,8 @@ Directly return the final JSON structure. Do not output anything else.
                 include=include,
             )
         except Exception:
+            if complete is not None:
+                raise
             logger.exception(
                 "Unexpected error in PageIndex tree search; falling back to direct"
             )
@@ -795,6 +819,8 @@ async def search_documents(
     include_references: bool = True,
     only_enabled: bool = True,
     include: Optional[List[str]] = None,
+    *,
+    complete: CompleteText | None = None,
 ) -> List[Dict[str, Any]]:
     """Search documents using vectorless retrieval.
 
@@ -856,6 +882,7 @@ async def search_documents(
                 max_tree_prompt_tokens=max_tree_prompt_tokens,
                 only_enabled=only_enabled,
                 include=include,
+                complete=complete,
             )
         elif strategy == "walker":
             results = await _search_via_walker(

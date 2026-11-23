@@ -141,3 +141,13 @@ Use `result.text` and optionally `result.structured` or `result.error_kind` (e.g
 >
 > When in doubt, use Streamable HTTP MCP servers running in their own
 > network namespace (separate container, separate IAM identity).
+
+
+## Native harness development profile
+
+Install `.[native-harness,native-mcp]`. The optional profile uses Pydantic's public
+MCPToolset, with JV server declarations and explicit `native_read_tools` names;
+legacy `fulfill` is not used (`mcp_action.py:886`). The pinned SDK is MCP 2.3.0.
+Only reviewed plain-stdio reads are presently admitted. See the
+[qualification record](../../../.planning/plans/2026-11-05-native-mcp.md) for
+configuration, host-policy boundaries, real browser outcomes and remaining gates.

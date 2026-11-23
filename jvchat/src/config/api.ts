@@ -1,3 +1,4 @@
+import { createParser } from 'eventsource-parser'
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 import {
   getJvagentUrl,
@@ -25,6 +26,7 @@ import type {
   AgentsResponse,
   InteractionRequest,
   InteractionResponse,
+  ResponseMessageData,
   LogsResponse,
   PageIndexListResponse,
   PageIndexUploadResponse,
@@ -46,19 +48,23 @@ import type {
 } from '../types/api'
 import * as graphService from './api/graph'
 
+class RefreshFailure extends Error {
+  constructor(readonly status?: number, message?: string) {
+    super(message ?? (status === 401 || status === 403
+      ? 'Your sign-in session was rejected. Please sign in again.'
+      : 'The sign-in service is temporarily unavailable. Please try again.'))
+  }
+}
+
 class ApiClient {
   client: AxiosInstance
   private baseUrls: string[]
   /** jvforge HTTP API (``/v1/*``) — separate host/port from jvagent */
   private jvforgeBaseUrls: string[]
   private resolvedLoginPath?: string
-  private isRefreshing = false
+  private authRefresh: { access: string | null; refresh: string | null; caller: string | null; server: string; promise: Promise<string> } | null = null
   /** Avoid multiple full-page redirects when several requests fail at once */
   private authFailureRedirectScheduled = false
-  private failedQueue: Array<{
-    resolve: (value?: unknown) => void
-    reject: (error?: unknown) => void
-  }> = []
 
   constructor() {
     // Initialize with default config, will be updated when config loads
@@ -123,11 +129,11 @@ class ApiClient {
         if (token && isTokenExpired(token)) {
           console.log('Token expired or expiring soon, triggering proactive refresh for:', config.url)
           try {
-            const newToken = await this._refreshAuth()
+            const newToken = await this.refreshAuthentication()
             token = newToken
           } catch (err) {
             console.error('Proactive refresh failed:', err)
-            // Error handling is inside _refreshAuth (redirect to login if both fail)
+            // Only explicit rejection of the current login clears credentials.
             return Promise.reject(err)
           }
         }
@@ -156,54 +162,34 @@ class ApiClient {
         const reqUrl = originalRequest?.url ?? String((error as AxiosError).config?.url ?? '')
 
         const isAuthEndpoint = this._isNoSessionRecoveryPath(reqUrl)
-        const isHttpUnauthorized = status === 401 || status === 403
-        // Browsers hide 401 bodies when error responses omit CORS headers → axios reports no `response`.
-        const isLikelyCorsMaskedUnauthorized =
-          !isAuthEndpoint &&
-          !error.response &&
-          !!originalRequest &&
-          !!getToken() &&
-          this._requestHadBearerAuth(originalRequest) &&
-          this._axiosLooksLikeOpaqueNetworkFailure(error)
-
-        // 401/403 (or opaque CORS-masked equiv.) on application APIs: refresh once, then logout.
-        if (!isAuthEndpoint && (isHttpUnauthorized || isLikelyCorsMaskedUnauthorized)) {
-          if (!originalRequest) {
-            if (isHttpUnauthorized) {
-              console.warn(`${status} with missing request config; redirecting to login`)
-              this.redirectToLoginAfterAuthFailure()
-            }
-            return Promise.reject(error)
-          }
-
-          if (isLikelyCorsMaskedUnauthorized) {
-            console.warn(
-              'Opaque network failure on authenticated request (often CORS-blocked 401 from validate_token); attempting refresh once then logout',
-              { url: error.config?.url, baseURL: error.config?.baseURL },
-            )
-          }
+        const isHttpUnauthorized = status === 401
+        // Only an explicit pre-execution authentication refusal permits refresh/retry.
+        // Network failures have unknown outcomes; 403 is a permission decision.
+        if (!isAuthEndpoint && isHttpUnauthorized) {
+          if (!originalRequest) return Promise.reject(error)
+          const sentBearer = originalRequest.headers.get('Authorization')
+          if (sentBearer && sentBearer !== `Bearer ${getToken()}`) return Promise.reject(error)
+          if (originalRequest.baseURL && !this.baseUrls.includes(originalRequest.baseURL)) return Promise.reject(error)
 
           if (!originalRequest._retry) {
             originalRequest._retry = true
 
             try {
-              console.log(`Received ${isHttpUnauthorized ? status : 'opaque-auth failure'}, entering retry refresh flow...`)
-              const token = await this._refreshAuth()
+              console.log(`Received ${status}, entering retry refresh flow...`)
+              const token = await this.refreshAuthentication()
               if (token) {
                 originalRequest.headers.set('Authorization', `Bearer ${token}`)
               }
               console.log('Retry refresh successful, retrying original request')
               return this.client(originalRequest)
             } catch (refreshErr) {
-              // _refreshAuth already calls redirectToLoginAfterAuthFailure() before throwing.
-              // Belt-and-suspenders: ensure logout even if that path is somehow bypassed.
-              this.redirectToLoginAfterAuthFailure()
+              // Refresh clears credentials only for an explicit credential rejection.
               return Promise.reject(refreshErr)
             }
           }
 
           console.warn(
-            `${isHttpUnauthorized ? `${status}` : 'Opaque auth'} after token refresh (or unrecoverable auth); redirecting to login`,
+            `${status} after token refresh (or unrecoverable auth); redirecting to login`,
           )
           this.redirectToLoginAfterAuthFailure()
           return Promise.reject(error)
@@ -252,58 +238,34 @@ class ApiClient {
     window.location.replace('/login')
   }
 
-  /**
-   * Internal flow to refresh auth tokens either via refresh token or auto-login.
-   * Consolidates logic to avoid duplication in interceptors.
-   * Returns a promise that resolves to the new access token.
-   */
-  private async _refreshAuth(): Promise<string> {
-    // If already refreshing, wait for it to complete
-    if (this.isRefreshing) {
-      return new Promise((resolve, reject) => {
-        this.failedQueue.push({
-          resolve: () => resolve(getToken()!),
-          reject
-        })
-      })
+  /** Share refresh only within the captured login; late results cannot replace another caller. */
+  async refreshAuthentication(): Promise<string> {
+    const access = getToken(), refresh = getRefreshToken(), caller = getEffectiveUserId()
+    const server = this.baseUrls[0]
+    const current = () => getToken() === access && getRefreshToken() === refresh && getEffectiveUserId() === caller && this.baseUrls[0] === server
+    const active = this.authRefresh
+    if (active && active.access === access && active.refresh === refresh && active.caller === caller && active.server === server) return active.promise
+    if (!refresh) {
+      if (current()) this.redirectToLoginAfterAuthFailure()
+      throw new RefreshFailure(401)
     }
-
-    this.isRefreshing = true
-
-    const cleanUpAndRedirect = (error: any) => {
-      this.failedQueue.forEach(({ reject }) => reject(error))
-      this.failedQueue = []
-      this.isRefreshing = false
-      this.redirectToLoginAfterAuthFailure()
-      throw error
-    }
-
-    try {
-      const refreshToken = getRefreshToken()
-      if (refreshToken) {
-        try {
-          console.log('Attempting token refresh...')
-          const refreshResponse = await this.refreshToken({ refresh_token: refreshToken })
-          setStorageToken(refreshResponse.access_token)
-          if (refreshResponse.refresh_token) {
-            setRefreshToken(refreshResponse.refresh_token)
-          }
-          console.log('Token refresh successful')
-
-          this.failedQueue.forEach(({ resolve }) => resolve())
-          this.failedQueue = []
-          this.isRefreshing = false
-          return refreshResponse.access_token
-        } catch (refreshErr) {
-          console.warn('Refresh token failed')
-        }
+    const pending: Promise<string> = (async () => {
+      let response: TokenRefreshResponse
+      try {
+        response = await this.refreshToken({ refresh_token: refresh })
+      } catch (error) {
+        if (current() && error instanceof RefreshFailure && (error.status === 401 || error.status === 403)) this.redirectToLoginAfterAuthFailure()
+        throw error
       }
-
-      console.warn('No refresh token available for recovery')
-      return cleanUpAndRedirect(new Error('Authentication expired and no recovery credentials found'))
-    } catch (err) {
-      return cleanUpAndRedirect(err)
-    }
+      if (!current()) throw new RefreshFailure(undefined, 'The signed-in account changed during refresh. Please retry.')
+      setStorageToken(response.access_token)
+      if (response.refresh_token) setRefreshToken(response.refresh_token)
+      return response.access_token
+    })().finally(() => {
+      if (this.authRefresh?.promise === pending) this.authRefresh = null
+    })
+    this.authRefresh = { access, refresh, caller, server, promise: pending }
+    return pending
   }
 
   /**
@@ -425,17 +387,19 @@ class ApiClient {
    * (e.g. localhost vs 127.0.0.1), which would hide invalid/expired sessions and 401 from validate_token.
    */
   private _isSessionAuthFailureStopFallback(error: unknown): boolean {
-    if (this.authFailureRedirectScheduled) return true
+    if (this.authFailureRedirectScheduled || error instanceof RefreshFailure) return true
     const ax = error as AxiosError
+    const cfg = ax.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
+    // A write may have committed before a lost response or server error.
+    // Only explicit route-not-found permits compatibility fallback.
+    if (cfg?.method && !['get', 'head', 'options'].includes(cfg.method.toLowerCase()) && ax.response?.status !== 404) return true
     const url = this._requestUrlFromAxiosError(error)
     if (this._isNoSessionRecoveryPath(url)) return false
     const status = ax.response?.status
     if (status === 401 || status === 403) return true
-    const cfg = ax.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
     if (
       ax &&
       !ax.response &&
-      getToken() &&
       cfg &&
       this._requestHadBearerAuth(cfg) &&
       this._axiosLooksLikeOpaqueNetworkFailure(ax)
@@ -553,55 +517,28 @@ class ApiClient {
   }
 
   async refreshToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15_000)
     try {
-      // Try /api/auth/refresh first, fallback to /auth/refresh
-      const refreshPaths = ['/api/auth/refresh', '/auth/refresh']
-      let lastError: any
-
       for (const baseURL of this.baseUrls) {
-        for (const path of refreshPaths) {
-          try {
-            // Don't use axios client here to avoid interceptor loops
-            const response = await fetch(`${baseURL}${path}`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(request),
-            })
-
-            if (!response.ok) {
-              if (response.status === 404) {
-                continue // Try next path
-              }
-              const errorText = await response.text()
-              let errorMessage = `HTTP error! status: ${response.status}`
-              try {
-                const errorJson = JSON.parse(errorText)
-                errorMessage = errorJson.detail || errorJson.message || errorMessage
-              } catch {
-                errorMessage = errorText || errorMessage
-              }
-              throw new Error(errorMessage)
-            }
-
-            const data = await response.json()
-            return this._extractLoginResponse({ data })
-          } catch (err: any) {
-            lastError = err
-            if (err.message?.includes('404') || err.message?.includes('HTTP error! status: 404')) {
-              continue // Try next path
-            }
-            // Non-404 error, stop trying
-            throw err
-          }
+        for (const path of ['/api/auth/refresh', '/auth/refresh']) {
+          const response = await fetch(`${baseURL}${path}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request), signal: controller.signal,
+          })
+          if (response.status === 404) continue
+          if (!response.ok) throw new RefreshFailure(response.status)
+          const result = this._extractLoginResponse({ data: await response.json() })
+          if (typeof result.access_token !== 'string' || !result.access_token.trim() || result.token_type?.toLowerCase() !== 'bearer') throw new RefreshFailure()
+          if (result.refresh_token != null && typeof result.refresh_token !== 'string') throw new RefreshFailure()
+          return result
         }
       }
-
-      throw lastError || new Error('Token refresh failed')
-    } catch (error: any) {
-      console.error('Token refresh error:', error)
-      throw error
+      throw new RefreshFailure(404)
+    } catch (error) {
+      throw error instanceof RefreshFailure ? error : new RefreshFailure()
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -804,87 +741,87 @@ class ApiClient {
     }
   }
 
-  async interact(
+  private async _ensureFreshLogin(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    const token = getToken()
+    if (token && isTokenExpired(token)) {
+      const refresh = this.refreshAuthentication()
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => reject(new DOMException('Aborted', 'AbortError'))
+        signal?.addEventListener('abort', abort, { once: true })
+        refresh.then(() => { signal?.removeEventListener('abort', abort); resolve() }, error => { signal?.removeEventListener('abort', abort); reject(error) })
+        if (signal?.aborted) abort()
+      })
+    }
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  }
+
+  /** Submit once, except for explicit route-not-found compatibility probes.
+   * A transport error or admitted HTTP failure can have an unknown outcome.
+   * Replaying that POST against another host can execute and bill another turn.
+   */
+  private async _postInteraction(
     agentId: string,
-    request: InteractionRequest
-  ): Promise<InteractionResponse> {
-    // Interact endpoint is anonymous - create a request without auth headers
-    // Try /api/agents/{id}/interact first, fallback to /agents/{id}/interact, with baseURL fallbacks
-    // Renew the Mode B session token first if it is expired/expiring (ADR-0032).
+    request: InteractionRequest,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const caller = getEffectiveUserId()
+    const server = this.baseUrls[0]
+    await this._ensureFreshLogin(signal)
     await this._ensureFreshInteractSession(agentId, request.session_id)
-    const response = await this._withFallback(async (baseURL) => {
-        // Use fetch directly to avoid axios interceptor adding auth headers
-        const url = this._joinBase(baseURL, `/api/agents/${agentId}/interact`)
-        if (import.meta.env.DEV) {
-          console.log('[jvchat] interact URL:', url)
-        }
-        const fetchResponse = await fetch(url, {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (getEffectiveUserId() !== caller || this.baseUrls[0] !== server) throw new RefreshFailure(undefined, 'The sign-in context changed. Please retry.')
+    const access = getToken()
+    let missing: Response | undefined
+    for (const base of this.baseUrls) {
+      for (const prefix of ['/api', '']) {
+        const response = await fetch(this._joinBase(base, `${prefix}/agents/${agentId}/interact`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...this._interactAuthHeaders(request.session_id),
           },
           body: JSON.stringify(request),
+          signal,
         })
-
-        if (!fetchResponse.ok) {
-          if (fetchResponse.status === 401 || fetchResponse.status === 403) {
-            this.redirectToLoginAfterAuthFailure()
-            throw new Error('Unauthorized')
-          }
-          if (fetchResponse.status === 404) {
-            // Try without /api prefix
-            const fallbackUrl = this._joinBase(baseURL, `/agents/${agentId}/interact`)
-            if (import.meta.env.DEV) {
-              console.log('[jvchat] interact fallback URL:', fallbackUrl)
-            }
-            const fallbackResponse = await fetch(fallbackUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...this._interactAuthHeaders(request.session_id),
-              },
-              body: JSON.stringify(request),
-            })
-
-            if (!fallbackResponse.ok) {
-              if (fallbackResponse.status === 401 || fallbackResponse.status === 403) {
-                this.redirectToLoginAfterAuthFailure()
-                throw new Error('Unauthorized')
-              }
-              const errorText = await fallbackResponse.text()
-              let errorMessage = `HTTP error! status: ${fallbackResponse.status}`
-              try {
-                const errorJson = JSON.parse(errorText)
-                errorMessage = errorJson.detail || errorJson.message || errorMessage
-              } catch {
-                errorMessage = errorText || errorMessage
-              }
-              throw new Error(errorMessage)
-            }
-
-            return { data: await fallbackResponse.json() }
-          }
-
-          const errorText = await fetchResponse.text()
-          let errorMessage = `HTTP error! status: ${fetchResponse.status}`
-          try {
-            const errorJson = JSON.parse(errorText)
-            errorMessage = errorJson.detail || errorJson.message || errorMessage
-          } catch {
-            errorMessage = errorText || errorMessage
-          }
-          throw new Error(errorMessage)
+        if (response.status === 404) {
+          missing = response
+          continue
         }
+        if (!response.ok) throw await this._interactionError(response, access)
+        return response
+      }
+    }
+    if (missing) throw await this._interactionError(missing, access)
+    throw new Error("No interaction endpoint is configured")
+  }
 
-        return { data: await fetchResponse.json() }
-    })
-    // Handle both wrapped (success_response) and unwrapped responses
-    const result =
-      response.data.success && response.data.data
-        ? (response.data.data as InteractionResponse)
-        : (response.data as InteractionResponse)
-    // Persist the (re)minted Mode B session token for the next resume (ADR-0020).
+  private async _interactionError(response: Response, access: string | null): Promise<Error> {
+    if (response.status === 401) {
+      if (getToken() === access) this.redirectToLoginAfterAuthFailure()
+      return new Error('Unauthorized')
+    }
+    if (response.status === 403) return new Error('This account does not have permission for that request.')
+    const raw = await response.text()
+    let message = `HTTP error! status: ${response.status}`
+    try {
+      const data = JSON.parse(raw)
+      const detail = data.detail ?? data.message ?? data.error?.message ?? data.error
+      if (typeof detail === 'string') message = detail
+      else if (Array.isArray(detail)) message = detail.map((item) => item.msg ?? '').filter(Boolean).join('; ') || message
+    } catch {
+      message = raw || message
+    }
+    return new Error(message)
+  }
+
+  async interact(
+    agentId: string,
+    request: InteractionRequest,
+  ): Promise<InteractionResponse> {
+    const response = await this._postInteraction(agentId, request)
+    const data = await response.json()
+    const result = (data.success && data.data ? data.data : data) as InteractionResponse
     this._captureInteractSessionToken(result?.session_id, result?.session_token)
     return result
   }
@@ -894,147 +831,94 @@ class ApiClient {
     request: InteractionRequest,
     onChunk: (chunk: any) => void,
     onError?: (error: Error) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<void> {
-    // Interact endpoint is anonymous - do not send auth headers
-    // Try baseURL fallbacks and /api / non-/api paths
-    const bases = this.baseUrls
-    let lastError: any
-
-    // Renew the Mode B session token first if it is expired/expiring (ADR-0032).
-    await this._ensureFreshInteractSession(agentId, request.session_id)
-
-    // Persist the session token the server delivers on the SSE start chunk
-    // (ADR-0020) before handing the chunk to the caller.
-    const handleChunk = (data: any) => {
-      if (
-        data &&
-        typeof data === 'object' &&
-        data.session_token &&
-        typeof data.session_id === 'string'
-      ) {
-        this._captureInteractSessionToken(data.session_id, data.session_token)
-      }
-      onChunk(data)
+    try {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+      const response = await this._postInteraction(agentId, { ...request, stream: true }, signal)
+      let terminal = false
+      await this._consumeSSE(response, (data) => {
+          if (data?.session_token && typeof data.session_id === 'string') {
+            this._captureInteractSessionToken(data.session_id, data.session_token)
+          }
+          onChunk(data)
+          if (data?.type === "final" || data?.type === "error") terminal = true
+      }, signal)
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (!terminal) throw new Error('The response stream ended before completion. Check this conversation before retrying.')
+    } catch (error: unknown) {
+      if (signal?.aborted || (error as { name?: string })?.name === 'AbortError') throw error
+      const failure = error instanceof Error ? error : new Error('The interaction stream could not complete')
+      if (!signal?.aborted && failure.name !== 'AbortError' && failure.message !== 'Unauthorized') onError?.(failure)
+      throw failure
     }
+  }
 
-    for (const base of bases) {
-      for (const prefix of ['/api', '']) {
-        if (signal?.aborted) {
-          throw new DOMException('Aborted', 'AbortError')
-        }
-        const url = this._joinBase(base, `${prefix}/agents/${agentId}/interact`)
-        if (import.meta.env.DEV) {
-          console.log('[jvchat] streamInteract URL:', {
-            rawBase: base,
-            prefix,
-            url,
+  private async _consumeSSE(response: Response, onFrame: (frame: any) => void, signal?: AbortSignal): Promise<void> {
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('Response body is not readable')
+    const abort = () => { void reader.cancel().catch(() => {}) }
+    signal?.addEventListener('abort', abort, { once: true })
+    const decoder = new TextDecoder()
+    const parser = createParser({
+      maxBufferSize: 8 * 1024 * 1024,
+      onError(error) { if (error.type === 'max-buffer-size-exceeded') throw error },
+      onEvent(event) { if (!signal?.aborted) onFrame(JSON.parse(event.data)) },
+    })
+    try {
+      while (!signal?.aborted) {
+        const { done, value } = await reader.read()
+        parser.feed(done ? decoder.decode() : decoder.decode(value, { stream: true }))
+        if (done) { parser.reset(); return }
+      }
+    } finally {
+      signal?.removeEventListener('abort', abort)
+      try { await reader.cancel() } catch { /* preserve the original outcome */ }
+      reader.releaseLock()
+    }
+  }
+
+  /** Read-only session delivery. Reconnecting never invokes the model. */
+  async streamReplies(agentId: string, sessionId: string, onMessage: (message: ResponseMessageData) => void, signal: AbortSignal): Promise<void> {
+    const caller = getEffectiveUserId(), server = this.baseUrls[0]
+    while (!signal.aborted) {
+      await this._ensureFreshLogin(signal)
+      await this._ensureFreshInteractSession(agentId, sessionId)
+      if (getEffectiveUserId() !== caller || this.baseUrls[0] !== server) throw new RefreshFailure(undefined, 'The sign-in context changed. Please retry.')
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', ...this._interactAuthHeaders(sessionId) }
+      const sentBearer = headers.Authorization?.replace(/^Bearer /, '')
+      let response: Response | undefined
+      routes: for (const base of this.baseUrls) {
+        for (const prefix of ['/api', '']) {
+          if (signal.aborted) return
+          response = await fetch(this._joinBase(base, `${prefix}/agents/${encodeURIComponent(agentId)}/reply/subscribe`), {
+            method: 'POST', headers, body: JSON.stringify({ session_id: sessionId, stream: true }), signal,
           })
-        }
-        try {
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              // Mode A/B (ADR-0020): attach the login JWT and/or the stored
-              // session capability token when present; the endpoint stays
-              // anonymous-capable when there is neither.
-              ...this._interactAuthHeaders(request.session_id),
-            },
-            body: JSON.stringify({ ...request, stream: true }),
-            signal,
-          })
-
-          if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
-              this.redirectToLoginAfterAuthFailure()
-              throw new Error('Unauthorized')
-            }
-            if (response.status === 404 && prefix === '/api') {
-              // try next prefix in same base
-              continue
-            }
-            const errorText = await response.text()
-            let errorMessage = `HTTP error! status: ${response.status}`
-            try {
-              const errorJson = JSON.parse(errorText)
-              errorMessage = errorJson.detail || errorJson.message || errorMessage
-            } catch {
-              errorMessage = errorText || errorMessage
-            }
-            throw new Error(errorMessage)
-          }
-
-          const reader = response.body?.getReader()
-          if (!reader) {
-            throw new Error('Response body is not readable')
-          }
-
-          const decoder = new TextDecoder()
-          let buffer = ''
-
-          // eslint-disable-next-line no-constant-condition -- SSE read until stream end
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-
-            buffer += decoder.decode(value, { stream: true })
-            const chunks = buffer.split('\n\n')
-            buffer = chunks.pop() || ''
-
-            for (const chunk of chunks) {
-              if (chunk.trim()) {
-                const lines = chunk.split('\n')
-                let data: any = null
-
-                for (const line of lines) {
-                  if (line.startsWith('data:')) {
-                    const dataStr = line.substring(5).trim()
-                    try {
-                      data = JSON.parse(dataStr)
-                      handleChunk(data)
-                    } catch (e) {
-                      console.error('Failed to parse SSE chunk:', e)
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          // Successful stream; exit both loops
-          return
-        }
-        catch (error: unknown) {
-          // User cancelled: always propagate without retry/onError. Do not rely on
-          // instanceof Error — browsers often throw DOMException for abort.
-          if (signal?.aborted) {
-            if (error instanceof Error) throw error
-            throw new DOMException('Aborted', 'AbortError')
-          }
-          if (
-            error instanceof Error &&
-            (error.message === 'Unauthorized' || this.authFailureRedirectScheduled)
-          ) {
-            // Propagate so callers clear streaming state; redirect already scheduled.
-            throw error
-          }
-          lastError = error
-          const errorMessage =
-            error instanceof Error
-              ? error.message
-              : 'An unexpected error occurred while streaming'
-          // Try next prefix/base; only surface after all options exhausted
-          if (onError && prefix === '' && base === bases[bases.length - 1]) {
-            onError(new Error(errorMessage))
-          }
+          if (response.status === 404) continue
+          break routes
         }
       }
-    }
-
-    // If we reach here, all attempts failed
-    if (lastError) {
-      throw lastError
+      if (!response || response.status === 404) throw new Error('Background subscription is unavailable')
+      try {
+        if (response.status === 401) throw new Error('Unauthorized')
+        if (response.status === 403) throw new Error('Forbidden')
+        if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('Background subscription is unavailable')
+        await this._consumeSSE(response, (frame) => {
+          if (frame.type === 'error') throw new Error(frame.code === 'session_access_revoked' ? 'Unauthorized' : 'Background subscription interrupted')
+          const message = frame.message && typeof frame.message === 'object' ? frame.message : frame
+          if (message.message_type && message.session_id === sessionId) onMessage(message)
+        }, signal)
+        return
+      } catch (error) {
+        // Only a bearer in the existing expiry window permits renewal. A fresh refusal, changed
+        // caller/host, or revoked Mode B capability must still stop the reader.
+        if (!signal.aborted && error instanceof Error && error.message === 'Unauthorized' && sentBearer && isTokenExpired(sentBearer) && getToken() && getRefreshToken() && getEffectiveUserId() === caller && this.baseUrls[0] === server) {
+          await this._ensureFreshLogin(signal)
+          const renewed = getToken()
+          if (renewed && renewed !== sentBearer && !isTokenExpired(renewed)) continue
+        }
+        throw error
+      }
     }
   }
 

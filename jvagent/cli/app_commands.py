@@ -119,10 +119,10 @@ def _handle_app_create(rest: List[str], *, default_cwd: str) -> None:
     )
     parser.add_argument(
         "--profile",
-        default="orchestrator",
+        default="native",
         help=(
             "Default profile for agents without @profile. "
-            "Builtins: orchestrator (default), minimal, conversational, research, "
+            "Builtins: native (default); transitional orchestrator, minimal, conversational, research, "
             "whatsapp_voice."
         ),
     )
@@ -216,5 +216,5 @@ def _handle_app_create(rest: List[str], *, default_cwd: str) -> None:
 
     print(f"\nCreated jvagent app at {out}")
     print(
-        "Next: cp .env.example .env, set JVAGENT_ADMIN_PASSWORD, then jvagent bootstrap"
+        "Next: follow README.md to install dependencies and set JWT/admin/provider secrets, then jvagent bootstrap"
     )

@@ -1,13 +1,17 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { apiClient } from '../config/api'
 import {
-  saveMessages,
+  saveMessages as storeMessages,
   getMessages,
   syncUserIdFromAccessToken,
   getEffectiveUserId,
+  getToken,
+  getInteractSessionToken,
 } from '../utils/storage'
 import type { InteractionRequest, ResponseMessageData, SSEChunk } from '../types/api'
 import type { Message } from '../types/message'
+import { createMessageHistoryWriter, mergeMessageHistory } from '../lib/messageHistory'
+import { mergeChannelMessage } from '../lib/channelMessages'
 import {
   prepareOutgoingAttachments,
   validateAttachmentSize,
@@ -124,19 +128,45 @@ function removeReasoningForStoppedInteraction(
 }
 
 export function useStreaming(agentId: string, sessionId?: string) {
+  const callerId = getEffectiveUserId()
+  const historyWriter = useMemo(() => createMessageHistoryWriter({
+    read: session => getEffectiveUserId() === callerId ? getMessages(session) : [],
+    write: (session, rows) => { if (getEffectiveUserId() === callerId) storeMessages(session, rows) },
+  }), [callerId])
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
+  const [channelEpoch, setChannelEpoch] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [channelError, setChannelError] = useState<{ scope: string; message: string } | null>(null)
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId)
+  const channelScope = `${callerId}\0${agentId}\0${sessionId ?? ''}`
+  const channelScopeRef = useRef(channelScope)
+  const channelIdsRef = useRef(new Set<string>())
+  if (channelScopeRef.current !== channelScope) {
+    channelScopeRef.current = channelScope
+    channelIdsRef.current.clear()
+  }
   const streamingMessageRef = useRef<string>('')
   const interactionIdRef = useRef<string | null>(null)
   const streamSessionIdRef = useRef<string | undefined>(undefined)
   const streamUserMessageRef = useRef<Message | null>(null)
   const messageOrderRef = useRef<number>(0)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const channelControllerRef = useRef<AbortController | null>(null)
   const stoppedByUserRef = useRef<boolean>(false)
   /** When false, ignore stream chunks (prevents late SSE callbacks from re-enabling streaming after stop). */
   const acceptStreamChunksRef = useRef(true)
+
+  const abandonRequest = useCallback(() => {
+    const controller = abortControllerRef.current
+    abortControllerRef.current = null
+    acceptStreamChunksRef.current = false
+    controller?.abort()
+    setIsStreaming(false)
+    setChannelEpoch(value => value + 1)
+  }, [])
+
+  useEffect(() => () => abandonRequest(), [agentId, abandonRequest])
 
   /** Full-message snapshots per branch root (user message id); pairs with edit/resend and completed turns. */
   const [branchSnapshots, setBranchSnapshots] = useState<Record<string, Message[][]>>({})
@@ -154,15 +184,16 @@ export function useStreaming(agentId: string, sessionId?: string) {
   const isHydratingFromStorageRef = useRef(false)
   const prevMessagesRef = useRef<Message[]>([])
   const prevSessionIdRef = useRef<string | undefined>(sessionId)
+  const previousCallerRef = useRef(callerId)
   const isSavingRef = useRef(false)
   /**
-   * When true, the next sessionId transition will preserve in-memory messages
+   * The server-assigned ID whose initial binding may preserve in-memory messages
    * instead of clearing them. Set by the parent (ChatInterface) before triggering
    * a session change that should keep the live transcript (e.g. server assigns
    * a session_id during the first message stream on "new chat").
-   * Auto-resets to false after the transition is processed.
+   * Cleared after a transition; reset and sidebar selection always clear messages.
    */
-  const preserveNextTransitionRef = useRef(false)
+  const preserveNextTransitionRef = useRef<string | undefined>(undefined)
   /**
    * Set to true during a session transition so the autosave effect skips saving
    * in the same commit phase (prevents writing A's stale messages to B's
@@ -181,19 +212,27 @@ export function useStreaming(agentId: string, sessionId?: string) {
   }, [messages])
 
   useEffect(() => {
-    if (sessionId !== sessionIdRef.current) {
+    const ownerChanged = previousCallerRef.current !== callerId
+    previousCallerRef.current = callerId
+    if (sessionId !== sessionIdRef.current || ownerChanged) {
       transitionInProgressRef.current = true
 
       const oldSessionId = sessionIdRef.current
 
       // CRITICAL: Save current messages to OLD session BEFORE updating refs
       // This ensures messages are saved to the correct session and prevents loss
-      const currentMessages = messagesRef.current
+      const shouldPreserve = !ownerChanged && oldSessionId === undefined && sessionId !== undefined
+        && preserveNextTransitionRef.current === sessionId
+      const currentMessages = ownerChanged ? [] : shouldPreserve ? messagesRef.current
+        : removeReasoningForStoppedInteraction(
+            messagesRef.current.map(msg => msg.streaming ? { ...msg, streaming: false } : msg),
+            interactionIdRef.current,
+          )
       if (oldSessionId && currentMessages.length > 0 && !isHydratingFromStorageRef.current) {
         // Create a deep copy to ensure we save the exact state at this moment
         // This prevents any reference issues or duplication
         const messagesToSave = currentMessages.map(msg => ({ ...msg }))
-        saveMessages(oldSessionId, messagesToSave)
+        historyWriter.save(oldSessionId, messagesToSave)
       }
 
       // NOW update the session ID refs - this prevents any further saves to old session
@@ -206,14 +245,14 @@ export function useStreaming(agentId: string, sessionId?: string) {
       // (e.g. the server assigns a session_id during the first message stream).
       // For all other transitions (sidebar selection, new chat), messages are cleared
       // and the parent is responsible for calling loadMessages() to restore from storage.
-      const shouldPreserve = preserveNextTransitionRef.current
-      preserveNextTransitionRef.current = false
+      preserveNextTransitionRef.current = undefined
+      if (!shouldPreserve) abandonRequest()
 
       if (shouldPreserve) {
         // Keep in-flight messages — just persist them under the new session key
         if (sessionId && currentMessages.length > 0) {
           const messagesToSave = currentMessages.map((msg) => ({ ...msg }))
-          saveMessages(sessionId, messagesToSave)
+          historyWriter.save(sessionId, messagesToSave)
           prevMessagesRef.current = messagesToSave
         }
       } else {
@@ -225,14 +264,63 @@ export function useStreaming(agentId: string, sessionId?: string) {
       setCurrentSessionId(sessionId)
 
     }
-  }, [sessionId])
+  }, [sessionId, historyWriter, abandonRequest, callerId])
+
+  // Between user turns, listen to the existing read-only session bus. The
+  // generation counter and caller refs retire late frames before view changes.
+  useEffect(() => {
+    setChannelError(null)
+    if (!agentId || !sessionId || isStreaming || abortControllerRef.current || (!getToken() && !getInteractSessionToken(sessionId))) return
+    const controller = new AbortController()
+    channelControllerRef.current = controller
+    let retired = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    const connect = async (): Promise<void> => {
+      if (getEffectiveUserId() !== callerId) { controller.abort(); return }
+      try {
+        await apiClient.streamReplies(agentId, sessionId, message => {
+          if (getEffectiveUserId() !== callerId) { controller.abort(); return }
+          if (retired || controller.signal.aborted || channelScopeRef.current !== channelScope || sessionIdRef.current !== sessionId || abortControllerRef.current) return
+          setChannelError(null)
+          if (message.metadata?.native_replay !== true && (message.metadata?.is_proactive === false || messagesRef.current.some(row => row.role === 'user' && row.interactionId === message.interaction_id))) return
+          setMessages(previous => {
+            if (retired || channelScopeRef.current !== channelScope || sessionIdRef.current !== sessionId || abortControllerRef.current || getEffectiveUserId() !== callerId) return previous
+            channelIdsRef.current.add(message.id)
+            if (channelIdsRef.current.size > 256) channelIdsRef.current.delete(channelIdsRef.current.values().next().value!)
+            const next = mergeChannelMessage(previous, message, () => messageOrderRef.current++)
+            if (next !== previous) historyWriter.save(sessionId, next)
+            return next
+          })
+        }, controller.signal)
+      } catch (failure) {
+        if (retired || controller.signal.aborted || channelScopeRef.current !== channelScope || abortControllerRef.current) return
+        if (failure instanceof Error && ['Unauthorized', 'Forbidden'].includes(failure.message)) {
+          setChannelError({ scope: channelScope, message: failure.message === 'Forbidden'
+            ? 'This account does not have permission for background updates in this conversation.'
+            : 'Background updates require a valid session. Sign in again or reopen this conversation.' })
+          return
+        }
+      }
+      if (!retired && !controller.signal.aborted) {
+        timer = setTimeout(() => { void connect() }, Math.min(30_000, 1000 * 2 ** Math.min(attempts++, 5)))
+      }
+    }
+    void connect()
+    return () => {
+      retired = true
+      if (channelControllerRef.current === controller) channelControllerRef.current = null
+      controller.abort()
+      if (timer) clearTimeout(timer)
+    }
+  }, [agentId, sessionId, isStreaming, channelEpoch, channelScope, historyWriter, callerId])
 
   const sendMessage = useCallback(
     async (utterance: string, options?: SendMessageOptions): Promise<string | undefined> => {
       const files = options?.files?.length ? options.files : undefined
       const trimmed = utterance.trim()
 
-      if ((!trimmed && !files?.length) || isStreaming) return undefined
+      if ((!trimmed && !files?.length) || isStreaming || abortControllerRef.current) return undefined
 
       if (files?.length) {
         for (const f of files) {
@@ -244,6 +332,14 @@ export function useStreaming(agentId: string, sessionId?: string) {
         }
       }
 
+      const requestController = new AbortController()
+      abortControllerRef.current = requestController
+      channelControllerRef.current?.abort()
+      stoppedByUserRef.current = false
+      acceptStreamChunksRef.current = true
+      setIsStreaming(true)
+      setError(null)
+
       let attachmentDataPayload: InteractionRequest['data'] | undefined
       let attachmentPreviews: Message['attachments'] | undefined
       if (files?.length) {
@@ -252,25 +348,26 @@ export function useStreaming(agentId: string, sessionId?: string) {
           attachmentDataPayload = prepared.data
           attachmentPreviews = prepared.previews
         } catch (e: unknown) {
+          if (abortControllerRef.current !== requestController) return undefined
+          abortControllerRef.current = null
+          setChannelEpoch(value => value + 1)
+          setIsStreaming(false)
           const msg = e instanceof Error ? e.message : 'Could not read attachments'
           setError(msg)
           return undefined
         }
       }
 
+      if (abortControllerRef.current !== requestController) return undefined
+
       const utteranceForApi = trimmed || ATTACHMENT_ONLY_USER_PROMPT
       const displayContent =
         trimmed || (files?.length ? ATTACHMENT_ONLY_USER_PROMPT : '')
 
-      setIsStreaming(true)
-      setError(null)
       streamSessionIdRef.current = sessionIdRef.current
-      stoppedByUserRef.current = false
-      acceptStreamChunksRef.current = true
-      abortControllerRef.current = new AbortController()
 
       const userMessage: Message = {
-        id: `user-${Date.now()}`,
+        id: `user-${crypto.randomUUID()}`,
         role: 'user',
         content: displayContent || utteranceForApi,
         timestamp: new Date().toISOString(),
@@ -291,18 +388,19 @@ export function useStreaming(agentId: string, sessionId?: string) {
         // Only save if we have a valid session ID (not undefined)
         // This ensures messages are always saved to the correct session
         if (activeSessionId) {
-          saveMessages(activeSessionId, updated)
+          historyWriter.save(activeSessionId, updated)
         }
         return updated
       })
 
       // Track assistant message ID for fallback (but don't create placeholder bubble)
       // Actual message bubbles will be created when stream chunks or adhoc messages arrive
-      const assistantMessageId = `assistant-${Date.now()}`
+      const assistantMessageId = `assistant-${crypto.randomUUID()}`
 
       streamingMessageRef.current = ''
 
       let receivedSessionId: string | undefined = sessionIdRef.current
+      let ownsCompletion = true
 
       try {
         // Resolve user_id from storage or JWT (`sub`) so chats persist after refresh even when
@@ -346,16 +444,33 @@ export function useStreaming(agentId: string, sessionId?: string) {
           agentId,
           request,
           (chunk: SSEChunk) => {
-            if (!acceptStreamChunksRef.current) return
+            if (abortControllerRef.current !== requestController || !acceptStreamChunksRef.current) return
             // Note: We no longer capture user_id from chunks since we use the logged-in user's ID
             // The user_id is set from the login response and used from the first chat
             // If chunk provides a different user_id, log it for debugging but don't overwrite
 
             if (chunk.type === 'start') {
               interactionIdRef.current = chunk.interaction_id || null
+              if (chunk.interaction_id && streamUserMessageRef.current) {
+                const userId = streamUserMessageRef.current.id
+                streamUserMessageRef.current = {
+                  ...streamUserMessageRef.current, interactionId: chunk.interaction_id,
+                }
+                const bindUser = (messages: Message[]): Message[] => messages.map(message => message.id === userId
+                  ? { ...message, interactionId: chunk.interaction_id } : message)
+                const startSession = chunk.session_id || streamSessionIdRef.current
+                if (isViewingStreamSession(sessionIdRef.current, startSession)) {
+                  setMessages(bindUser)
+                } else if (startSession) {
+                  historyWriter.save(startSession, bindUser(getMessages(startSession)))
+                }
+              }
               if (chunk.session_id) {
                 receivedSessionId = chunk.session_id
                 streamSessionIdRef.current = chunk.session_id
+                if (!sessionIdRef.current || sessionIdRef.current === chunk.session_id) {
+                  setCurrentSessionId(chunk.session_id)
+                }
               }
             } else if (chunk.type === 'message' && chunk.message && typeof chunk.message === 'object') {
               // Type guard: chunk.message is ResponseMessageData (not string)
@@ -521,7 +636,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                     }
                     updated = [...filtered, newMessage]
                   }
-                  saveMessages(streamSessionId, updated)
+                  historyWriter.save(streamSessionId, updated)
                   return
                 }
 
@@ -568,7 +683,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                     const updated = stored.map((m, idx) =>
                       idx === existingIndex && m.streaming ? { ...m, streaming: false } : m
                     )
-                    saveMessages(streamSessionId, updated)
+                    historyWriter.save(streamSessionId, updated)
                   }
                   return
                 }
@@ -638,7 +753,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                   // Save messages if we have a session ID
                   const activeSessionId = sessionIdRef.current
                   if (activeSessionId) {
-                    saveMessages(activeSessionId, updated)
+                    historyWriter.save(activeSessionId, updated)
                   }
                   return updated
                 })
@@ -702,7 +817,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 if (!viewingStreamSession && streamSessionId) {
                   const stored = getMessages(streamSessionId)
                   const updated = stripDebugToLast(upsertAdhoc(stored))
-                  saveMessages(streamSessionId, updated)
+                  historyWriter.save(streamSessionId, updated)
                   return
                 }
 
@@ -710,7 +825,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                   const updated = stripDebugToLast(upsertAdhoc(prev))
                   const activeSessionId = sessionIdRef.current
                   if (activeSessionId) {
-                    saveMessages(activeSessionId, updated)
+                    historyWriter.save(activeSessionId, updated)
                   }
                   return updated
                 })
@@ -734,7 +849,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                       ? { ...m, streaming: false, debugData: chunk, interactionId: m.interactionId || interactionIdForFinal }
                       : idx === targetIndex ? { ...m, debugData: chunk } : m
                   )
-                  saveMessages(sessionIdForSave, updated)
+                  historyWriter.save(sessionIdForSave, updated)
                 }
                 setIsStreaming(false)
                 return
@@ -748,7 +863,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                     .filter(msg => msg.id !== assistantMessageId || msg.content !== '')
                     .map(msg => ({ ...msg }))
                   if (messagesToSave.length > 0) {
-                    saveMessages(oldSessionId, messagesToSave)
+                    historyWriter.save(oldSessionId, messagesToSave)
                   }
                 }
                 // Do not assign sessionIdRef here — it must stay aligned with the parent's
@@ -844,7 +959,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
                 if (sessionIdForUiSave) {
                   const messagesToSave = updated.map(msg => ({ ...msg }))
-                  saveMessages(sessionIdForUiSave, messagesToSave)
+                  historyWriter.save(sessionIdForUiSave, messagesToSave)
                   // Update prev refs to match
                   prevMessagesRef.current = messagesToSave
                   prevSessionIdRef.current = sessionIdForUiSave
@@ -862,7 +977,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 const updated = stored
                   .filter((m) => m.id !== assistantMessageId || m.content !== '')
                   .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg))
-                saveMessages(streamSessionId, updated)
+                historyWriter.save(streamSessionId, updated)
                 setIsStreaming(false)
                 return
               }
@@ -878,6 +993,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
             }
           },
           (err: Error) => {
+            if (abortControllerRef.current !== requestController) return
             const streamSessionId = streamSessionIdRef.current
             const currentView = sessionIdRef.current
             const viewingStreamSession = isViewingStreamSession(currentView, streamSessionId)
@@ -887,7 +1003,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
               const updated = stored
                 .filter((m) => m.id !== assistantMessageId || m.content !== '')
                 .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg))
-              saveMessages(streamSessionId, updated)
+              historyWriter.save(streamSessionId, updated)
               setIsStreaming(false)
               return
             }
@@ -900,9 +1016,10 @@ export function useStreaming(agentId: string, sessionId?: string) {
                 .map((msg) => (msg.streaming ? { ...msg, streaming: false } : msg))
             )
           },
-          abortControllerRef.current?.signal
+          requestController.signal
         )
       } catch (err: any) {
+        if (abortControllerRef.current !== requestController) return undefined
         const aborted =
           stoppedByUserRef.current ||
           err?.name === 'AbortError' ||
@@ -919,7 +1036,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
             updated = removeReasoningForStoppedInteraction(updated, ix)
             interactionIdRef.current = null
             const activeSessionId = sessionIdRef.current
-            if (activeSessionId) saveMessages(activeSessionId, updated)
+            if (activeSessionId) historyWriter.save(activeSessionId, updated)
             return updated
           })
         } else {
@@ -930,15 +1047,19 @@ export function useStreaming(agentId: string, sessionId?: string) {
           })
         }
       } finally {
-        abortControllerRef.current = null
-        stoppedByUserRef.current = false
-        acceptStreamChunksRef.current = true
-        setIsStreaming(false)
+        ownsCompletion = abortControllerRef.current === requestController
+        if (ownsCompletion) {
+          abortControllerRef.current = null
+          setChannelEpoch(value => value + 1)
+          stoppedByUserRef.current = false
+          acceptStreamChunksRef.current = true
+          setIsStreaming(false)
+        }
       }
 
-      return receivedSessionId
+      return ownsCompletion ? receivedSessionId : undefined
     },
-    [agentId, isStreaming]
+    [agentId, isStreaming, historyWriter]
   )
 
   useEffect(() => {
@@ -1020,10 +1141,8 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
   const stopStreaming = useCallback(() => {
     acceptStreamChunksRef.current = false
-    if (abortControllerRef.current) {
-      stoppedByUserRef.current = true
-      abortControllerRef.current.abort()
-    }
+    stoppedByUserRef.current = true
+    abandonRequest()
     // Always reset UI — if the fetch already finished, ref may be null but
     // isStreaming / thought.streaming can still be stuck (e.g. no final chunk).
     setIsStreaming(false)
@@ -1035,12 +1154,21 @@ export function useStreaming(agentId: string, sessionId?: string) {
       updated = removeReasoningForStoppedInteraction(updated, ix)
       interactionIdRef.current = null
       const activeSessionId = sessionIdRef.current
-      if (activeSessionId) saveMessages(activeSessionId, updated)
+      if (activeSessionId) historyWriter.save(activeSessionId, updated)
       return updated
     })
-  }, [])
+  }, [historyWriter, abandonRequest])
 
   const clearMessages = useCallback(() => {
+    const activeSessionId = sessionIdRef.current
+    if (activeSessionId && messagesRef.current.length) {
+      historyWriter.save(activeSessionId, removeReasoningForStoppedInteraction(
+        messagesRef.current.map(msg => msg.streaming ? { ...msg, streaming: false } : msg),
+        interactionIdRef.current,
+      ))
+    }
+    abandonRequest()
+    setCurrentSessionId(undefined)
     setMessages([])
     setBranchSnapshots({})
     setBranchVersionIndex({})
@@ -1048,8 +1176,8 @@ export function useStreaming(agentId: string, sessionId?: string) {
     streamingMessageRef.current = ''
     interactionIdRef.current = null
     prevMessagesRef.current = []
-    preserveNextTransitionRef.current = false
-  }, [])
+    preserveNextTransitionRef.current = undefined
+  }, [abandonRequest, historyWriter])
 
   const loadMessages = useCallback((loadedMessages: Message[]) => {
     // CRITICAL: Only load messages if we're still on the same session
@@ -1074,7 +1202,15 @@ export function useStreaming(agentId: string, sessionId?: string) {
             : idx,
       }))
 
-    setMessages(messagesToLoad)
+    historyWriter.remember(activeSessionId, messagesToLoad)
+    setMessages(current => {
+      const received = current.filter(message => channelIdsRef.current.has(message.id))
+      if (!received.length) return messagesToLoad
+      const merged = mergeMessageHistory([], received, messagesToLoad)
+      messageOrderRef.current = merged.length
+      historyWriter.save(activeSessionId, merged)
+      return merged
+    })
     setBranchSnapshots({})
     setBranchVersionIndex({})
     messageOrderRef.current = messagesToLoad.length
@@ -1086,7 +1222,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
     setTimeout(() => {
       isHydratingFromStorageRef.current = false
     }, 100)
-  }, [])
+  }, [historyWriter])
 
   // Save messages whenever they change (for conversation persistence)
   useEffect(() => {
@@ -1145,7 +1281,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
 
         // CRITICAL: Save messages to the ACTIVE session ID
         // This ensures messages are isolated by session_id and prevents duplication
-        saveMessages(activeSessionId, messagesToSave)
+        historyWriter.save(activeSessionId, messagesToSave)
 
         // Reset flag after save completes
         setTimeout(() => {
@@ -1163,10 +1299,10 @@ export function useStreaming(agentId: string, sessionId?: string) {
       prevSessionIdRef.current = undefined
       transitionInProgressRef.current = false
     }
-  }, [messages, sessionId])
+  }, [messages, sessionId, historyWriter])
 
-  const preserveNextTransition = useCallback(() => {
-    preserveNextTransitionRef.current = true
+  const preserveNextTransition = useCallback((assignedSessionId: string) => {
+    preserveNextTransitionRef.current = assignedSessionId
   }, [])
 
   return {
@@ -1176,7 +1312,7 @@ export function useStreaming(agentId: string, sessionId?: string) {
     clearMessages,
     loadMessages,
     isStreaming,
-    error,
+    error: error ?? (channelError?.scope === channelScope ? channelError.message : null),
     sessionId: currentSessionId,
     editAndResend,
     selectBranchVersion,

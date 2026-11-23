@@ -1,0 +1,267 @@
+"""Interaction-scoped graph adapter for the official StepStore protocol.
+
+Single active writer only. Distributed ownership/fencing must be established by
+host admission before this adapter is used across workers. No replay engine lives
+here: the official StepPersistence capability owns execution semantics.
+"""
+
+import asyncio
+from typing import Any
+
+from jvspatial import flush_deferred_entities
+from pydantic import TypeAdapter
+from pydantic_ai_harness.step_persistence import (
+    ContinuableSnapshot,
+    RunRecord,
+    StepEvent,
+    ToolEffectRecord,
+)
+
+from jvagent.harness.mutation_tools import MutationOutcomeUnknown
+
+
+class InteractionStepStore:
+    """Persist public library records on a declared jvspatial Interaction field."""
+
+    def __init__(self, interaction: Any, *, agent_id: str | None = None) -> None:
+        self.interaction = interaction
+        self.agent_id = agent_id
+        self.lock = asyncio.Lock()
+
+    def registration_metadata(self) -> dict[str, str]:
+        """Host-established graph scope; metadata stays on the SDK run record."""
+        scope = {
+            "jv_agent_id": self.agent_id,
+            "jv_interaction_id": getattr(self.interaction, "id", None),
+            "jv_conversation_id": getattr(self.interaction, "conversation_id", None),
+            "jv_user_id": getattr(self.interaction, "user_id", None),
+            "jv_session_id": getattr(self.interaction, "session_id", None),
+        }
+        # Export authenticated ingress facts only into the SDK's host-owned
+        # registration. Message bodies/metadata cannot grant transport authority.
+        from jvagent.tooling.channel_identity import verified_channel_metadata
+        from jvagent.tooling.context import get_dispatch_context
+
+        context = get_dispatch_context()
+        if (
+            context is not None
+            and context.agent_id == self.agent_id
+            and context.interaction_id == getattr(self.interaction, "id", None)
+            and context.channel
+        ):
+            try:
+                facts = verified_channel_metadata(channels=frozenset({context.channel}))
+            except ValueError:
+                pass
+            else:
+                scope.update(facts)
+        return {
+            key: value
+            for key, value in scope.items()
+            if isinstance(value, str) and value
+        }
+
+    def _records(self, key: str, record_type: Any) -> list[Any]:
+        values = self.interaction.native_steps.get(key, [])
+        return [TypeAdapter(record_type).validate_python(value) for value in values]
+
+    async def _persist(self) -> None:
+        await self.interaction.save()
+        await flush_deferred_entities(self.interaction, strict=True)
+
+    async def _write(
+        self, key: str, record: Any, *, identity: str | None = None
+    ) -> None:
+        async with self.lock:
+            state = dict(self.interaction.native_steps)
+            values = list(state.get(key, []))
+            encoded = TypeAdapter(type(record)).dump_python(record, mode="json")
+            if key == "snapshots":
+                from pydantic_ai_harness.media import externalize_media
+
+                from jvagent.harness.media_store import (
+                    MEDIA_THRESHOLD_BYTES,
+                    GraphMediaStore,
+                )
+
+                encoded["messages"] = await externalize_media(
+                    encoded["messages"],
+                    media_store=GraphMediaStore(
+                        self.interaction, agent_id=self.agent_id
+                    ),
+                    threshold_bytes=MEDIA_THRESHOLD_BYTES,
+                )
+                encoded["jv_media_version"] = 1
+            if key == "runs":
+                prior = next(
+                    (v for v in values if v.get("run_id") == record.run_id), None
+                )
+                if prior is not None:
+                    same_registration = encoded.get("registration_id") and all(
+                        prior.get(field) == encoded.get(field)
+                        for field in (
+                            "registration_id",
+                            "conversation_id",
+                            "parent_run_id",
+                            "agent_name",
+                            "metadata",
+                        )
+                    )
+                    if prior == encoded or same_registration:
+                        # A prior save may have failed after mutating the cache.
+                        await self._persist()
+                        return
+                    raise ValueError("Native run identity is already registered")
+            if key == "effects":
+                prior = next(
+                    (
+                        v
+                        for v in values
+                        if v.get("run_id") == record.run_id
+                        and v.get("tool_call_id") == record.tool_call_id
+                    ),
+                    None,
+                )
+                if prior is not None:
+                    if prior == encoded:
+                        await self._persist()
+                        return
+                    if (
+                        prior.get("status") != "started"
+                        or prior.get("tool_name") != record.tool_name
+                    ):
+                        raise ValueError(
+                            "Native tool effect identity or terminal state is immutable"
+                        )
+                    for field in ("effect_summary", "idempotency_key"):
+                        if prior.get(field) is not None and prior[field] != encoded.get(
+                            field
+                        ):
+                            raise ValueError(
+                                "Native tool effect annotations are immutable"
+                            )
+                effect_key = encoded.get("idempotency_key")
+                if effect_key is not None and any(
+                    value.get("idempotency_key") == effect_key
+                    and (value.get("run_id"), value.get("tool_call_id"))
+                    != (record.run_id, record.tool_call_id)
+                    for value in values
+                ):
+                    raise MutationOutcomeUnknown(
+                        "Native effect idempotency key is already claimed"
+                    )
+            if identity is not None:
+                values = [
+                    value
+                    for value in values
+                    if not (
+                        value.get("run_id") == record.run_id
+                        and value.get(identity) == encoded.get(identity)
+                    )
+                ]
+            elif encoded.get("idempotency_key") is not None:
+                if any(
+                    value.get("run_id") == record.run_id
+                    and value.get("idempotency_key") == encoded["idempotency_key"]
+                    for value in values
+                ):
+                    await self._persist()
+                    return
+            values.append(encoded)
+            state[key] = values
+            self.interaction.native_steps = state
+            await self._persist()
+
+    async def register_run(self, record: RunRecord) -> None:
+        await self._write("runs", record, identity="run_id")
+
+    async def get_run(self, *, run_id: str) -> RunRecord | None:
+        return next(
+            (r for r in self._records("runs", RunRecord) if r.run_id == run_id), None
+        )
+
+    async def list_runs(
+        self, *, parent_run_id: str | None = None, conversation_id: str | None = None
+    ) -> list[RunRecord]:
+        return sorted(
+            (
+                r
+                for r in self._records("runs", RunRecord)
+                if (parent_run_id is None or r.parent_run_id == parent_run_id)
+                and (conversation_id is None or r.conversation_id == conversation_id)
+            ),
+            key=lambda r: r.started_at,
+        )
+
+    async def append_event(self, event: StepEvent) -> None:
+        await self._write("events", event)
+
+    async def list_events(self, *, run_id: str) -> list[StepEvent]:
+        return [r for r in self._records("events", StepEvent) if r.run_id == run_id]
+
+    async def save_snapshot(self, snapshot: ContinuableSnapshot) -> None:
+        await self._write("snapshots", snapshot)
+
+    async def first_snapshot(self, *, run_id: str) -> ContinuableSnapshot | None:
+        """Read the earliest library checkpoint for host recovery admission.
+
+        Storage extension only: public StepStore exposes the latest frontier,
+        while a new user turn after failure needs the accepted-input frontier.
+        No history is repaired, replayed or synthesized here.
+        """
+        for value in self.interaction.native_steps.get("snapshots", []):
+            if value.get("run_id") == run_id:
+                return await self._snapshot(value)
+        return None
+
+    async def _snapshot(self, value: dict[str, Any]) -> ContinuableSnapshot:
+        encoded = dict(value)
+        if "jv_media_version" in encoded:
+            if (
+                type(encoded["jv_media_version"]) is not int
+                or encoded["jv_media_version"] != 1
+            ):
+                raise ValueError("Unsupported native media snapshot version")
+            from pydantic_ai_harness.media import restore_media
+
+            from jvagent.harness.media_store import GraphMediaStore
+
+            encoded["messages"] = await restore_media(
+                encoded["messages"],
+                media_store=GraphMediaStore(self.interaction, agent_id=self.agent_id),
+            )
+        return TypeAdapter(ContinuableSnapshot).validate_python(encoded)
+
+    async def latest_snapshot(
+        self, *, run_id: str, include_interrupted: bool = False
+    ) -> ContinuableSnapshot | None:
+        for value in reversed(self.interaction.native_steps.get("snapshots", [])):
+            if value.get("run_id") == run_id and (
+                include_interrupted or value.get("state") == "complete"
+            ):
+                return await self._snapshot(value)
+        return None
+
+    async def record_tool_effect(self, record: ToolEffectRecord) -> None:
+        await self._write("effects", record, identity="tool_call_id")
+
+    async def get_tool_effect(
+        self, *, run_id: str, tool_call_id: str
+    ) -> ToolEffectRecord | None:
+        return next(
+            (
+                r
+                for r in self._records("effects", ToolEffectRecord)
+                if r.run_id == run_id and r.tool_call_id == tool_call_id
+            ),
+            None,
+        )
+
+    async def list_unresolved_tool_effects(
+        self, *, run_id: str
+    ) -> list[ToolEffectRecord]:
+        return [
+            r
+            for r in self._records("effects", ToolEffectRecord)
+            if r.run_id == run_id and r.status == "started"
+        ]

@@ -1,0 +1,521 @@
+{
+  "observed_at": "2026-11-05T19:19:22.094Z",
+  "requests": [
+    {
+      "status": 200,
+      "started_at": "2026-11-05T19:13:00.020Z",
+      "error": "AbortError",
+      "duration_ms": 10109.399999976158
+    },
+    {
+      "status": 200,
+      "started_at": "2026-11-05T19:13:27.645Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.55f44b0a942f4511b0e4954a",
+          "session_id": "sess_b4d8f23b10cf49b7",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.2cb121dc75e74de2b0b4aa9d",
+            "session_id": "sess_b4d8f23b10cf49b7",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.55f44b0a942f4511b0e4954a",
+            "message_type": "adhoc",
+            "content": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T15:13:27.928731"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.2cb121dc75e74de2b0b4aa9d",
+            "session_id": "sess_b4d8f23b10cf49b7",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.55f44b0a942f4511b0e4954a",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T15:13:27.931549"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b4d8f23b10cf49b7",
+          "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+          "interaction": {
+            "id": "n.Interaction.55f44b0a942f4511b0e4954a",
+            "utterance": "Please remember the short code JUNIPER-28.",
+            "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-7554138feb8d4ef291c6b25c274f3c76"
+              }
+            ],
+            "observability_metrics": [],
+            "usage": {
+              "prompt_tokens": 0,
+              "completion_tokens": 0,
+              "total_tokens": 0,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 0,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "unmeasured_model_attempt_count": 0,
+              "estimated_cost_usd": 0,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T19:13:27.932602+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.55f44b0a942f4511b0e4954a",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b4d8f23b10cf49b7"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "duration_ms": 392.30000001192093
+    },
+    {
+      "status": 200,
+      "started_at": "2026-11-05T19:14:13.024Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.e6ba63a27a25487b93c27cc9",
+          "session_id": "sess_b4d8f23b10cf49b7",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.45d29c876ba54cd186edb0ce",
+            "session_id": "sess_b4d8f23b10cf49b7",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.e6ba63a27a25487b93c27cc9",
+            "message_type": "adhoc",
+            "content": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T15:14:13.306515"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.45d29c876ba54cd186edb0ce",
+            "session_id": "sess_b4d8f23b10cf49b7",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.e6ba63a27a25487b93c27cc9",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T15:14:13.309073"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b4d8f23b10cf49b7",
+          "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+          "interaction": {
+            "id": "n.Interaction.e6ba63a27a25487b93c27cc9",
+            "utterance": "Please remember the short code MARIGOLD-91 too.",
+            "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-0a80a5357b564913bdac4227bd3a07e7"
+              }
+            ],
+            "observability_metrics": [],
+            "usage": {
+              "prompt_tokens": 0,
+              "completion_tokens": 0,
+              "total_tokens": 0,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 0,
+              "model_attempt_count": 0,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 0,
+              "unmeasured_model_attempt_count": 0,
+              "estimated_cost_usd": 0,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0,
+              "total_duration_seconds": 0,
+              "last_updated": "2026-11-05T19:14:13.309947+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.e6ba63a27a25487b93c27cc9",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b4d8f23b10cf49b7"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "duration_ms": 416.5
+    },
+    {
+      "status": 200,
+      "started_at": "2026-11-05T19:17:18.118Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.da55e8521e364cb58a749d36",
+          "session_id": "sess_b4d8f23b10cf49b7",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-d8168b65627e464d835949f03c59eb77",
+            "session_id": "sess_b4d8f23b10cf49b7",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.da55e8521e364cb58a749d36",
+            "message_type": "adhoc",
+            "content": "JUNIPER-28 MARIGOLD-91",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T15:17:22.112901"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-d8168b65627e464d835949f03c59eb77",
+            "session_id": "sess_b4d8f23b10cf49b7",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.da55e8521e364cb58a749d36",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T15:17:22.121447"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_b4d8f23b10cf49b7",
+          "response": "JUNIPER-28 MARIGOLD-91",
+          "interaction": {
+            "id": "n.Interaction.da55e8521e364cb58a749d36",
+            "utterance": "Return the two short codes from my last two requests in chronological order. Use one line and no tools.",
+            "response": "JUNIPER-28 MARIGOLD-91",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-d8168b65627e464d835949f03c59eb77"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-d8168b65627e464d835949f03c59eb77:1",
+                  "native_run_id": "corr-d8168b65627e464d835949f03c59eb77",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1321,
+                    "completion_tokens": 13,
+                    "total_tokens": 1334,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.002746,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_attempt",
+                "data": {
+                  "native_run_id": "corr-d8168b65627e464d835949f03c59eb77",
+                  "native_step_index": 1,
+                  "native_attempt_origin": "step_events_v1",
+                  "outcome": "completed",
+                  "usage_status": "receipt_recorded",
+                  "started_at": "2026-11-05T19:17:19.597984+00:00",
+                  "duration": 2.339079,
+                  "duration_scope": "sdk_model_request",
+                  "completed_at": "2026-11-05T19:17:21.937063+00:00"
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 1321,
+              "completion_tokens": 13,
+              "total_tokens": 1334,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 1,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 2.339,
+              "unmeasured_model_attempt_count": 0,
+              "estimated_cost_usd": 0.002746,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.002746,
+              "total_duration_seconds": 2.339,
+              "last_updated": "2026-11-05T19:17:22.121762+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.da55e8521e364cb58a749d36",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_b4d8f23b10cf49b7"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "duration_ms": 4112.300000011921
+    }
+  ],
+  "operator": {
+    "observations": [
+      {
+        "scenario": "inspect-latest-notice",
+        "status": 200,
+        "data": {
+          "interaction_id": "n.Interaction.e6ba63a27a25487b93c27cc9",
+          "status": "blocked",
+          "run_id": null,
+          "digest": "sha256:40d53d67dcedff3468a8bfb0e6af088cd345381624432a303cebcc2fa2f1fc67",
+          "unknown_cost_call_count": 0,
+          "recorded_runs": 0,
+          "unresolved_effects": 0,
+          "usage_reserve": null,
+          "recovery_interaction_id": "n.Interaction.33cd008ec8b94b66820d34fc",
+          "blocked_interaction_ids": [
+            "n.Interaction.55f44b0a942f4511b0e4954a",
+            "n.Interaction.e6ba63a27a25487b93c27cc9"
+          ],
+          "resolution_error": null
+        }
+      },
+      {
+        "scenario": "refuse-reserve-on-notice",
+        "status": 422,
+        "data": {
+          "error_code": "validation_error",
+          "message": "Invalid uncertainty reserve or conversation scope",
+          "timestamp": "2026-11-05T19:15:50.107653+00:00",
+          "path": "/api/actions/n.NativeHarnessAction.19e0d0e104c546d4a23e9aab/native-recovery/n.Interaction.e6ba63a27a25487b93c27cc9/usage-reserve"
+        }
+      },
+      {
+        "scenario": "inspect-original-run",
+        "status": 200,
+        "data": {
+          "interaction_id": "n.Interaction.33cd008ec8b94b66820d34fc",
+          "status": "cancelled",
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "digest": "sha256:1979d14a47c59faeb18647afd2768731eddc188d1066029c5c29408aa05b4806",
+          "unknown_cost_call_count": 1,
+          "recorded_runs": 1,
+          "unresolved_effects": 0,
+          "usage_reserve": null,
+          "recovery_interaction_id": "n.Interaction.33cd008ec8b94b66820d34fc",
+          "blocked_interaction_ids": [],
+          "resolution_error": null
+        }
+      },
+      {
+        "scenario": "approve-original-run",
+        "status": 200,
+        "data": {
+          "receipt": {
+            "version": "native-usage-reserve-v1",
+            "digest": "sha256:1979d14a47c59faeb18647afd2768731eddc188d1066029c5c29408aa05b4806",
+            "usd": "0.01",
+            "actor": "o.User.fbccc4f54abf43cd8815f6fc",
+            "evidence": "Disposable-app conservative reserve policy",
+            "reason": "Interrupted provider attempt has unknown billing",
+            "unknown_calls": 1,
+            "status": "applied",
+            "created_at": "2026-11-05T19:15:50.356558+00:00"
+          },
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 1,
+            "model_attempt_count": 1,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 1,
+            "model_attempt_duration_seconds": 0,
+            "unmeasured_model_attempt_count": 1,
+            "estimated_cost_usd": 0.01,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 1,
+            "total_cost_usd": 0.01,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T19:15:50.366116+00:00"
+          }
+        }
+      }
+    ]
+  },
+  "transport_error": {
+    "outcome": "Failed to fetch during deliberate backend startup",
+    "duration_ms": null
+  },
+  "snapshots": [
+    {
+      "phase": "before-stop",
+      "at": "2026-11-05T19:13:10.052Z",
+      "text": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.\n\n●\nAdd Attachment"
+    },
+    {
+      "phase": "cancelled",
+      "text": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.\n\nEdit\nAdd Attachment\nSend message"
+    },
+    {
+      "phase": "first-block",
+      "text": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.\n\nPlease remember the short code JUNIPER-28.\n\nThis conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\n\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message"
+    },
+    {
+      "phase": "two-blocked-notices-before-restart",
+      "text": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.\n\nPlease remember the short code JUNIPER-28.\n\nThis conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\n\nPlease remember the short code MARIGOLD-91 too.\n\nThis conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\n\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message"
+    },
+    {
+      "phase": "submitted-before-backend-ready",
+      "at": "2026-11-05T19:17:17.715Z",
+      "text": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.\n\nPlease remember the short code JUNIPER-28.\n\nThis conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\n\nPlease remember the short code MARIGOLD-91 too.\n\nThis conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\n\nReturn the two short codes from my last two requests in chronological order. Use one line and no tools.\n\nEdit\nAdd Attachment\nSend message"
+    },
+    {
+      "phase": "recovered-after-restart",
+      "text": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.\n\nPlease remember the short code JUNIPER-28.\n\nThis conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\n\nPlease remember the short code MARIGOLD-91 too.\n\nThis conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\n\nReturn the two short codes from my last two requests in chronological order. Use one line and no tools.\n\nReturn the two short codes from my last two requests in chronological order. Use one line and no tools.\n\nJUNIPER-28 MARIGOLD-91\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.3k tokens · 2.3s · 5.6 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message"
+    }
+  ]
+}

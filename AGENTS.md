@@ -6,16 +6,44 @@ Keep agent guidance in this file or the nearest scoped `AGENTS.md`. Do not creat
 
 ---
 
+## Harness ownership mandate
+
+Pydantic AI core and the official `pydantic-ai-harness` library must own all
+new or migrated harness execution: agent loops, skill loading, prompt/context
+lifecycle, tool execution, streaming, delegation and recovery. Use public APIs.
+JV Agent layers on its modular Action and SKILL.md compatibility, jvspatial
+storage, authenticated policy, configuration and channel adapters only.
+Do not build parallel generic execution engines or provider protocols. Prefer
+native providers; retain custom model adapters only for demonstrated extension
+needs. Keep research-specific evidence policy outside the general harness.
+
+SDK-owned final output uses literal publication and declared JV egress policy.
+Do not silently apply implicit legacy identity/tool-name/style scrubs or invoke
+an additional legacy compose model. Preserve host authorization, configured
+response rules and channel delivery. See [ADR-0057](.planning/adr/0057-native-declared-egress.md)
+and [the scoped native egress contract](.planning/runbooks/native-egress.md).
+
+Preserve Action lifecycle and skill authoring contracts while replacing their
+execution machinery. Legacy execution is transitional: qualify each compatibility
+class with adversarial tests and real provider-backed browser flows, then delete
+superseded code and settings. Never silently fall back to legacy execution.
+Preserve authorization, budgets and effect/delivery reconciliation. Any upstream
+gap requires a minimal public-API adapter with a documented removal condition.
+
+See [the governing transition plan](.planning/plans/2026-11-04-pydantic-harness-transition.md).
+This mandate defines the destination; the description below reflects the existing
+runtime until migration gates pass.
+
 ## 1. What jvagent is (60-second version)
 
 A modular AI-agent platform built on [jvspatial](.planning/reference/jvspatial-integration.md)'s object-spatial graph framework.
 
-**jvspatial security compatibility:** keep `pyproject.toml`, `requirements.txt`, and `requirements-all.txt` on the same published jvspatial version (`0.1.1`), and verify a fresh install when updating the pin. jvspatial rejects undeclared instance attributes on entity subclasses: declare persisted fields with `attribute(...)` and runtime-only underscore state with Pydantic `PrivateAttr`. See [the integration reference](.planning/reference/jvspatial-integration.md) and [action authoring](.planning/reference/action-authoring.md).
+**jvspatial security compatibility:** keep `pyproject.toml`, `requirements.txt`, and `requirements-all.txt` on the same published jvspatial version (`0.2.4`), and verify a fresh install when updating the pin. jvspatial rejects undeclared instance attributes on entity subclasses: declare persisted fields with `attribute(...)` and runtime-only underscore state with Pydantic `PrivateAttr`. See [the integration reference](.planning/reference/jvspatial-integration.md) and [action authoring](.planning/reference/action-authoring.md).
 
 - An *app* declares one or more *agents* in YAML.
 - Each agent owns a graph of *actions* (plugins) plus a per-user memory subgraph (`User → Conversation → Interaction`).
-- Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; an `InteractWalker` visits the agent's `InteractAction`s in weight order; the **Orchestrator** action (weight `-200`) runs the whole turn in one `execute()`: a deterministic **continuation check** (resume an active flow from the conversation `TaskStore`), then a bounded **think-act-observe loop** over a unified tool surface. Routing = tool selection; turn-lock = an active flow that hasn't returned `COMPLETE`/`YIELD`.
-- Production-shaped: namespaced plugins, lifecycle hooks, response bus with channel adapters, rolling-window memory pruning, separate logs DB.
+- Incoming traffic at `POST /agents/{id}/interact` becomes an `Interaction`; `InteractWalker` visits the agent's `InteractAction`s in weight order. New scaffolds use **NativeHarnessAction** with official Pydantic AI/Harness execution (`jvagent/scaffold/builtin_profiles/native.yaml:2`, `jvagent/action/native_harness/native_harness_action.py:138`). Existing Orchestrator deployments remain transitional until configuration/state migration passes; never configure both execution owners on one agent.
+- Shared services: namespaced plugins, lifecycle hooks, response bus with channel adapters, rolling-window memory pruning, separate logs DB. Native enterprise qualification remains governed by the active acceptance gates.
 
 Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email / web), long-running autonomous agents.
 
@@ -28,11 +56,13 @@ Use cases: turn-based chatbots, channel adapters (WhatsApp / Messenger / email /
 | **Navigate the design docs** | [`.planning/README.md`](.planning/README.md) (folder index) |
 | **Get the big picture** | [`.planning/PROJECT.md`](.planning/PROJECT.md) |
 | **v2.0 Harness Excellence** | [`.planning/ROADMAP.md`](.planning/ROADMAP.md) · [`.planning/REQUIREMENTS.md`](.planning/REQUIREMENTS.md) · [`docs/HARNESS_EXCELLENCE_PLAN.md`](docs/HARNESS_EXCELLENCE_PLAN.md) |
+| **Check tracked Action/skill coverage** | [Source inventory and its separate qualification boundary](.planning/runbooks/harness-asset-coverage.md) |
 | **Look up normative semantics** (invariants, contracts) | [`.planning/SPEC.md`](.planning/SPEC.md) |
 | **Choose a deployment pattern** (Orchestrator) | [`.planning/PATTERNS.md`](.planning/PATTERNS.md) |
 | **See diagrams** (boot, interact, executive, pruning) | [`.planning/architecture.md`](.planning/architecture.md) |
 | **Define a term** | [`.planning/GLOSSARY.md`](.planning/GLOSSARY.md) |
 | **Build a new action** | [`.planning/reference/action-authoring.md`](.planning/reference/action-authoring.md) |
+| **Configure native skills** | [`.planning/runbooks/native-skill-catalog.md`](.planning/runbooks/native-skill-catalog.md) · [configuration migration](.planning/runbooks/native-harness-migration.md) |
 | **Thin harness principle** (platform-wide) | [`docs/thin-harness.md`](docs/thin-harness.md) |
 | **Build / extend an interview skill** | [`docs/thin-harness.md`](docs/thin-harness.md) + [`jvagent/action/interview/docs/thin-harness.md`](jvagent/action/interview/docs/thin-harness.md) (profile) + [`jvagent/action/interview/AGENTS.md`](jvagent/action/interview/AGENTS.md) |
 | **See every existing action** | [`.planning/reference/actions-catalog.md`](.planning/reference/actions-catalog.md) |
@@ -120,7 +150,7 @@ jvagent chat --url https://my-agent  # point the UI at a remote agent
 
 # Scaffolding
 jvagent app create --yes --dir ./my_app --app-id my_app --title "My App" \
-    --author "You" --agent jvagent/main_bot@minimal --profile minimal
+    --description "A skill-driven assistant" --author "You" --agent jvagent/main_bot
 
 # Tests
 pytest tests/                        # all
@@ -178,6 +208,7 @@ pytest tests/                  # or the affected slice(s) at minimum
   require full strict typing across the tree.
 - **Use `attribute(...)` for all persisted Node fields.** Plain class attributes are not persisted.
 - **Add a test slice** in `tests/action/{name}/` or `tests/{subsystem}/` for any new behavior.
+- **Keep tracked asset coverage current.** Action/skill/declaration or companion changes require regenerating and reviewing [the tracked inventory](.planning/plans/2026-11-06-harness-tracked-assets.json). The pre-commit coverage hook checks drift; it does not grant runtime qualification. See [the runbook](.planning/runbooks/harness-asset-coverage.md).
 - **Run the commit gate above** (`pre-commit run --all-files` + `pytest`) before every commit and before claiming a change is done.
 - **Cite file:line** in commit messages and PR descriptions when fixing bugs — `core/app.py:124` beats "fixed the App singleton".
 
@@ -236,7 +267,7 @@ pytest tests/                  # or the affected slice(s) at minimum
 
 - Database adapter internals → jvspatial.
 - Auth / JWT / HTTP wire format → jvspatial.
-- Model-provider API quirks → individual `LanguageModelAction` subclasses, not the core.
+- Harness provider APIs → public Pydantic AI providers. Existing `LanguageModelAction` classes remain transitional/service compatibility surfaces until their callers are migrated.
 - Frontend chat UI internals → `jvchat/` reference client (built bundle is served by `jvagent chat`; the Python side is just a static server — see [`docs/jvchat.md`](docs/jvchat.md)).
 
 ---

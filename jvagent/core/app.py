@@ -285,7 +285,10 @@ class App(Node):
         channel adapters.
 
         Returns:
-            Dict mapping action IDs to initialization status
+            Dict mapping action IDs to initialization status. Hook failures are False.
+
+        Raises:
+            Exceptions encountered enumerating the graph propagate to startup.
         """
         import logging
 
@@ -307,7 +310,9 @@ class App(Node):
             for agent in agents:
                 actions_manager = await agent.get_actions_manager()
                 if not actions_manager:
-                    continue
+                    raise RuntimeError(
+                        "Agent Actions manager is unavailable during startup"
+                    )
 
                 actions = await actions_manager.get_actions()
 
@@ -325,7 +330,7 @@ class App(Node):
             return results
         except Exception as e:
             logger.error(f"Error initializing actions: {e}", exc_info=True)
-            return results
+            raise
 
     # ============================================================================
     # File Storage Operations
@@ -589,8 +594,16 @@ async def app_now_aware_utc(app: Optional[App]) -> datetime:
         else:
             now = raw
     if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-    return now
+        # App.now() is app-local, or server-local when no zone is configured.
+        # Relabelling that wall time UTC moves real scheduling deadlines.
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        zone = getattr(app, "timezone", None)
+        try:
+            now = now.replace(tzinfo=ZoneInfo(zone)) if zone else now.astimezone()
+        except (ZoneInfoNotFoundError, TypeError, ValueError):
+            now = now.astimezone()  # Same invalid-zone fallback as App.now().
+    return now.astimezone(timezone.utc)
 
 
 async def set_app_update_mode(app: App, value: str) -> None:

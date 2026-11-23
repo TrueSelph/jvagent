@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import Any, Dict, List
 
 from jvspatial.core.annotations import attribute
 from pydantic import PrivateAttr
 
 from jvagent.action.base import Action
+from jvagent.tooling.tool import Tool
 
 from . import engine
 from .hooks import clear_module_cache, load_hook_function
@@ -27,6 +29,8 @@ class LeadGenAction(Action):
         "sync to external systems via MCP when configured."
     )
     binds_tools_to_visitor: bool = True
+
+    native_local_capture: bool = attribute(default=False)
 
     default_fields: Dict[str, Dict[str, Any]] = attribute(
         default_factory=dict,
@@ -95,6 +99,37 @@ class LeadGenAction(Action):
         if not self._registry.specs:
             await self._discover_specs()
         return build_tools(self)
+
+    async def get_native_tools(self) -> list[Tool]:
+        """Admit status and explicit-permission profile reads only."""
+        tools = {tool.name: tool for tool in await self.get_tools()}
+        retrieve = tools["leadgen__retrieve"]
+
+        async def read_profile(*, visitor: Any, skill: str | None = None) -> str:
+            return await engine.handle_retrieve(
+                self, skill=skill, visitor=visitor, read_only=True
+            )
+
+        reads = [
+            tools["leadgen__status"],
+            replace(
+                retrieve,
+                execute=read_profile,
+                parameters_schema={
+                    **retrieve.parameters_schema,
+                    "additionalProperties": False,
+                },
+                effect_class="read",
+                binds_visitor=True,
+                requires_tool_permission=True,
+            ),
+        ]
+
+        if not self.native_local_capture:
+            return reads
+        from .native_capture import local_capture_tool
+
+        return [*reads, local_capture_tool(self)]
 
     async def _handle_capture(self, **kwargs: Any) -> str:
         return await engine.handle_capture(self, **kwargs)

@@ -1,0 +1,235 @@
+{
+  "parent_revision": "git-commit:3e52a603d68064bb6cb18f784a6ac75d3897379d",
+  "final_source": {
+    "process_id": 17194,
+    "observed_at": "2026-11-07T06:21:11.827037+00:00",
+    "source_blobs": {
+      "jvagent/action/pageindex/endpoints.py": "git-blob:2a65a380b9ed8a2e9bdbd91860430375c2d57090",
+      "jvagent/action/pageindex/native_search.py": "git-blob:f811c66321c5c13dc3683a5610981e46e0f22cbd",
+      "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:f34794a8747c8d57e113eb827fafaf9d635f4043",
+      "jvagent/action/pageindex/webhook_auth.py": "git-blob:2519ea180b88debdbf6862c4d8ded5aed422cf19",
+      "jvagent/action/pageindex/native_callback.py": "git-blob:f026cb3f6af51570c64f1e46967728e324e9b942",
+      "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+      "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+      "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "frontend_sha256": {
+    "assets/ChatInterface-CpKl2eGN.css": "sha256:1ea370447682afc2ab43cf4081772232f21acdf30dc25f400a60588480a5dafe",
+    "assets/ChatInterface-lrdnIXCk.js": "sha256:5ec8757ae9a44c99f0fcd808e6b94a9c80fedb3183e68b49c506bda523b50e77",
+    "assets/ChatRedirect-CYIr8iVr.js": "sha256:656de6e8b5c79f83ffcfd50b5557a3c9dd37473d9f4ec6f58131f2f57c82e6b2",
+    "assets/DebugInteractions-B-4dqr-p.js": "sha256:9b948f885a03215f086bc1bf1a8c5513f60793b0903f79f29604429ca057ce0b",
+    "assets/Login-DleGSgbG.js": "sha256:1d2eaaee5f03dfc91f8cc09544b12a27aa0d005d26fea73bde34c7c0eb555d81",
+    "assets/main-DH_gRVsF.css": "sha256:bab3487136e783d0d622f35a60d56e116d9b339f246eb5f61ea5cac340ef1a87",
+    "assets/main-DeN3J7NC.js": "sha256:dcf5a6b7d624b63c7d45c76cf4b416875a0e7ebc6c3c9447bd24bac38caa612e",
+    "assets/useAgents-DO1FNsk2.js": "sha256:0e73a066a2fc2e42a8b04f94166246cb4061331ac41f2df393daf4fead510efc",
+    "assets/useAuth-rV1-X0d0.js": "sha256:302acccc87d8e4f7039c13bd3381dae598a0c390f11ed183c4a777cfe4af7155",
+    "assets/vendor-cytoscape-CUqq0XTU.js": "sha256:9bb1dbac73bc986536b9d4f3c6509da2c104606dc115b3e03114361719388b7c",
+    "assets/vendor-d3-DznK3MmS.js": "sha256:56633e29226472b3d4affcaf13cca2721065d796d2c25d6e366eaa84dfead42e",
+    "assets/vendor-dagre-bridge-B2IYeVxy.js": "sha256:ba057e6ea4e77c708d44fcf1b1bd1a20d2c487d95ff107a94c25f218a124597d",
+    "assets/vendor-graphviz-C9sQj0WI.js": "sha256:892db92bc653ae6c8457fa1798d56cf055bfe327c96f1cecc2c288394f09c5bb",
+    "assets/vendor-markdown-B9moJQqy.js": "sha256:fd0c3342290dfd51549ef179e3065c58c3c5c08b5759d1a25095b99cc9ffd976",
+    "assets/vendor-react-CEqf_TvG.js": "sha256:8d7514ae05f82ab1e79f2f94261eeead2ee410d37b3ee0a37bd16aa61e4b4e60",
+    "index.html": "sha256:283ded0089eeb68e801e85648244db8d960814114484714ab74b99eed14031dc"
+  },
+  "fixture": {
+    "graph": "disposable PostgreSQL",
+    "backend_port": 8186,
+    "frontend_port": 3147,
+    "ingress": "same-origin browser with loopback trusted forwarded scheme; first plain HTTP attempts rejected"
+  },
+  "browser": [
+    {
+      "scenario": "cross-agent",
+      "status": 403,
+      "elapsed_ms": 13,
+      "body": {
+        "status": "error",
+        "timestamp": "2026-11-07T02:19:33.276327",
+        "message": "Endpoint not allowed for this API key",
+        "error_code": 403
+      }
+    },
+    {
+      "scenario": "model-override",
+      "status": 422,
+      "elapsed_ms": 111,
+      "body": {
+        "error_code": "validation_error",
+        "message": "Requested model is not enabled for PageIndex completion",
+        "timestamp": "2026-11-07T06:19:33.386096+00:00",
+        "path": "/api/pageindex/interact/webhook/n.Agent.da2851ad1d0d453e809ee370"
+      }
+    },
+    {
+      "scenario": "text",
+      "status": 200,
+      "elapsed_ms": 3412,
+      "body": {
+        "success": true,
+        "status": "received",
+        "result": {
+          "text": "CALLBACK-TEXT-73",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 15,
+            "completion_tokens": 7,
+            "total_tokens": 22
+          }
+        }
+      }
+    },
+    {
+      "scenario": "image",
+      "status": 200,
+      "elapsed_ms": 1420,
+      "body": {
+        "success": true,
+        "status": "received",
+        "result": {
+          "text": "A green circle is centered on the white background.",
+          "model": "gpt-4.1",
+          "usage": {
+            "prompt_tokens": 282,
+            "completion_tokens": 11,
+            "total_tokens": 293
+          }
+        }
+      }
+    },
+    {
+      "scenario": "unbound-wildcard",
+      "status": 403,
+      "elapsed_ms": 43,
+      "body": {
+        "error_code": "authorization_failed",
+        "message": "Webhook credential is not bound to this PageIndex Action",
+        "timestamp": "2026-11-07T06:20:18.634603+00:00",
+        "path": "/api/pageindex/interact/webhook/n.Agent.da2851ad1d0d453e809ee370"
+      }
+    }
+  ],
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.ca0c59cdffaa40edafa7a3b0",
+      "channel": "pageindex_webhook_completion",
+      "outcome": "completed",
+      "closed": true,
+      "elapsed_seconds": 2.126857,
+      "response": {
+        "text": "CALLBACK-TEXT-73",
+        "model": "gpt-4.1",
+        "usage": {
+          "prompt_tokens": 15,
+          "completion_tokens": 7,
+          "total_tokens": 22
+        }
+      },
+      "usage": {
+        "model_call_count": 1,
+        "total_tokens": 22,
+        "estimated_cost_usd": 8.6e-05,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "sdk_events": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "provider_receipt": {
+        "model": "gpt-4.1-2025-04-14",
+        "provider": "openai",
+        "usage_status": "provider_reported",
+        "usage": {
+          "total_tokens": 22,
+          "prompt_tokens": 15,
+          "completion_tokens": 7,
+          "cache_write_tokens": 0,
+          "cached_prompt_tokens": 0
+        },
+        "cost_record": {
+          "amount": 8.6e-05,
+          "source": "pydantic_ai_pricing",
+          "currency": "USD",
+          "estimated": true,
+          "pricing_version": null
+        }
+      },
+      "conversation_spend": {
+        "usd": "0.000086",
+        "tokens": 22,
+        "requests": 1,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.0d0fedb9a4a946debd832222",
+      "channel": "pageindex_webhook_completion",
+      "outcome": "completed",
+      "closed": true,
+      "elapsed_seconds": 1.373241,
+      "response": {
+        "text": "A green circle is centered on the white background.",
+        "model": "gpt-4.1",
+        "usage": {
+          "prompt_tokens": 282,
+          "completion_tokens": 11,
+          "total_tokens": 293
+        }
+      },
+      "usage": {
+        "model_call_count": 1,
+        "total_tokens": 293,
+        "estimated_cost_usd": 0.000652,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "sdk_events": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "provider_receipt": {
+        "model": "gpt-4.1-2025-04-14",
+        "provider": "openai",
+        "usage_status": "provider_reported",
+        "usage": {
+          "total_tokens": 293,
+          "prompt_tokens": 282,
+          "completion_tokens": 11,
+          "cache_write_tokens": 0,
+          "cached_prompt_tokens": 0
+        },
+        "cost_record": {
+          "amount": 0.000652,
+          "source": "pydantic_ai_pricing",
+          "currency": "USD",
+          "estimated": true,
+          "pricing_version": null
+        }
+      },
+      "conversation_spend": {
+        "usd": "0.000652",
+        "tokens": 293,
+        "requests": 1,
+        "unpriced_requests": 0
+      }
+    }
+  ],
+  "reload_readback_exact": {
+    "rows": true,
+    "conversations": true,
+    "registrations": true
+  },
+  "limits": [
+    "No live jvforge deployment, production TLS, or graph artifact import exercised.",
+    "Provider dollars estimated from SDK pricing."
+  ]
+}

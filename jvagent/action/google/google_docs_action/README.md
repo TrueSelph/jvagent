@@ -28,7 +28,7 @@ This is an **OAuth client JSON** (client id + secret). It is **not** a service-a
    The host must match the public base URL used at runtime (for example an ngrok HTTPS origin). Do **not** use the old `/api/google/callback/` path.
 8. Click **Create**. Download the JSON (client id + secret).
 9. Put the file path or the JSON contents in `.env` as `GOOGLE_CLIENT_SECRETS_JSON`, and set `JVAGENT_PUBLIC_BASE_URL` (see below).
-10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=docs`.
+10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=docs`.
 
 ## Set `.env`
 
@@ -47,7 +47,7 @@ GOOGLE_CLIENT_SECRETS_JSON=/absolute/path/to/client_secret.json
 | Attribute       | Description                                              | Required |
 | --------------- | -------------------------------------------------------- | -------- |
 | `output_format` | Preferred output: `google_doc` or `markdown`             | No       |
-| `auth_url`      | Set on startup to `/api/mcp/google_workspace/auth?account=integral&service=docs` | —        |
+| `auth_url`      | Set on startup to `/api/mcp/google_workspace/auth?account=default&service=docs` | —        |
 
 ## Agent wiring (agent.yaml)
 
@@ -98,7 +98,7 @@ Admin REST handlers under `/actions/{action_id}/docs/...` authenticate with the 
 
 ### Authorization
 
-1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=docs`.
+1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=docs`.
 2. Complete Google consent. The callback stores `MCPOAuthToken` and hydrates google-workspace-mcp XDG credential files.
 3. Docs methods and the MCP stdio server both use that token. Re-auth if refresh fails.
 

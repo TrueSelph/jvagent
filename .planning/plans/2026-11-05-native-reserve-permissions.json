@@ -1,0 +1,9 @@
+{
+  "admin_login_status": 200,
+  "member_created_status": 200,
+  "member_login_status": 200,
+  "anonymous_inspection_status": 401,
+  "member_inspection_status": 403,
+  "member_reserve_status": 403,
+  "admin_missing_body_status": 422
+}

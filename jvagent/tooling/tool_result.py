@@ -2,6 +2,17 @@ from dataclasses import dataclass, field
 from typing import Any, Dict
 
 
+class ToolResultText(str):
+    """String-compatible tool output with structured host metadata."""
+
+    tool_result_metadata: Dict[str, Any]
+
+    def __new__(cls, content: str, metadata: Dict[str, Any] | None = None):
+        value = super().__new__(cls, content)
+        value.tool_result_metadata = dict(metadata or {})
+        return value
+
+
 @dataclass
 class ToolResult:
     """Result of a single tool execution.

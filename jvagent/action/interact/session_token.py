@@ -32,7 +32,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
 import jwt
 from jvspatial.env import env
@@ -292,6 +292,7 @@ async def refresh_session_token(
     agent: Any,
     agent_id: str,
     session_token: Optional[str] = None,
+    native: bool = False,
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[str]]:
     """Exchange a session token for a fresh one bound to the same conversation.
 
@@ -310,10 +311,12 @@ async def refresh_session_token(
     claims, err = verify_session_token_for_refresh(token, expected_agent_id=agent_id)
     if err or claims is None:
         return None, None, err or "invalid"
-    conv = await _load_conversation(agent, str(claims.get("session_id") or ""))
+    conv = await _load_conversation(
+        agent, str(claims.get("session_id") or ""), strict=native
+    )
     if conv is None:
         return None, claims, "no_conversation"
-    bind_err = claims_match_conversation(claims, conv)
+    bind_err = claims_match_conversation(claims, conv, require_bound_identity=native)
     if bind_err:
         return None, claims, f"bind_{bind_err}"
     new_token = mint_session_token(
@@ -351,7 +354,7 @@ def verify_bearer(token: str) -> Optional[str]:
 
 
 def claims_match_conversation(
-    claims: Dict[str, Any], conversation: Any
+    claims: Dict[str, Any], conversation: Any, *, require_bound_identity: bool = False
 ) -> Optional[str]:
     """Check verified token claims against a loaded ``Conversation``.
 
@@ -363,6 +366,10 @@ def claims_match_conversation(
     """
     if conversation is None:
         return "no_conversation"
+    if require_bound_identity and getattr(
+        conversation, "public_identity_kind", "unbound"
+    ) not in {"bearer", "anonymous"}:
+        return "unbound_identity"
     if not is_web_channel(getattr(conversation, "channel", None)):
         return "cross_channel"
     if claims.get("session_id") != getattr(conversation, "session_id", None):
@@ -396,6 +403,7 @@ class IdentityDecision:
     via: str  # "bearer" | "session_token" | "none"
     denial: bool = False
     reason: str = "ok"
+    public_identity_kind: Optional[Literal["bearer", "anonymous"]] = None
 
     @property
     def reject(self) -> bool:
@@ -421,7 +429,9 @@ def _extract_session_token(request: Any) -> Optional[str]:
     return tok.strip() if tok else None
 
 
-async def _load_conversation(agent: Any, session_id: str) -> Optional[Any]:
+async def _load_conversation(
+    agent: Any, session_id: str, *, strict: bool = False
+) -> Optional[Any]:
     """Best-effort load of an agent-owned Conversation by session id (or None)."""
     try:
         memory = await agent.get_memory()
@@ -429,6 +439,8 @@ async def _load_conversation(agent: Any, session_id: str) -> Optional[Any]:
             return None
         return await memory.get_conversation_by_session(session_id)
     except Exception as exc:  # pragma: no cover - defensive
+        if strict:
+            raise
         logger.debug("session_token: conversation preload failed: %s", exc)
         return None
 
@@ -440,6 +452,7 @@ async def resolve_interact_identity(
     agent_id: str,
     session_id: Optional[str],
     user_id: Optional[str],
+    native: bool = False,
 ) -> IdentityDecision:
     """Resolve the caller's verified identity for a public interact call.
 
@@ -448,20 +461,35 @@ async def resolve_interact_identity(
     endpoint enforces it (reject in ``required``, observe in ``log``, ignore in
     ``off``) and mints/refreshes the Mode B token post-spawn.
     """
-    mode = auth_mode()
+    mode = MODE_REQUIRED if native else auth_mode()
     if mode == MODE_OFF:
         return IdentityDecision(mode=mode, verified_user_id=None, via="none")
+    if native and not _secret():
+        return IdentityDecision(
+            mode=mode,
+            verified_user_id=None,
+            via="none",
+            denial=True,
+            reason="missing_signing_key",
+        )
 
     bearer = _extract_bearer(request)
     stoken = _extract_session_token(request)
 
     # --- Mode A: authenticated login JWT ---
     if bearer:
-        uid = verify_bearer(bearer)
+        if native:
+            from jvspatial.api import get_auth_service
+
+            service = get_auth_service()
+            principal = await service.validate_token(bearer) if service else None
+            uid = principal.id if principal is not None else None
+        else:
+            uid = verify_bearer(bearer)
         if uid:
             # If resuming an existing conversation, it must belong to this user.
             if session_id:
-                conv = await _load_conversation(agent, session_id)
+                conv = await _load_conversation(agent, session_id, strict=native)
                 if conv is not None and getattr(conv, "user_id", None) not in (
                     None,
                     "",
@@ -474,7 +502,12 @@ async def resolve_interact_identity(
                         denial=True,
                         reason="bearer_not_owner",
                     )
-            return IdentityDecision(mode=mode, verified_user_id=uid, via="bearer")
+            return IdentityDecision(
+                mode=mode,
+                verified_user_id=uid,
+                via="bearer",
+                public_identity_kind="bearer",
+            )
         # Bearer present but invalid → a denial signal (fall through in log mode).
         return IdentityDecision(
             mode=mode,
@@ -486,17 +519,41 @@ async def resolve_interact_identity(
 
     # --- Mode B: anonymous session capability token ---
     if not session_id:
+        if native and stoken:
+            return IdentityDecision(
+                mode=mode,
+                verified_user_id=None,
+                via="none",
+                denial=True,
+                reason="missing_session_id",
+            )
         # Create path: no credential required; a token is minted post-spawn.
         return IdentityDecision(
-            mode=mode, verified_user_id=None, via="none", reason="create"
+            mode=mode,
+            verified_user_id=f"user_{uuid.uuid4().hex}",
+            via="none",
+            reason="create",
+            public_identity_kind="anonymous",
         )
 
-    conv = await _load_conversation(agent, session_id)
+    conv = await _load_conversation(agent, session_id, strict=native)
     if conv is None:
+        if native and stoken:
+            return IdentityDecision(
+                mode=mode,
+                verified_user_id=None,
+                via="none",
+                denial=True,
+                reason="unknown_session",
+            )
         # No existing agent-owned conversation for this id → a pinned-id create,
         # not a resume; allow (the walker still guards foreign sessions).
         return IdentityDecision(
-            mode=mode, verified_user_id=None, via="none", reason="resume_new"
+            mode=mode,
+            verified_user_id=f"user_{uuid.uuid4().hex}",
+            via="none",
+            reason="resume_new",
+            public_identity_kind="anonymous",
         )
 
     # An existing conversation is being resumed → a token is required.
@@ -517,7 +574,7 @@ async def resolve_interact_identity(
             denial=True,
             reason=f"token_{err or 'invalid'}",
         )
-    bind_err = claims_match_conversation(claims, conv)
+    bind_err = claims_match_conversation(claims, conv, require_bound_identity=native)
     if bind_err:
         return IdentityDecision(
             mode=mode,
@@ -531,7 +588,80 @@ async def resolve_interact_identity(
         verified_user_id=str(claims.get("user_id") or ""),
         via="session_token",
         reason="ok",
+        public_identity_kind=(
+            getattr(conv, "public_identity_kind", None)
+            if getattr(conv, "public_identity_kind", None) in {"bearer", "anonymous"}
+            else None
+        ),
     )
+
+
+async def bind_public_identity(
+    conversation: Any, *, decision: IdentityDecision, request: Any, agent: Any
+) -> Any:
+    """Commit native public ownership after locked credential revalidation.
+
+    Unbound historical sessions require a login owner's proof. Rotating their
+    secret retires capabilities that older public admission could mint unsafely.
+    Anonymous creation is authorized only for the server-issued fresh subject.
+    """
+    from jvspatial import flush_deferred_entities
+    from jvspatial.api.exceptions import AuthenticationError
+
+    from jvagent.memory.conversation import Conversation
+    from jvagent.memory.distributed_conversation_lock import conversation_mutation_lock
+
+    def denied() -> AuthenticationError:
+        return AuthenticationError(
+            message="Session authentication is required or the supplied credentials are invalid."
+        )
+
+    if (
+        request is None
+        or decision.mode != MODE_REQUIRED
+        or decision.denial
+        or decision.public_identity_kind not in {"bearer", "anonymous"}
+    ):
+        raise denied()
+    async with conversation_mutation_lock(conversation.id):
+        current = await Conversation.find_one({"id": conversation.id})
+        if current is None or current.user_id != decision.verified_user_id:
+            raise denied()
+        owned = await _load_conversation(agent, current.session_id, strict=True)
+        if owned is None or owned.id != current.id:
+            raise denied()
+        if decision.via != "none":
+            fresh = await resolve_interact_identity(
+                request=request,
+                agent=agent,
+                agent_id=str(getattr(agent, "id", "")),
+                session_id=current.session_id,
+                user_id=current.user_id,
+                native=True,
+            )
+            if fresh.reject or fresh.verified_user_id != current.user_id:
+                raise denied()
+        elif (
+            decision.reason not in {"create", "resume_new"}
+            or current.public_identity_kind != "unbound"
+        ):
+            raise denied()
+        kind = decision.public_identity_kind
+        if current.public_identity_kind == "unbound" or (
+            current.public_identity_kind == "anonymous" and decision.via == "bearer"
+        ):
+            if (
+                current.public_identity_kind == "unbound"
+                and decision.via == "session_token"
+            ):
+                raise denied()
+            current.public_identity_kind = kind
+            current.rotate_token_secret()
+            await current.save()
+            await flush_deferred_entities(current, strict=True)
+        elif current.public_identity_kind != kind:
+            raise denied()
+        return current
 
 
 def warn_interact_auth_configuration() -> None:

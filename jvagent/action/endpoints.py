@@ -225,7 +225,12 @@ async def update_action(
     # Save if any updates were made and trigger lifecycle hooks
     if needs_save:
         await action.save()
-        # Trigger reload hook if action is already registered
+        # A warm Actions list holds earlier entity instances. Invalidate even
+        # if reinitialization fails: saved policy must not remain stale.
+        from jvagent.core.cache import invalidate_action_cache
+
+        if action.agent_id:
+            await invalidate_action_cache(action.agent_id)
         await action.on_reload()
 
     # Build combined update result

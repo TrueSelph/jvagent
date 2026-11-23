@@ -1,0 +1,1069 @@
+{
+  "parent_revision": "git-commit:952079a5349a930ab40f3d1c65e0350bd0b31dc6",
+  "tested_revision": "parent plus the recorded working-tree blobs; formatting-only hooks applied during the round",
+  "runtime_blobs": {
+    "jvagent/action/mcp/mcp_action.py": "git-blob:f3a17b2fecdd81147bf1cab6f1b562c2cb35bd7a",
+    "jvagent/action/mcp/jvspatial_fs_server.py": "git-blob:d214d33ddae2ac7098bc029c4c33bd131255bba9",
+    "jvagent/harness/native.py": "git-blob:e71c31ac899c0f0e7aed6ef6a1b6983d436343d1",
+    "jvagent/harness/mcp.py": "git-blob:1a8322838d002f6c10c434c0743c39d5da3ffc8a",
+    "jvagent/harness/read_retries.py": "git-blob:c3bcf13f5ef3a6b303189c7f1ee44a53fe9358f8",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:16c10d62335894f49ac61e9affa75126886b01cb",
+    "jvagent/action/interact/endpoints.py": "git-blob:8f18df58ebe55b498118717a4bff02f5c1422b86",
+    "jvagent/action/response/response_bus.py": "git-blob:145e1147fad523ee7fed185b2a9e4eb5e9b0a39a",
+    "pyproject.toml": "git-blob:facc1f8b638c8aee5ea1a1d31ddf3336b8d1e8cf"
+  },
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-mcp-smoke",
+    "database": "jvagent_native_mcp",
+    "backend": "http://127.0.0.1:8134",
+    "browser": "http://127.0.0.1:3134",
+    "caller": "disposable administrator",
+    "server": "tests/harness/native/mcp_fixture.py",
+    "model": "openai:gpt-4.1",
+    "provider_api": "Responses",
+    "isolation": "separate app, PostgreSQL database and browser context; user app graphs untouched"
+  },
+  "versions": {
+    "pydantic-ai-slim": "2.66.0",
+    "pydantic-ai-harness": "0.66.0",
+    "mcp": "2.3.0",
+    "fastmcp-slim": "4.1.6",
+    "openai": "3.46.0",
+    "jvspatial": "0.1.1"
+  },
+  "qualified_profile_unique_distributions": 105,
+  "turns": [
+    {
+      "scenario": "initial registry/admission failure; blank UI",
+      "interaction_id": "n.Interaction.8494a6b03c204497a8aeaf23",
+      "session_id": "sess_2a3b9fe0dc8c4534",
+      "conversation_id": "n.Conversation.a6bd44b5c0254e749f32ceab",
+      "utterance": "Look up rehearsal record REHEARSAL-47 using the MCP tool and tell me its room and start time.",
+      "response": null,
+      "closed": true,
+      "emitted": false,
+      "started_at": "2026-11-05T06:45:08.912857",
+      "completed_at": "2026-11-05T06:45:08.996856",
+      "backend_duration_seconds": 0.083999,
+      "native_run": {},
+      "usage": {
+        "last_updated": "2026-11-05T10:45:08.997870+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 0,
+      "run_records": [],
+      "tool_effects": [],
+      "current_tool_parts": [],
+      "event_kinds": []
+    },
+    {
+      "scenario": "discarded Action-client route: successful read",
+      "interaction_id": "n.Interaction.f2c97818294e457bad457464",
+      "session_id": "sess_9d67082123f24d0f",
+      "conversation_id": "n.Conversation.08243a56cc064803a99cfb78",
+      "utterance": "Look up rehearsal record REHEARSAL-47 using the MCP tool and tell me its room and start time.",
+      "response": "Rehearsal record REHEARSAL-47 is scheduled in the Cedar room and starts at 14:30.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T06:49:49.286759",
+      "completed_at": "2026-11-05T06:49:54.485667",
+      "backend_duration_seconds": 5.198908,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 682,
+          "output_tokens": 51
+        },
+        "output": "Rehearsal record REHEARSAL-47 is scheduled in the Cedar room and starts at 14:30.",
+        "run_id": "9d14fa821c66450aa6374062bec21fc7",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T10:49:54.485715+00:00",
+        "total_tokens": 733,
+        "prompt_tokens": 682,
+        "total_cost_usd": 0.001772,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 51,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001772,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 6,
+      "run_records": [
+        {
+          "run_id": "9d14fa821c66450aa6374062bec21fc7",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-05T10:49:50.616997Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_9d67082123f24d0f",
+          "registration_id": "cc613c51-ff73-423f-b1e7-d67d1bf57415"
+        }
+      ],
+      "tool_effects": [
+        {
+          "run_id": "9d14fa821c66450aa6374062bec21fc7",
+          "status": "completed",
+          "ended_at": "2026-11-05T10:49:53.063530Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T10:49:52.962754Z",
+          "tool_call_id": "call_w5RqZr3MTEVWmmMfGD4O14n5",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_005e23213154e7a0006aec5f50a79087d2bab350129fce9e77",
+          "args": "{\"reference\":\"REHEARSAL-47\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_w5RqZr3MTEVWmmMfGD4O14n5",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "{\n  \"reference\": \"REHEARSAL-47\",\n  \"room\": \"Cedar\",\n  \"start\": \"14:30\"\n}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-05T10:49:53.078955Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_w5RqZr3MTEVWmmMfGD4O14n5"
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "tool_call_completed",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ]
+    },
+    {
+      "scenario": "discarded Action-client route: errored read",
+      "interaction_id": "n.Interaction.9eb3f8d49ec54b0988a46f8b",
+      "session_id": "sess_9d67082123f24d0f",
+      "conversation_id": "n.Conversation.08243a56cc064803a99cfb78",
+      "utterance": "Look up MISSING-99 with the MCP tool. Tell me if the lookup fails.",
+      "response": "The lookup for MISSING-99 failed; the reference is unavailable.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T06:50:51.659039",
+      "completed_at": "2026-11-05T06:50:55.873441",
+      "backend_duration_seconds": 4.214402,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 890,
+          "output_tokens": 38
+        },
+        "output": "The lookup for MISSING-99 failed; the reference is unavailable.",
+        "run_id": "1421dc33e2394b4e9c38279c28efdd74",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "9d14fa821c66450aa6374062bec21fc7"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T10:50:55.873504+00:00",
+        "total_tokens": 928,
+        "prompt_tokens": 890,
+        "total_cost_usd": 0.002084,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 38,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002084,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 6,
+      "run_records": [
+        {
+          "run_id": "1421dc33e2394b4e9c38279c28efdd74",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-05T10:50:52.543799Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_9d67082123f24d0f",
+          "registration_id": "69014a76-3722-4e54-a724-5092a6eeb76f"
+        }
+      ],
+      "tool_effects": [
+        {
+          "run_id": "1421dc33e2394b4e9c38279c28efdd74",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T10:50:54.046987Z",
+          "tool_call_id": "call_TPOsRkhEu1bxgQ6myjLsDJF5",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_021ea073e666cbfe006aec5f8dd43c87d2ac44ca131b83ba09",
+          "args": "{\"reference\":\"MISSING-99\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_TPOsRkhEu1bxgQ6myjLsDJF5",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": {
+            "cause": "model_retry",
+            "attempt": 1,
+            "max_retries": 1
+          },
+          "content": "Error: Error executing tool lookup_record",
+          "outcome": "retried",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-05T10:50:54.065569Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_TPOsRkhEu1bxgQ6myjLsDJF5"
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ]
+    },
+    {
+      "scenario": "official MCPToolset: successful read",
+      "interaction_id": "n.Interaction.15956a70b4004f1e899de60e",
+      "session_id": "sess_b2a8363386a14501",
+      "conversation_id": "n.Conversation.05d277117efc49e880ba5afe",
+      "utterance": "Use the MCP record lookup for REHEARSAL-47. What room and start time does it report?",
+      "response": "The MCP record for REHEARSAL-47 reports the room as Cedar and the start time as 14:30.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T06:56:53.460979",
+      "completed_at": "2026-11-05T06:56:59.965093",
+      "backend_duration_seconds": 6.504114,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 670,
+          "output_tokens": 51
+        },
+        "output": "The MCP record for REHEARSAL-47 reports the room as Cedar and the start time as 14:30.",
+        "run_id": "88b88383af3149b0b02f7d296a2b7f6d",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T10:56:59.965153+00:00",
+        "total_tokens": 721,
+        "prompt_tokens": 670,
+        "total_cost_usd": 0.001748,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 51,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001748,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 6,
+      "run_records": [
+        {
+          "run_id": "88b88383af3149b0b02f7d296a2b7f6d",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-05T10:56:56.359968Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_b2a8363386a14501",
+          "registration_id": "b5cf7a21-15f2-4059-a1af-98099af3ecb4"
+        }
+      ],
+      "tool_effects": [
+        {
+          "run_id": "88b88383af3149b0b02f7d296a2b7f6d",
+          "status": "completed",
+          "ended_at": "2026-11-05T10:56:58.646047Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T10:56:58.606076Z",
+          "tool_call_id": "call_j6EfisqjiBZew9mO3ksDjPjj",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0662e540f5ffc3cc006aec60fa6d2887d2b7d7433785b9a8e3",
+          "args": "{\"reference\":\"REHEARSAL-47\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_j6EfisqjiBZew9mO3ksDjPjj",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": {
+            "room": "Cedar",
+            "start": "14:30",
+            "reference": "REHEARSAL-47"
+          },
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-05T10:56:58.661723Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_j6EfisqjiBZew9mO3ksDjPjj",
+          "content_file_digests": []
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "tool_call_completed",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ]
+    },
+    {
+      "scenario": "official MCPToolset: errored read; unresolved receipt exposed",
+      "interaction_id": "n.Interaction.87dd155b745d4ed4b9b8414d",
+      "session_id": "sess_b2a8363386a14501",
+      "conversation_id": "n.Conversation.05d277117efc49e880ba5afe",
+      "utterance": "Look up MISSING-99 using the MCP tool. Do not invent details if it fails.",
+      "response": "The MCP tool was unable to retrieve a record for MISSING-99. No details are available.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T06:57:20.767245",
+      "completed_at": "2026-11-05T06:57:24.662827",
+      "backend_duration_seconds": 3.895582,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 868,
+          "output_tokens": 44
+        },
+        "output": "The MCP tool was unable to retrieve a record for MISSING-99. No details are available.",
+        "run_id": "de788f15bb90404788a6a421d7a09996",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "88b88383af3149b0b02f7d296a2b7f6d"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T10:57:24.662882+00:00",
+        "total_tokens": 912,
+        "prompt_tokens": 868,
+        "total_cost_usd": 0.002088,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 44,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002088,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 6,
+      "run_records": [
+        {
+          "run_id": "de788f15bb90404788a6a421d7a09996",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-05T10:57:21.037850Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_b2a8363386a14501",
+          "registration_id": "8f9ab88a-5d53-4a4f-a431-d39cc8c72fb3"
+        }
+      ],
+      "tool_effects": [
+        {
+          "run_id": "de788f15bb90404788a6a421d7a09996",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T10:57:22.803134Z",
+          "tool_call_id": "call_Qou6NH4h8EA4a2SmEiLHk9FW",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_05395810ea9fefd9006aec6112a02887d2a7c2486b55b1baa9",
+          "args": "{\"reference\":\"MISSING-99\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_Qou6NH4h8EA4a2SmEiLHk9FW",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": {
+            "cause": "model_retry",
+            "attempt": 1,
+            "max_retries": 1
+          },
+          "content": "Error executing tool lookup_record",
+          "outcome": "retried",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-05T10:57:22.834466Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_Qou6NH4h8EA4a2SmEiLHk9FW"
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ]
+    },
+    {
+      "scenario": "admission error saved but missed by SSE",
+      "interaction_id": "n.Interaction.da3d8b383e5f48ba93a4543f",
+      "session_id": "sess_b391245050a745c8",
+      "conversation_id": "n.Conversation.e10f094ecac8496591242fa4",
+      "utterance": "Look up REHEARSAL-47 with the MCP tool.",
+      "response": "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T07:00:50.457758",
+      "completed_at": "2026-11-05T07:00:51.104218",
+      "backend_duration_seconds": 0.64646,
+      "native_run": {
+        "reason": "admission_failed",
+        "status": "blocked"
+      },
+      "usage": {
+        "last_updated": "2026-11-05T11:00:51.104979+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 0,
+      "run_records": [],
+      "tool_effects": [],
+      "current_tool_parts": [],
+      "event_kinds": []
+    },
+    {
+      "scenario": "admission error visible after scoped SSE replay",
+      "interaction_id": "n.Interaction.1522052268f641a38ae9ebd9",
+      "session_id": "sess_c59fec20be9f41bb",
+      "conversation_id": "n.Conversation.be97ec75e97b43cca75c6b6e",
+      "utterance": "Look up REHEARSAL-47 using MCP.",
+      "response": "Agent configuration prevented this request from starting. Ask an administrator to check the configuration, then start a new conversation.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T07:05:40.614019",
+      "completed_at": "2026-11-05T07:05:41.249015",
+      "backend_duration_seconds": 0.634996,
+      "native_run": {
+        "reason": "admission_failed",
+        "status": "blocked"
+      },
+      "usage": {
+        "last_updated": "2026-11-05T11:05:41.249880+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 0,
+      "run_records": [],
+      "tool_effects": [],
+      "current_tool_parts": [],
+      "event_kinds": []
+    },
+    {
+      "scenario": "restored official read after final client timeout mapping",
+      "interaction_id": "n.Interaction.41907014b5e745f18982079f",
+      "session_id": "sess_219c9d3f1dc14e4f",
+      "conversation_id": "n.Conversation.a6789c1cf08546ae82fb5a20",
+      "utterance": "Read REHEARSAL-47 with the MCP tool and report its room and start time.",
+      "response": "REHEARSAL-47 is scheduled in the Cedar room and starts at 14:30.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T07:06:05.059189",
+      "completed_at": "2026-11-05T07:06:09.885657",
+      "backend_duration_seconds": 4.826468,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 664,
+          "output_tokens": 46
+        },
+        "output": "REHEARSAL-47 is scheduled in the Cedar room and starts at 14:30.",
+        "run_id": "03e068df867a4beaad21f5c0d8af5a9c",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T11:06:09.885703+00:00",
+        "total_tokens": 710,
+        "prompt_tokens": 664,
+        "total_cost_usd": 0.001696,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 46,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001696,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 6,
+      "run_records": [
+        {
+          "run_id": "03e068df867a4beaad21f5c0d8af5a9c",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-05T11:06:05.738448Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_219c9d3f1dc14e4f",
+          "registration_id": "74f101dc-521c-45e0-beaa-ef271e6e7848"
+        }
+      ],
+      "tool_effects": [
+        {
+          "run_id": "03e068df867a4beaad21f5c0d8af5a9c",
+          "status": "completed",
+          "ended_at": "2026-11-05T11:06:08.337001Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T11:06:08.286978Z",
+          "tool_call_id": "call_X4Lo8DWVGCbTUORJJhhqL4nE",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_038e227e58a388c7006aec63200f7887d284bbd76d58488e7c",
+          "args": "{\"reference\":\"REHEARSAL-47\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_X4Lo8DWVGCbTUORJJhhqL4nE",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": {
+            "room": "Cedar",
+            "start": "14:30",
+            "reference": "REHEARSAL-47"
+          },
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-05T11:06:08.351745Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_X4Lo8DWVGCbTUORJJhhqL4nE",
+          "content_file_digests": []
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "tool_call_completed",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ]
+    },
+    {
+      "scenario": "official error before read-retry receipt adapter",
+      "interaction_id": "n.Interaction.eb36fc637b644b5094cbb688",
+      "session_id": "sess_219c9d3f1dc14e4f",
+      "conversation_id": "n.Conversation.a6789c1cf08546ae82fb5a20",
+      "utterance": "Use MCP to look up MISSING-99. Report whether that lookup succeeds.",
+      "response": "The lookup for MISSING-99 did not succeed; the reference is unavailable.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T07:06:46.611945",
+      "completed_at": "2026-11-05T07:06:49.828558",
+      "backend_duration_seconds": 3.216613,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 846,
+          "output_tokens": 40
+        },
+        "output": "The lookup for MISSING-99 did not succeed; the reference is unavailable.",
+        "run_id": "2637c9ee1c174ec0ab76fed52fb4719a",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "03e068df867a4beaad21f5c0d8af5a9c"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T11:06:49.828614+00:00",
+        "total_tokens": 886,
+        "prompt_tokens": 846,
+        "total_cost_usd": 0.002012,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 40,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002012,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 6,
+      "run_records": [
+        {
+          "run_id": "2637c9ee1c174ec0ab76fed52fb4719a",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-05T11:06:46.925032Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_219c9d3f1dc14e4f",
+          "registration_id": "33cdd7c2-6696-4ce8-8e71-846fd4b07226"
+        }
+      ],
+      "tool_effects": [
+        {
+          "run_id": "2637c9ee1c174ec0ab76fed52fb4719a",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T11:06:48.410880Z",
+          "tool_call_id": "call_kqVhR4PnH5WbgQgIj5DnyqkY",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0e8a59dbb5ebec06006aec6348385487d28ebda2eac8f9e6a5",
+          "args": "{\"reference\":\"MISSING-99\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_kqVhR4PnH5WbgQgIj5DnyqkY",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": {
+            "cause": "model_retry",
+            "attempt": 1,
+            "max_retries": 1
+          },
+          "content": "Error executing tool lookup_record",
+          "outcome": "retried",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-05T11:06:48.433796Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_kqVhR4PnH5WbgQgIj5DnyqkY"
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ]
+    },
+    {
+      "scenario": "official error with terminal read receipt adapter",
+      "interaction_id": "n.Interaction.7f34fb2b21e949acb6109fb8",
+      "session_id": "sess_219c9d3f1dc14e4f",
+      "conversation_id": "n.Conversation.a6789c1cf08546ae82fb5a20",
+      "utterance": "Look up UNAVAILABLE-88 with the MCP tool, and tell me if that record is unavailable.",
+      "response": "The record for UNAVAILABLE-88 is unavailable.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T07:11:58.175165",
+      "completed_at": "2026-11-05T07:12:04.059451",
+      "backend_duration_seconds": 5.884286,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1014,
+          "output_tokens": 34
+        },
+        "output": "The record for UNAVAILABLE-88 is unavailable.",
+        "run_id": "7a7398946c7c414fbea3e7b30c12c179",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "2637c9ee1c174ec0ab76fed52fb4719a"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T11:12:04.059500+00:00",
+        "total_tokens": 1048,
+        "prompt_tokens": 1014,
+        "total_cost_usd": 0.0023,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 34,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0023,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 6,
+      "run_records": [
+        {
+          "run_id": "7a7398946c7c414fbea3e7b30c12c179",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-05T11:12:00.012039Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_219c9d3f1dc14e4f",
+          "registration_id": "198b5ba0-98aa-403e-9ce2-f03330c66d5a"
+        }
+      ],
+      "tool_effects": [
+        {
+          "run_id": "7a7398946c7c414fbea3e7b30c12c179",
+          "status": "failed",
+          "ended_at": "2026-11-05T11:12:02.575247Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T11:12:02.554958Z",
+          "tool_call_id": "call_FB2EDfdTPIYqz4TREHhRp1VL",
+          "effect_summary": "Reviewed read returned a native retry signal",
+          "idempotency_key": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0fe09f965f366076006aec6482462c87d2a30cedf5958616d4",
+          "args": "{\"reference\":\"UNAVAILABLE-88\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_FB2EDfdTPIYqz4TREHhRp1VL",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": {
+            "cause": "model_retry",
+            "attempt": 1,
+            "max_retries": 1
+          },
+          "content": "Error executing tool lookup_record",
+          "outcome": "retried",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-05T11:12:02.574703Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_FB2EDfdTPIYqz4TREHhRp1VL"
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ]
+    },
+    {
+      "scenario": "official retry with library-owned terminal effect and failure event",
+      "interaction_id": "n.Interaction.b7dc2baa456546829ec8abfd",
+      "session_id": "sess_219c9d3f1dc14e4f",
+      "conversation_id": "n.Conversation.a6789c1cf08546ae82fb5a20",
+      "utterance": "Call the MCP lookup for RETRY-LEDGER-99 exactly once and report whether it succeeds.",
+      "response": "The lookup for RETRY-LEDGER-99 did not succeed.",
+      "closed": true,
+      "emitted": true,
+      "started_at": "2026-11-05T07:20:59.187437",
+      "completed_at": "2026-11-05T07:21:05.223259",
+      "backend_duration_seconds": 6.035822,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1173,
+          "output_tokens": 41
+        },
+        "output": "The lookup for RETRY-LEDGER-99 did not succeed.",
+        "run_id": "8e79bbfbf875434c8ea20e950f32be55",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "7a7398946c7c414fbea3e7b30c12c179"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T11:21:05.223325+00:00",
+        "total_tokens": 1214,
+        "prompt_tokens": 1173,
+        "total_cost_usd": 0.002674,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 41,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002674,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "tasks": [],
+      "snapshot_count": 6,
+      "run_records": [
+        {
+          "run_id": "8e79bbfbf875434c8ea20e950f32be55",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-05T11:21:00.697657Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_219c9d3f1dc14e4f",
+          "registration_id": "9857b352-1e5d-45f7-918f-207e80a8ff51"
+        }
+      ],
+      "tool_effects": [
+        {
+          "run_id": "8e79bbfbf875434c8ea20e950f32be55",
+          "status": "failed",
+          "ended_at": "2026-11-05T11:21:02.864409Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T11:21:02.838843Z",
+          "tool_call_id": "call_fO3z2HhaGDQRVyZTThoDUaIF",
+          "effect_summary": "ToolRetryError('Error executing tool lookup_record')",
+          "idempotency_key": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0ea0ffb66b38b627006aec669eabcc87d2975192efb831518c",
+          "args": "{\"reference\":\"RETRY-LEDGER-99\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_fO3z2HhaGDQRVyZTThoDUaIF",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": {
+            "cause": "model_retry",
+            "attempt": 1,
+            "max_retries": 1
+          },
+          "content": "Error executing tool lookup_record",
+          "outcome": "retried",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-05T11:21:02.863503Z",
+          "tool_kind": null,
+          "tool_name": "mcp_records__lookup_record",
+          "tool_call_id": "call_fO3z2HhaGDQRVyZTThoDUaIF"
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "tool_call_failed",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ]
+    }
+  ],
+  "totals": {
+    "model_call_count": 16,
+    "total_tokens": 7152,
+    "estimated_cost_usd": 0.016374,
+    "unknown_cost_call_count": 0
+  },
+  "final_receipt_server_pid": 25459,
+  "final_receipt_server_exit_confirmed": true,
+  "synthetic_mcp_calls": [
+    "REHEARSAL-47",
+    "MISSING-99",
+    "REHEARSAL-47",
+    "MISSING-99",
+    "REHEARSAL-47",
+    "MISSING-99",
+    "UNAVAILABLE-88",
+    "RETRY-LEDGER-99"
+  ],
+  "limitations": [
+    "Not full MCP qualification: HTTP/auth, filesystem caller isolation, sampling/elicitation, background tasks, write tools, MCP research provenance and delegated MCP remain unqualified.",
+    "Earlier unresolved disposable effect records remain unchanged; only receipt-adapter runs terminalize known read retries.",
+    "SSE replay uses an existing bounded in-process queue; it is not durable reconnection or cross-worker delivery recovery.",
+    "Browser refresh needs conversation selection. The served bundle retains old messages after New Conversation despite graph/session isolation; a fresh-client-build reproduction remains pending.",
+    "Zero request durations in usage are unmeasured telemetry; backend Interaction timestamps are reported separately. Costs are estimates, not provider invoices.",
+    "This is a functionality cohort, not an efficiency benchmark or enterprise release acceptance."
+  ],
+  "checks": {
+    "native_postgres_python311": "195 passed, 121 warnings, 27.31s",
+    "native_postgres_python312": "195 passed, 121 warnings, 28.64s",
+    "transport_mcp_report_slices": "125 passed, 4.66s; final relocated slice also passed",
+    "mcp_read_boundaries": "46 passed, 4 warnings, 4.74s",
+    "public_error_hook": "6 passed, 3 warnings, 3.37s",
+    "pre_commit": "required clean all-files rerun before commit",
+    "push_hook": "pending",
+    "remote_ci": "pending for new head"
+  }
+}

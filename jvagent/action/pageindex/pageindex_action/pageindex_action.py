@@ -21,6 +21,7 @@ from jvspatial.exceptions import DatabaseError
 from jvagent.action.base import Action
 from jvagent.core.public_url import get_public_base_url
 from jvagent.env import get_jvagent_jvforge_base_url
+from jvagent.harness.completion_tool import CompleteText
 from jvagent.harness.contracts import IdempotencyClass
 from jvagent.tooling.tool_decorator import collect_tools, tool
 
@@ -33,7 +34,6 @@ from ..prompts import (
     DIRECTIVE_TEMPLATE_PLAIN,
 )
 from ..webhook_auth import (
-    ALLOWED_WEBHOOK_ENDPOINT_GLOB,
     PAGEINDEX_WEBHOOK_ROUTE_PREFIX,
     WEBHOOK_PERMISSION,
     get_or_create_system_user,
@@ -110,6 +110,27 @@ class PageIndexAction(Action):
         default=None,
         description="API key row id for LLM webhook auth",
     )
+    native_webhook_completion: bool = attribute(
+        default=False, description="Enable accounted native jvforge completion"
+    )
+    native_search_model: str = attribute(
+        default="",
+        description="SDK model for native tree search; empty uses the chat model",
+    )
+    native_callback_model: str = attribute(
+        default="",
+        description="SDK model for native callbacks; empty uses the chat model",
+    )
+    native_ingestion_model: str = attribute(
+        default="",
+        description="SDK model for native ingestion; empty uses the chat model",
+    )
+    native_markdown_ingestion: bool = attribute(
+        default=False, description="Enable accounted local Markdown ingestion"
+    )
+    native_pdf_ingestion: bool = attribute(
+        default=False, description="Enable accounted local classic PDF ingestion"
+    )
     metadata_filter: Optional[Dict[str, Any]] = attribute(
         default=None,
         description="Optional key-value filter to narrow search by document metadata (not for access control; use access_control instead)",
@@ -159,7 +180,7 @@ class PageIndexAction(Action):
                 not regenerate
                 and self.webhook_url
                 and "?api_key=" in self.webhook_url
-                and self.webhook_url.startswith(expected_url_base)
+                and self.webhook_url.partition("?")[0] == expected_url_base
             ):
                 if allowed_ip is not None and self.webhook_api_key_id:
                     try:
@@ -194,7 +215,7 @@ class PageIndexAction(Action):
                 permissions=[WEBHOOK_PERMISSION],
                 expires_in_days=None,
                 allowed_ips=[allowed_ip] if allowed_ip else [],
-                allowed_endpoints=[ALLOWED_WEBHOOK_ENDPOINT_GLOB],
+                allowed_endpoints=[f"/api/{PAGEINDEX_WEBHOOK_ROUTE_PREFIX}/{agent_id}"],
                 key_prefix="jv_",
             )
 
@@ -352,6 +373,7 @@ class PageIndexAction(Action):
         retrieval_excerpt_source: Optional[Any] = None,
         visitor: Optional[InteractWalker] = None,
         access_control: Optional[bool] = None,
+        complete: CompleteText | None = None,
     ) -> List[Dict[str, Any]]:
         from ..config import (
             initialize_pageindex_database,
@@ -368,13 +390,20 @@ class PageIndexAction(Action):
         )
         from ..retrieval import search_documents
 
+        cfg = self.config or {}
+        resolved_strategy = strategy or cfg.get("strategy") or self.strategy
+        if complete is None and resolved_strategy == "tree_search":
+            from jvagent.core.execution_owner import uses_native_harness
+
+            agent = await self.get_agent()
+            if agent is not None and await uses_native_harness(agent):
+                raise ValidationError(
+                    "Native PageIndex tree search requires an accounted completion"
+                )
+
         app = await self.get_app()
         app_id = getattr(app, "app_id", None) if app else None
         initialize_pageindex_database(app_id=app_id)
-
-        cfg = self.config or {}
-
-        resolved_strategy = strategy or cfg.get("strategy") or self.strategy
         resolved_limit = (
             limit if limit is not None else (cfg.get("limit") or self.limit)
         )
@@ -447,7 +476,11 @@ class PageIndexAction(Action):
             model if model is not None else (cfg.get("model") or self.model)
         )
 
-        model_action = await self.get_model_action(required=False)
+        model_action = (
+            await self.get_model_action(required=False)
+            if complete is None and resolved_strategy == "tree_search"
+            else None
+        )
         prev_model_action = None
         try:
             if model_action:
@@ -494,6 +527,7 @@ class PageIndexAction(Action):
                 include_references=resolved_include_refs,
                 only_enabled=resolved_only_enabled,
                 include=include,
+                **({"complete": complete} if complete is not None else {}),
             )
 
         finally:
@@ -556,6 +590,14 @@ class PageIndexAction(Action):
         ocr: bool = False,
         docling_ocr_engine: Optional[str] = None,
     ) -> Dict[str, Any]:
+        from jvagent.core.execution_owner import uses_native_harness
+
+        agent = await self.get_agent()
+        if agent is not None and await uses_native_harness(agent):
+            raise ValidationError(
+                "Native PageIndex ingestion requires an authenticated upload or a configured Drive sync Action"
+            )
+
         from ..documents import assimilate_document
         from ..llm_bridge import (
             get_pageindex_model_action,
@@ -607,6 +649,11 @@ class PageIndexAction(Action):
         # signature deriver does not emit, so we re-add it here.
         tools = collect_tools(self)
         for t in tools:
+            if t.name == "pageindex__search":
+                # Only direct graph retrieval is qualified as a read capability.
+                # Tree/walker strategies may perform additional model execution.
+                strategy = (self.config or {}).get("strategy") or self.strategy
+                t.effect_class = "read" if strategy == "direct" else None
             if t.name == "pageindex__assimilate":
                 t.parameters_schema["additionalProperties"] = False
                 # ``doc`` is runtime-optional (the body coalesces aliases like
@@ -624,7 +671,8 @@ class PageIndexAction(Action):
         self,
         query: Annotated[str, "Search query."],
         doc_name: Annotated[
-            Optional[str], "Restrict search to a specific document name."
+            Optional[str],
+            "Exact known document name; omit when uncertain. Restricts search to that document.",
         ] = None,
         limit: Annotated[
             Optional[int],
@@ -633,11 +681,22 @@ class PageIndexAction(Action):
         **kwargs: Any,
     ) -> str:
         """Search the internal knowledge base for documents matching a query."""
+        query = query or kwargs.get("q") or kwargs.get("text") or ""
+        return await self._search_tool(query, doc_name=doc_name, limit=limit)
+
+    async def _search_tool(
+        self,
+        query: str,
+        *,
+        doc_name: str | None = None,
+        limit: int | None = None,
+        complete: CompleteText | None = None,
+        strategy: str | None = None,
+    ) -> str:
         import json
 
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
-        query = query or kwargs.get("q") or kwargs.get("text") or ""
         if not query:
             return json.dumps(
                 {"error": "no query provided: pass it in 'query'"}, indent=2
@@ -656,6 +715,8 @@ class PageIndexAction(Action):
             doc_name=doc_name,
             visitor=visitor,
             metadata_filter=self.metadata_filter,
+            **({"strategy": strategy} if strategy is not None else {}),
+            **({"complete": complete} if complete is not None else {}),
         )
         if not results:
             return "No matching documents found."
@@ -752,7 +813,7 @@ class PageIndexAction(Action):
         ``code_execution__bash`` and ``file_interface__*`` use.
         """
         from jvagent.action.file_interface import _core
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         from ..documents import DOC_TEXT_EXTENSIONS
 
@@ -803,7 +864,7 @@ class PageIndexAction(Action):
         fits in the orchestrator observation budget."""
         import json
 
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
 
         visitor = get_tool_visitor()
         result = await self.list_documents(

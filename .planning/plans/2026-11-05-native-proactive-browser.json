@@ -1,0 +1,477 @@
+{
+  "utc_qualification": {
+  "task": {
+    "session_id": "sess_a93dc3ee5e884e13",
+    "task_id": "task_5791f24050d2",
+    "conversation_id": "n.Conversation.5289bcef4a0944a6aee5786c"
+  },
+  "dispatch": {
+    "phase": "utc-due-dispatch-after-restart",
+    "status": 200,
+    "body": {
+      "tick": {
+        "dispatched": 1,
+        "timestamp": "2026-11-05T20:48:07.577262+00:00"
+      },
+      "task_status": "completed"
+    },
+    "duration_ms": 3734.800000011921,
+    "observed_at": "2026-11-05T20:48:11.279Z"
+  },
+  "duplicate": {
+    "phase": "utc-duplicate-tick",
+    "status": 200,
+    "body": {
+      "tick": {
+        "dispatched": 0,
+        "timestamp": "2026-11-05T20:48:34.470341+00:00"
+      },
+      "task_status": "completed"
+    },
+    "duration_ms": 333.69999998807907,
+    "observed_at": "2026-11-05T20:48:34.752Z"
+  }
+},
+  "fixture": {
+    "setup": {
+      "status": 200,
+      "body": {
+        "session_id": "sess_2ef12220536e4143",
+        "task_id": "task_0887384bea1b",
+        "conversation_id": "n.Conversation.9f55afd2b8de47b9a0cf6dd4"
+      },
+      "duration_ms": 73.09999999403954
+    },
+    "requests": [
+      {
+        "phase": "dispatch",
+        "status": 200,
+        "body": {
+          "tick": {
+            "dispatched": 0,
+            "timestamp": "2026-11-05T16:38:09.382815+00:00"
+          },
+          "task_status": "failed"
+        },
+        "observed_at": "2026-11-05T20:38:15.181Z"
+      },
+      {
+        "phase": "repaired-dispatch",
+        "status": 200,
+        "body": {
+          "tick": {
+            "dispatched": 1,
+            "timestamp": "2026-11-05T16:40:37.113635+00:00"
+          },
+          "task_status": "completed"
+        },
+        "duration_ms": 4549.700000017881,
+        "observed_at": "2026-11-05T20:40:41.640Z"
+      },
+      {
+        "phase": "duplicate-tick",
+        "status": 200,
+        "body": {
+          "tick": {
+            "dispatched": 0,
+            "timestamp": "2026-11-05T16:41:07.010329+00:00"
+          },
+          "task_status": "completed"
+        },
+        "duration_ms": 309.30000001192093,
+        "observed_at": "2026-11-05T20:41:07.286Z"
+      },
+      {
+        "phase": "forged-client-task",
+        "status": 422,
+        "body": {
+          "error_code": "validation_error",
+          "message": "utterance is required and cannot be empty",
+          "details": {
+            "utterance": ""
+          },
+          "timestamp": "2026-11-05T20:41:08.669070+00:00",
+          "path": "/api/agents/n.Agent.c3d49de049264acbb24b39c0/interact"
+        },
+        "duration_ms": 26.19999998807907
+      }
+    ],
+    "secondSetup": {
+      "status": 200,
+      "body": {
+        "session_id": "sess_a93dc3ee5e884e13",
+        "task_id": "task_ab5c276ba733",
+        "conversation_id": "n.Conversation.5289bcef4a0944a6aee5786c"
+      }
+    }
+  },
+  "chatRequests": [
+    {
+      "status": 200,
+      "started_at": "2026-11-05T20:40:09.659Z",
+      "frames": [
+        {
+          "type": "start",
+          "interaction_id": "n.Interaction.cc2c9a7c4dbd49f5aa9fd473",
+          "session_id": "sess_a93dc3ee5e884e13",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-5b81d92671c34848bda37f61100a37c6",
+            "session_id": "sess_a93dc3ee5e884e13",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.cc2c9a7c4dbd49f5aa9fd473",
+            "message_type": "adhoc",
+            "content": "READY",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T16:40:13.074082"
+          }
+        },
+        {
+          "type": "message",
+          "message": {
+            "id": "o.ResponseMessage.corr-5b81d92671c34848bda37f61100a37c6",
+            "session_id": "sess_a93dc3ee5e884e13",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "interaction_id": "n.Interaction.cc2c9a7c4dbd49f5aa9fd473",
+            "message_type": "final",
+            "content": "",
+            "channel": "default",
+            "category": "user",
+            "thought_type": null,
+            "segment_id": null,
+            "metadata": {},
+            "timestamp": "2026-11-05T16:40:13.083013"
+          }
+        },
+        {
+          "type": "final",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "session_id": "sess_a93dc3ee5e884e13",
+          "response": "READY",
+          "interaction": {
+            "id": "n.Interaction.cc2c9a7c4dbd49f5aa9fd473",
+            "utterance": "NATIVE-PROACTIVE-CHAT-CHECK: Reply exactly READY.",
+            "response": "READY",
+            "actions": [
+              "NativeHarnessAction"
+            ],
+            "directives": [],
+            "tasks": [],
+            "parameters": [],
+            "events": [
+              {
+                "action_name": "harness",
+                "content": "correlation_id=corr-5b81d92671c34848bda37f61100a37c6"
+              }
+            ],
+            "observability_metrics": [
+              {
+                "event_type": "model_call",
+                "data": {
+                  "native_receipt_key": "spend:default|run|*|corr-5b81d92671c34848bda37f61100a37c6:1",
+                  "native_run_id": "corr-5b81d92671c34848bda37f61100a37c6",
+                  "native_step_index": 1,
+                  "native_spend_receipt": true,
+                  "model": "gpt-4.1-2025-04-14",
+                  "provider": "openai",
+                  "native_receipt_origin": "spend_snapshot",
+                  "usage_status": "provider_reported",
+                  "usage": {
+                    "prompt_tokens": 1552,
+                    "completion_tokens": 3,
+                    "total_tokens": 1555,
+                    "cached_prompt_tokens": 0,
+                    "cache_write_tokens": 0
+                  },
+                  "cost_record": {
+                    "amount": 0.003128,
+                    "currency": "USD",
+                    "source": "pydantic_ai_pricing",
+                    "estimated": true,
+                    "pricing_version": null
+                  }
+                }
+              },
+              {
+                "event_type": "model_attempt",
+                "data": {
+                  "native_run_id": "corr-5b81d92671c34848bda37f61100a37c6",
+                  "native_step_index": 1,
+                  "native_attempt_origin": "step_events_v1",
+                  "outcome": "completed",
+                  "usage_status": "receipt_recorded",
+                  "started_at": "2026-11-05T20:40:10.960673+00:00",
+                  "duration": 1.932153,
+                  "duration_scope": "sdk_model_request",
+                  "completed_at": "2026-11-05T20:40:12.892826+00:00"
+                }
+              }
+            ],
+            "usage": {
+              "prompt_tokens": 1552,
+              "completion_tokens": 3,
+              "total_tokens": 1555,
+              "cached_prompt_tokens": 0,
+              "cache_write_tokens": 0,
+              "model_call_count": 1,
+              "model_attempt_count": 1,
+              "failed_model_attempt_count": 0,
+              "cancelled_model_attempt_count": 0,
+              "model_attempt_duration_seconds": 1.932,
+              "unmeasured_model_attempt_count": 0,
+              "estimated_cost_usd": 0.003128,
+              "reported_cost_usd": 0,
+              "litellm_cost_usd": 0,
+              "unknown_cost_call_count": 0,
+              "total_cost_usd": 0.003128,
+              "total_duration_seconds": 1.932,
+              "last_updated": "2026-11-05T20:40:13.083310+00:00"
+            },
+            "streamed": true
+          },
+          "report": [
+            {
+              "interaction_created": {
+                "interaction_id": "n.Interaction.cc2c9a7c4dbd49f5aa9fd473",
+                "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                "session_id": "sess_a93dc3ee5e884e13"
+              }
+            },
+            {
+              "interact_actions_found": {
+                "count": 1,
+                "actions": [
+                  "native_harness"
+                ]
+              }
+            },
+            {
+              "action_executed": {
+                "action": "native_harness",
+                "weight": 0,
+                "class": "NativeHarnessAction"
+              }
+            }
+          ]
+        }
+      ],
+      "duration_ms": 3581.4000000059605
+    },
+    {
+      "status": 422,
+      "started_at": "2026-11-05T20:41:08.671Z",
+      "frames": [],
+      "duration_ms": 26.100000023841858
+    }
+  ],
+  "visible_before_reload": "NATIVE-PROACTIVE-CHAT-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 1.9s · 1.6 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "followup": {
+    "requests": [
+      {
+        "status": 200,
+        "started_at": "2026-11-05T20:43:17.520Z",
+        "frames": [
+          {
+            "type": "start",
+            "interaction_id": "n.Interaction.d0a2da588348436593bfbe7e",
+            "session_id": "sess_a93dc3ee5e884e13",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-1f492303b80040b9889d2849ab9ac650",
+              "session_id": "sess_a93dc3ee5e884e13",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.d0a2da588348436593bfbe7e",
+              "message_type": "adhoc",
+              "content": "The scheduled lookup for REHEARSAL-47 found that it is in room Cedar and starts at 14:30.",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T16:43:20.197029"
+            }
+          },
+          {
+            "type": "message",
+            "message": {
+              "id": "o.ResponseMessage.corr-1f492303b80040b9889d2849ab9ac650",
+              "session_id": "sess_a93dc3ee5e884e13",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "interaction_id": "n.Interaction.d0a2da588348436593bfbe7e",
+              "message_type": "final",
+              "content": "",
+              "channel": "default",
+              "category": "user",
+              "thought_type": null,
+              "segment_id": null,
+              "metadata": {},
+              "timestamp": "2026-11-05T16:43:20.208674"
+            }
+          },
+          {
+            "type": "final",
+            "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+            "session_id": "sess_a93dc3ee5e884e13",
+            "response": "The scheduled lookup for REHEARSAL-47 found that it is in room Cedar and starts at 14:30.",
+            "interaction": {
+              "id": "n.Interaction.d0a2da588348436593bfbe7e",
+              "utterance": "What room and start time did the scheduled REHEARSAL-47 lookup find? Use the result already in this conversation; do not perform another lookup.",
+              "response": "The scheduled lookup for REHEARSAL-47 found that it is in room Cedar and starts at 14:30.",
+              "actions": [
+                "NativeHarnessAction"
+              ],
+              "directives": [],
+              "tasks": [
+                {
+                  "id": "task_ab5c276ba733",
+                  "title": "NATIVE-PROACTIVE-CHECK: Look up REHEARSAL-47 and tell me its actual room and start time.",
+                  "description": "NATIVE-PROACTIVE-CHECK: Look up REHEARSAL-47 and tell me its actual room and start time.",
+                  "status": "completed",
+                  "created_at": "2026-11-05T20:40:36.855006+00:00",
+                  "updated_at": "2026-11-05T20:40:41.627584+00:00",
+                  "completed_at": "2026-11-05T20:40:41.627584+00:00",
+                  "task_type": "PROACTIVE",
+                  "owner_action": "qualification_fixture",
+                  "data": {
+                    "skill": "summary",
+                    "result": "REHEARSAL-47 is scheduled in room Cedar and starts at 14:30.",
+                    "channel": "default",
+                    "context": "",
+                    "priority": 0,
+                    "directive": "NATIVE-PROACTIVE-CHECK: Look up REHEARSAL-47 and tell me its actual room and start time.",
+                    "not_after": null,
+                    "not_before": null,
+                    "trigger_on": "schedule",
+                    "max_attempts": 3,
+                    "pinned_tools": [],
+                    "spec_version": 2,
+                    "trigger_mood": null,
+                    "attempt_count": 0,
+                    "requires_tasks": [],
+                    "trigger_keyword": null,
+                    "dispatch_claimed_at": "2026-11-05T20:40:37.340404+00:00"
+                  },
+                  "steps": [],
+                  "blocked_on": [],
+                  "resumes": null,
+                  "order": 0,
+                  "seed": {},
+                  "snapshot": {},
+                  "blocked": false
+                }
+              ],
+              "parameters": [],
+              "events": [
+                {
+                  "action_name": "harness",
+                  "content": "correlation_id=corr-1f492303b80040b9889d2849ab9ac650"
+                }
+              ],
+              "observability_metrics": [
+                {
+                  "event_type": "model_call",
+                  "data": {
+                    "native_receipt_key": "spend:default|run|*|corr-1f492303b80040b9889d2849ab9ac650:1",
+                    "native_run_id": "corr-1f492303b80040b9889d2849ab9ac650",
+                    "native_step_index": 1,
+                    "native_spend_receipt": true,
+                    "model": "gpt-4.1-2025-04-14",
+                    "provider": "openai",
+                    "native_receipt_origin": "spend_snapshot",
+                    "usage_status": "provider_reported",
+                    "usage": {
+                      "prompt_tokens": 2735,
+                      "completion_tokens": 27,
+                      "total_tokens": 2762,
+                      "cached_prompt_tokens": 1408,
+                      "cache_write_tokens": 0
+                    },
+                    "cost_record": {
+                      "amount": 0.003574,
+                      "currency": "USD",
+                      "source": "pydantic_ai_pricing",
+                      "estimated": true,
+                      "pricing_version": null
+                    }
+                  }
+                },
+                {
+                  "event_type": "model_attempt",
+                  "data": {
+                    "native_run_id": "corr-1f492303b80040b9889d2849ab9ac650",
+                    "native_step_index": 1,
+                    "native_attempt_origin": "step_events_v1",
+                    "outcome": "completed",
+                    "usage_status": "receipt_recorded",
+                    "started_at": "2026-11-05T20:43:17.970703+00:00",
+                    "duration": 2.05579,
+                    "duration_scope": "sdk_model_request",
+                    "completed_at": "2026-11-05T20:43:20.026493+00:00"
+                  }
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 2735,
+                "completion_tokens": 27,
+                "total_tokens": 2762,
+                "cached_prompt_tokens": 1408,
+                "cache_write_tokens": 0,
+                "model_call_count": 1,
+                "model_attempt_count": 1,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.056,
+                "unmeasured_model_attempt_count": 0,
+                "estimated_cost_usd": 0.003574,
+                "reported_cost_usd": 0,
+                "litellm_cost_usd": 0,
+                "unknown_cost_call_count": 0,
+                "total_cost_usd": 0.003574,
+                "total_duration_seconds": 2.056,
+                "last_updated": "2026-11-05T20:43:20.209110+00:00"
+              },
+              "streamed": true
+            },
+            "report": [
+              {
+                "interaction_created": {
+                  "interaction_id": "n.Interaction.d0a2da588348436593bfbe7e",
+                  "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+                  "session_id": "sess_a93dc3ee5e884e13"
+                }
+              },
+              {
+                "interact_actions_found": {
+                  "count": 1,
+                  "actions": [
+                    "native_harness"
+                  ]
+                }
+              },
+              {
+                "action_executed": {
+                  "action": "native_harness",
+                  "weight": 0,
+                  "class": "NativeHarnessAction"
+                }
+              }
+            ]
+          }
+        ],
+        "duration_ms": 2818.9000000059605
+      }
+    ],
+    "visible_after_followup": "NATIVE-PROACTIVE-CHAT-CHECK: Reply exactly READY.\n\nREADY\n\ngpt-4.1-2025-04-14 · 1 attempt · 1.6k tokens · 1.9s · 1.6 tok/s\n\nWhat room and start time did the scheduled REHEARSAL-47 lookup find? Use the result already in this conversation; do not perform another lookup.\n\nThe scheduled lookup for REHEARSAL-47 found that it is in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 1 attempt · 2.8k tokens · 2.1s · 13.1 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+    "observed_at": "2026-11-05T20:44:23.829Z"
+  }
+}

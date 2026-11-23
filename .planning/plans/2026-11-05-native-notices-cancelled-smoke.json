@@ -1,0 +1,191 @@
+{
+  "parent_revision": "git-commit:67e434d001be1473621da7c7f71e92ac58d9b475",
+  "source_blobs": {
+    "tests/harness/native/test_blocked_history.py": "git-blob:41041bde68b8091ff97d40440e0a3077d64828f0",
+    "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+    "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+    "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+    "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+    "jvagent/harness/accounting.py": "git-blob:7609d626699ca481803e37b54905bd47f7824c6a",
+    "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+    "tests/harness/native/test_accounting.py": "git-blob:0204dd4a6c2ba2a29ba0c1dd6012c4b2abd1eb71",
+    "jvagent/action/interview/engine.py": "git-blob:7b7581468efc51542c1f1b2c2f90a651092a2081",
+    "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+    "tests/harness/native/test_interview_branches.py": "git-blob:f83ae80314a5297143cf432722525fea79404756",
+    "tests/action/interview/test_native_branch_admission.py": "git-blob:e172a4dad0ec18f4c3d03e7707a4f08b3e3f7b75",
+    "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+    "jvagent/harness/native.py": "git-blob:9d99ff379919f3dda3a1968da41c60d4610f1562",
+    "jvagent/action/interview/native.py": "git-blob:6b9b1ef322c80f4760ba808226179c0ac7367947",
+    "jvagent/action/interview/native_skill/SKILL.md": "git-blob:a667624ad24050775e30c3134de7a66b1ee7fed5",
+    "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:d8a5c8bf6db12d6013ce27ed4dce5d6c156e7101",
+    "tests/harness/native/test_interview.py": "git-blob:af45ec338dc14aeaca7acc1dab1276e128ccc2f2",
+    "tests/harness/native/test_postgres_store.py": "git-blob:0d6e24c197ce79131161ac8cf5bda3999f09cb6a"
+  },
+  "phase": "cancelled",
+  "observed_at": "2026-11-05T19:13:20.425760+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "database": "jvagent_native_host_context",
+    "model": "openai:gpt-4.1",
+    "api_port": 8136,
+    "ui_port": 3136,
+    "public_entrypoint": true,
+    "skill": "---\nname: conversation\ndescription: Collect and confirm a premium or standard membership request\nextends: action:jvagent/interview\ninterview:\n  title: Membership request\n  summary: Collect and confirm a membership selection without external effects\n  confirm: manual\n  fields:\n    - key: tier\n      prompt: Premium or standard membership?\n      required: true\n      validator: text\n      branches:\n        - when: {op: equals, value: premium}\n          goto: premium_note\n      else: standard_note\n    - key: premium_note\n      prompt: What premium detail should I record?\n      required: true\n      validator: text\n      else: email\n    - key: standard_note\n      prompt: What standard detail should I record?\n      required: true\n      validator: text\n      else: email\n    - key: email\n      prompt: What email address should I record?\n      required: true\n      validator: email\n---\nUse the inherited procedure to collect and review the reachable membership fields.\nNormalize tier to lowercase premium or standard. Store explicit supplied details\nusing interview__set_fields. A correction can change the branch: follow the tool's\nreachable fields and pruned_fields, preserve the already stored shared email, and\nshow a fresh review before waiting for a new confirmation. Do not complete against\nan earlier review of different values. Do not claim to register, contact, or charge\nanyone; this is an isolated intake demonstration with no external effects.\n",
+    "patched_execution_functions": false
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.fd184c11b92946a380562c26",
+      "session_id": "sess_b4d8f23b10cf49b7",
+      "interview": null,
+      "tasks": [],
+      "budget_counters": {
+        "default|conversation|*|sess_b4d8f23b10cf49b7": {
+          "spent": {
+            "usd": "0",
+            "tokens": 0,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-366c82ab63d548048a5f71d71b9250ad": {
+          "spent": {
+            "usd": "0",
+            "tokens": 0,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        }
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.33cd008ec8b94b66820d34fc",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_b4d8f23b10cf49b7",
+      "utterance": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.",
+      "response": null,
+      "native_run": {
+        "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+        "status": "cancelled",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-05T19:13:10.199631+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 1,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 1,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 1
+      },
+      "started_at": "2026-11-05T15:13:00.299782",
+      "completed_at": null,
+      "closed": false,
+      "emitted": false,
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T19:13:01.568800Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_b4d8f23b10cf49b7",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T19:13:01.597375Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_b4d8f23b10cf49b7",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "run_failed",
+          "error": "CancelledError()",
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T19:13:10.149345Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_b4d8f23b10cf49b7",
+          "idempotency_key": "2:0:run_failed:"
+        }
+      ],
+      "effects": []
+    }
+  ],
+  "module_observation": {
+    "source_blobs": {
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:7609d626699ca481803e37b54905bd47f7824c6a",
+      "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/action/interview/engine.py": "git-blob:7b7581468efc51542c1f1b2c2f90a651092a2081",
+      "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+      "jvagent/harness/native.py": "git-blob:9d99ff379919f3dda3a1968da41c60d4610f1562",
+      "jvagent/harness/skill_assets.py": "git-blob:6cd00c8a67ed378e3c84bdb15c87047bb2fb22a0",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+      "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+      "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+      "jvagent/action/interview/native.py": "git-blob:6b9b1ef322c80f4760ba808226179c0ac7367947",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:a667624ad24050775e30c3134de7a66b1ee7fed5",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:d8a5c8bf6db12d6013ce27ed4dce5d6c156e7101"
+    },
+    "process_id": 75073,
+    "observed_at": "2026-11-05T19:12:47.342069+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T19:13:20.350306+00:00"
+  },
+  "snapshot_content_hash_encoding": "sha256-prefixed display; persisted SDK values unchanged"
+}

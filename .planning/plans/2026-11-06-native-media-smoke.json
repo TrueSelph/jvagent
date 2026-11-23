@@ -1,0 +1,763 @@
+{
+  "observed_at": "2026-11-06T18:04:19.158578+00:00",
+  "parent_revision": "git-commit:7e31bf198292707c084c5fdf9a485326db9a60b1",
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-media-smoke",
+    "backend": 8163,
+    "ui": 3140,
+    "graph": "isolated PostgreSQL; same node and edge collections for SDK records and media",
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    },
+    "upload_method": "Browser-generated synthetic File objects through actual composer change handler"
+  },
+  "runtime_observer": {
+    "process_id": 44201,
+    "observed_at": "2026-11-06T18:04:18.905843+00:00",
+    "source_blobs": {
+      "jvagent/harness/inputs.py": "git-blob:4820e61fdf056956a1abe67d5e25b9e1ceac7145",
+      "jvagent/harness/media_store.py": "git-blob:2e7df716c8eeec098e1de9b52b9d59094f61ff83",
+      "jvagent/harness/recovery.py": "git-blob:dcee4a3783d49990951219dde0bbaade250e03bd",
+      "jvagent/harness/step_store.py": "git-blob:4acd9a7709148c6321f05bc36dd9436c3705b48a",
+      "jvagent/memory/native_media.py": "git-blob:524c034e99d62e0f45fca627a59452d619b47797"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "runtime_epochs": [
+    {
+      "process_id": 42256,
+      "observed_at": "2026-11-06T17:35:12.943342+00:00",
+      "source_blobs": {
+        "jvagent/harness/inputs.py": "git-blob:4820e61fdf056956a1abe67d5e25b9e1ceac7145",
+        "jvagent/harness/media_store.py": "git-blob:18dabe5bda2032e9f3822293445f219faac4c305",
+        "jvagent/harness/recovery.py": "git-blob:dcee4a3783d49990951219dde0bbaade250e03bd",
+        "jvagent/harness/step_store.py": "git-blob:4acd9a7709148c6321f05bc36dd9436c3705b48a",
+        "jvagent/memory/native_media.py": "git-blob:524c034e99d62e0f45fca627a59452d619b47797"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 42602,
+      "observed_at": "2026-11-06T17:38:52.629147+00:00",
+      "source_blobs": {
+        "jvagent/harness/inputs.py": "git-blob:4820e61fdf056956a1abe67d5e25b9e1ceac7145",
+        "jvagent/harness/media_store.py": "git-blob:7d3dfbb589ef7cb6d05401c8d7c85082df0f0d48",
+        "jvagent/harness/recovery.py": "git-blob:dcee4a3783d49990951219dde0bbaade250e03bd",
+        "jvagent/harness/step_store.py": "git-blob:4acd9a7709148c6321f05bc36dd9436c3705b48a",
+        "jvagent/memory/native_media.py": "git-blob:524c034e99d62e0f45fca627a59452d619b47797"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 42959,
+      "observed_at": "2026-11-06T17:42:38.644003+00:00",
+      "source_blobs": {
+        "jvagent/harness/inputs.py": "git-blob:4820e61fdf056956a1abe67d5e25b9e1ceac7145",
+        "jvagent/harness/media_store.py": "git-blob:7d3dfbb589ef7cb6d05401c8d7c85082df0f0d48",
+        "jvagent/harness/recovery.py": "git-blob:dcee4a3783d49990951219dde0bbaade250e03bd",
+        "jvagent/harness/step_store.py": "git-blob:4acd9a7709148c6321f05bc36dd9436c3705b48a",
+        "jvagent/memory/native_media.py": "git-blob:524c034e99d62e0f45fca627a59452d619b47797"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 44201,
+      "observed_at": "2026-11-06T17:54:41.647930+00:00",
+      "source_blobs": {
+        "jvagent/harness/inputs.py": "git-blob:4820e61fdf056956a1abe67d5e25b9e1ceac7145",
+        "jvagent/harness/media_store.py": "git-blob:2e7df716c8eeec098e1de9b52b9d59094f61ff83",
+        "jvagent/harness/recovery.py": "git-blob:dcee4a3783d49990951219dde0bbaade250e03bd",
+        "jvagent/harness/step_store.py": "git-blob:4acd9a7709148c6321f05bc36dd9436c3705b48a",
+        "jvagent/memory/native_media.py": "git-blob:524c034e99d62e0f45fca627a59452d619b47797"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.da4b8229ac6d4051bf796fd9",
+      "scenario": "large_file_read",
+      "request_outcome": "passed",
+      "utterance": "Read both attachments. Return only the image code, the colored shape's color, and the text note's header reference. Use the actual files.",
+      "response": "Image code: LANTERN-62  \nColored shape's color: Blue  \nText note's header reference: MARIGOLD-31",
+      "started_at": "2026-11-06T13:39:55.523233-04:00",
+      "completed_at": "2026-11-06T13:39:59.918010-04:00",
+      "duration_seconds": 4.394777,
+      "run_status": "delivered",
+      "history_source": {},
+      "worker_pid": "42602",
+      "sdk_digest": "sha256:8e9451870012dc76692d014d2173f4c30502e50457403e9d3cb9ade1d899a677",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 14946,
+      "usage": {
+        "last_updated": "2026-11-06T17:39:59.918055+00:00",
+        "total_tokens": 14791,
+        "prompt_tokens": 14762,
+        "total_cost_usd": 0.029756,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 29,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.029756,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.377,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.377,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 14791,
+            "prompt_tokens": 14762,
+            "completion_tokens": 29,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.029756,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-dd2683700c3f42c2832ba880caa9bc49",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-dd2683700c3f42c2832ba880caa9bc49:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "sdk_effects": []
+    },
+    {
+      "id": "n.Interaction.e7b193ef969d4593ab500674",
+      "scenario": "retained_partial_restart_caption_answer",
+      "request_outcome": "retained_partial_caption_failure",
+      "utterance": "After the backend restart, read the original files again. What exact two words are on the image's white label, and what final reference appears at the very end of the text note? These were not in your previous answer.",
+      "response": "The exact two words on the image's white label are: LANTERN-62\n\nThe final reference at the very end of the text note is: WILLOW-94",
+      "started_at": "2026-11-06T13:43:06.122187-04:00",
+      "completed_at": "2026-11-06T13:43:12.334452-04:00",
+      "duration_seconds": 6.212265,
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-dd2683700c3f42c2832ba880caa9bc49"
+      },
+      "worker_pid": "42959",
+      "sdk_digest": "sha256:ab3c726af1d8b7692a42fe357b5a76d28e66685ec2761fbfa302ee21e651f0f6",
+      "snapshot_count": 6,
+      "serialized_step_bytes": 53419,
+      "usage": {
+        "last_updated": "2026-11-06T17:43:12.334529+00:00",
+        "total_tokens": 29794,
+        "prompt_tokens": 29740,
+        "total_cost_usd": 0.015752,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 54,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.015752,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 29440,
+        "total_duration_seconds": 4.752,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 4.752,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 14858,
+            "prompt_tokens": 14842,
+            "completion_tokens": 16,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 14720
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.007732,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-639305216910413c85a067269a42de1b",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-639305216910413c85a067269a42de1b:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 14936,
+            "prompt_tokens": 14898,
+            "completion_tokens": 38,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 14720
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00802,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-639305216910413c85a067269a42de1b",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-639305216910413c85a067269a42de1b:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "sdk_effects": [
+        {
+          "run_id": "corr-639305216910413c85a067269a42de1b",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "load_capability",
+          "started_at": "2026-11-06T17:43:10.284947Z",
+          "tool_call_id": "call_qXtm2dKRaGaFlUJe8qsGEyKn",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.218344f181744c4a882ab51f",
+      "scenario": "clarified_caption",
+      "request_outcome": "passed",
+      "utterance": "Look specifically at the white box on the RIGHT of the triangle, not the large code banner at the top. What exact two words describe the shape in that right-hand box? Return those two words only.",
+      "response": "Blue triangle",
+      "started_at": "2026-11-06T13:44:50.353310-04:00",
+      "completed_at": "2026-11-06T13:44:53.426477-04:00",
+      "duration_seconds": 3.073167,
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-639305216910413c85a067269a42de1b"
+      },
+      "worker_pid": "42959",
+      "sdk_digest": "sha256:409c60742f05906af97405b6d0d40db4c1fe3b5357a13353456f3351afbd6e20",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 38138,
+      "usage": {
+        "last_updated": "2026-11-06T17:44:53.426509+00:00",
+        "total_tokens": 14987,
+        "prompt_tokens": 14983,
+        "total_cost_usd": 0.007726,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 4,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.007726,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 14848,
+        "total_duration_seconds": 2.586,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.586,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 14987,
+            "prompt_tokens": 14983,
+            "completion_tokens": 4,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 14848
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.007726,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-52f6214660d44e2b825747f13c71066b",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-52f6214660d44e2b825747f13c71066b:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "sdk_effects": []
+    },
+    {
+      "id": "n.Interaction.ac1f6a4defcb4924bf88be5b",
+      "scenario": "missing_payload_refusal",
+      "request_outcome": "expected_zero_model_refusal",
+      "utterance": "Using the original files, give the image code and final text reference again.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "started_at": "2026-11-06T13:46:48.688901-04:00",
+      "completed_at": "2026-11-06T13:46:48.742226-04:00",
+      "duration_seconds": 0.053325,
+      "run_status": "blocked",
+      "history_source": null,
+      "worker_pid": null,
+      "sdk_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "snapshot_count": 0,
+      "serialized_step_bytes": 2,
+      "usage": {
+        "last_updated": "2026-11-06T17:46:48.742253+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [],
+      "sdk_effects": []
+    },
+    {
+      "id": "n.Interaction.c385a74ebe3d402e89086ac0",
+      "scenario": "new_turn_after_exact_payload_restoration",
+      "request_outcome": "passed",
+      "utterance": "The original files have been restored. Read them afresh and give the image code, the right-hand caption, and the final reference from the text note.",
+      "response": "Image code: LANTERN-62  \nRight-hand caption: Blue triangle  \nFinal reference: WILLOW-94",
+      "started_at": "2026-11-06T13:48:19.710651-04:00",
+      "completed_at": "2026-11-06T13:48:22.599622-04:00",
+      "duration_seconds": 2.888971,
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-52f6214660d44e2b825747f13c71066b",
+        "blocked_interaction_ids": [
+          "n.Interaction.ac1f6a4defcb4924bf88be5b"
+        ]
+      },
+      "worker_pid": "42959",
+      "sdk_digest": "sha256:f2b0dc9c0172ca020353e1a20354d518acaa59f2a3a1bd614212745e7700cd8f",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 49350,
+      "usage": {
+        "last_updated": "2026-11-06T17:48:22.599657+00:00",
+        "total_tokens": 15098,
+        "prompt_tokens": 15072,
+        "total_cost_usd": 0.00808,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 26,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00808,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 14848,
+        "total_duration_seconds": 2.356,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.356,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 15098,
+            "prompt_tokens": 15072,
+            "completion_tokens": 26,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 14848
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00808,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-adfd5825465d43b98f88e4ed7085b085",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-adfd5825465d43b98f88e4ed7085b085:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "sdk_effects": []
+    },
+    {
+      "id": "n.Interaction.94fd8caceddf455eab42ec17",
+      "scenario": "final_runtime_restart_read",
+      "request_outcome": "passed",
+      "utterance": "Read the retained files again after this restart. Return the image code, the caption in the right-hand box, and the text note's header and final references.",
+      "response": "Image code: LANTERN-62  \nRight-hand caption: Blue triangle  \nHeader reference: MARIGOLD-31  \nFinal reference: WILLOW-94",
+      "started_at": "2026-11-06T13:55:44.652681-04:00",
+      "completed_at": "2026-11-06T13:55:48.309414-04:00",
+      "duration_seconds": 3.656733,
+      "run_status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-adfd5825465d43b98f88e4ed7085b085"
+      },
+      "worker_pid": "44201",
+      "sdk_digest": "sha256:6d0492c6ef6eb1a9bafce46da9e11ccd46ca1e194248190434b7f6d5d5e285af",
+      "snapshot_count": 3,
+      "serialized_step_bytes": 56568,
+      "usage": {
+        "last_updated": "2026-11-06T17:55:48.309451+00:00",
+        "total_tokens": 15171,
+        "prompt_tokens": 15136,
+        "total_cost_usd": 0.008088,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 35,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.008088,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 14976,
+        "total_duration_seconds": 2.327,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.327,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 15171,
+            "prompt_tokens": 15136,
+            "completion_tokens": 35,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 14976
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.008088,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d6cd312240d848e0952764d5fa5a0973",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-d6cd312240d848e0952764d5fa5a0973:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "sdk_effects": []
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.85899e3e09f846c3938af2f2",
+      "spend": {
+        "usd": "0.069402",
+        "tokens": 89841,
+        "requests": 6,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    }
+  ],
+  "benchmark": {
+    "thresholds": {
+      "declared_before_model_smoke": true,
+      "profiles": [
+        "local GPT-4.1 PNG plus UTF-8 text above 64 KiB"
+      ],
+      "required_outcomes": [
+        "exact requested attachment values",
+        "cold-restart recall of previously unanswered details",
+        "missing payload blocks a turn before model work",
+        "restoring exact content permits a fresh user turn without replay",
+        "reload changes neither run records nor spend"
+      ],
+      "storage_threshold": {
+        "each_large_blob_stored_once_per_conversation": true,
+        "offloaded_snapshot_bytes_at_most_fraction_of_equivalent_inline_sdk_bytes": 0.2,
+        "restored_binary_sha256_must_match_input": true,
+        "restored_text_sha256_must_match_input": true
+      },
+      "claims_excluded": [
+        "general throughput or latency improvement",
+        "other providers and distributed deployment",
+        "unreferenced-media garbage collection after compaction"
+      ]
+    },
+    "comparisons": [
+      {
+        "interaction_id": "n.Interaction.da4b8229ac6d4051bf796fd9",
+        "snapshot_count": 3,
+        "encoded_snapshot_bytes": 10311,
+        "equivalent_inline_sdk_bytes": 1353927,
+        "fraction": 0.0076156247714980205
+      },
+      {
+        "interaction_id": "n.Interaction.e7b193ef969d4593ab500674",
+        "snapshot_count": 6,
+        "encoded_snapshot_bytes": 44333,
+        "equivalent_inline_sdk_bytes": 2731565,
+        "fraction": 0.016229890191154155
+      },
+      {
+        "interaction_id": "n.Interaction.218344f181744c4a882ab51f",
+        "snapshot_count": 3,
+        "encoded_snapshot_bytes": 32491,
+        "equivalent_inline_sdk_bytes": 1376107,
+        "fraction": 0.023610809333867208
+      },
+      {
+        "interaction_id": "n.Interaction.ac1f6a4defcb4924bf88be5b",
+        "snapshot_count": 0,
+        "encoded_snapshot_bytes": 0,
+        "equivalent_inline_sdk_bytes": 0,
+        "fraction": null
+      },
+      {
+        "interaction_id": "n.Interaction.c385a74ebe3d402e89086ac0",
+        "snapshot_count": 3,
+        "encoded_snapshot_bytes": 43109,
+        "equivalent_inline_sdk_bytes": 1386725,
+        "fraction": 0.031086913411094486
+      },
+      {
+        "interaction_id": "n.Interaction.94fd8caceddf455eab42ec17",
+        "snapshot_count": 3,
+        "encoded_snapshot_bytes": 50021,
+        "equivalent_inline_sdk_bytes": 1393637,
+        "fraction": 0.03589241674840723
+      }
+    ],
+    "media": [
+      {
+        "id": "n.NativeMedia.89f0b50ad68ff094c78e5a006a10a8e38ecdd41560f9e40d912caf5df4564a11",
+        "scope": {
+          "user_id": "o.User.bae09801dec648a28d6ebe56",
+          "agent_id": "n.Agent.e43d0714171a4c089a72e520",
+          "session_id": "sess_b5f84b764f15469e",
+          "conversation_id": "n.Conversation.85899e3e09f846c3938af2f2"
+        },
+        "uri": "media+sha256://119648b045ed3b2b0648d3a2643af2225f7298f68734a84007fc454462d362e5",
+        "byte_count": 80073,
+        "decoded_sha256": "sha256:119648b045ed3b2b0648d3a2643af2225f7298f68734a84007fc454462d362e5"
+      },
+      {
+        "id": "n.NativeMedia.e3a04d8afd443add3fb1441e47dfa8cfcb7f2a7463cd778c81a1eac718fbc374",
+        "scope": {
+          "user_id": "o.User.bae09801dec648a28d6ebe56",
+          "agent_id": "n.Agent.e43d0714171a4c089a72e520",
+          "session_id": "sess_b5f84b764f15469e",
+          "conversation_id": "n.Conversation.85899e3e09f846c3938af2f2"
+        },
+        "uri": "media+sha256://b33f8f2df78d5a0269856c1c7a0f3292fc41704b35ade7c293b707dceda67856",
+        "byte_count": 274755,
+        "decoded_sha256": "sha256:b33f8f2df78d5a0269856c1c7a0f3292fc41704b35ade7c293b707dceda67856"
+      }
+    ],
+    "measurement": "UTF-8 JSON serialization of the same SDK snapshots with public media restoration, not physical PostgreSQL disk size or latency"
+  },
+  "operator_operations": {
+    "remove": {
+      "operation": "remove_owned_fixture_payload",
+      "target": "n.NativeMedia.e3a04d8afd443add3fb1441e47dfa8cfcb7f2a7463cd778c81a1eac718fbc374",
+      "uri": "media+sha256://b33f8f2df78d5a0269856c1c7a0f3292fc41704b35ade7c293b707dceda67856",
+      "media_count": 1,
+      "interaction_records_unchanged": true
+    },
+    "restore": {
+      "operation": "restore_exact_fixture_payload_through_public_adapter",
+      "target": "n.NativeMedia.e3a04d8afd443add3fb1441e47dfa8cfcb7f2a7463cd778c81a1eac718fbc374",
+      "uri": "media+sha256://b33f8f2df78d5a0269856c1c7a0f3292fc41704b35ade7c293b707dceda67856",
+      "media_count": 2,
+      "restored_node_digest": "sha256:8062f2f6a82fa7e79765fb9a95f0a8159f499bb49dd6f30b3d0e2490b9649c8b",
+      "interaction_records_unchanged": true
+    }
+  },
+  "reload_audit": {
+    "label": "reload",
+    "interaction_hashes": {
+      "n.Interaction.da4b8229ac6d4051bf796fd9": "sha256:027e52e7473cb28029a330218bcc205dafed851affa295b952a9f16800918388",
+      "n.Interaction.218344f181744c4a882ab51f": "sha256:f99398f058399a96f71f1d081790b848cf8cc70b273265863f2fec95480a60be",
+      "n.Interaction.e7b193ef969d4593ab500674": "sha256:4ce0f5cdbd1b1bed9260b6ba106c04f77d194547973511506eb384ce15c47e6a",
+      "n.Interaction.ac1f6a4defcb4924bf88be5b": "sha256:0721e7110885e90ccb76ae07c7c1327089c9ce4fd1165b1e04519232dfa2cd6b",
+      "n.Interaction.94fd8caceddf455eab42ec17": "sha256:0cc1a3b897d139a065469c01b5d9f62b7276c9883d2b60c457528844561d626e",
+      "n.Interaction.c385a74ebe3d402e89086ac0": "sha256:28240eb06e730c26c3ffa5fbc94cd11965dfd407d4ef34e9fe8f263a3f4ade7f"
+    },
+    "interaction_count": 6,
+    "registration_count": 5,
+    "conversations": {
+      "n.Conversation.85899e3e09f846c3938af2f2": {
+        "native_spend_digest": "sha256:c20775045f9c6f6514784ab2eb08d93b5ce4fe9696f949b152cfad6a5e8fed1d",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_b5f84b764f15469e": {
+            "spent": {
+              "usd": "0.069402",
+              "tokens": 89841,
+              "requests": 6,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T17:55:48.070580+00:00"
+          },
+          "default|run|*|corr-52f6214660d44e2b825747f13c71066b": {
+            "spent": {
+              "usd": "0.007726",
+              "tokens": 14987,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:44:53.194773+00:00"
+          },
+          "default|run|*|corr-639305216910413c85a067269a42de1b": {
+            "spent": {
+              "usd": "0.015752",
+              "tokens": 29794,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:43:12.077091+00:00"
+          },
+          "default|run|*|corr-adfd5825465d43b98f88e4ed7085b085": {
+            "spent": {
+              "usd": "0.008080",
+              "tokens": 15098,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:48:22.362172+00:00"
+          },
+          "default|run|*|corr-d6cd312240d848e0952764d5fa5a0973": {
+            "spent": {
+              "usd": "0.008088",
+              "tokens": 15171,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:55:48.070580+00:00"
+          },
+          "default|run|*|corr-dd2683700c3f42c2832ba880caa9bc49": {
+            "spent": {
+              "usd": "0.029756",
+              "tokens": 14791,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:39:59.747612+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "first_restart_audit": {
+    "label": "restored",
+    "interaction_hashes": {
+      "n.Interaction.da4b8229ac6d4051bf796fd9": "sha256:027e52e7473cb28029a330218bcc205dafed851affa295b952a9f16800918388"
+    },
+    "interaction_count": 1,
+    "registration_count": 1,
+    "conversations": {
+      "n.Conversation.85899e3e09f846c3938af2f2": {
+        "native_spend_digest": "sha256:9560dc448f9c6823e562d39cbe5a9e90b54d2f16806efe588d084ded4cf19004",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_b5f84b764f15469e": {
+            "spent": {
+              "usd": "0.029756",
+              "tokens": 14791,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T17:39:59.747612+00:00"
+          },
+          "default|run|*|corr-dd2683700c3f42c2832ba880caa9bc49": {
+            "spent": {
+              "usd": "0.029756",
+              "tokens": 14791,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T17:39:59.747612+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "original_three_interactions_unchanged": true,
+  "totals": {
+    "interactions": 6,
+    "model_turns": 5,
+    "provider_requests": 6,
+    "provider_reported_tokens": 89841,
+    "estimated_cost_usd": "0.069402",
+    "unknown_cost_calls": 0,
+    "expected_zero_attempt_refusals": 1,
+    "retained_partial_caption_failures": 1,
+    "media_nodes": 2,
+    "raw_media_bytes": 354828
+  },
+  "limits": [
+    "The initial restarted image-label response selected the code banner; it remains partial failure. A clearer user question, without runtime special-casing, correctly reads the right-hand caption.",
+    "Checkpoint footprint comparison measures UTF-8 JSON serialization of equivalent SDK snapshots, not physical PostgreSQL size, throughput, latency or provider-token improvement.",
+    "Conversation-cascade retention has deterministic graph tests; automatic orphan/unreferenced collection and aggregate quotas remain open.",
+    "Restoration uses a privileged local operator through the public graph adapter, not a shipped end-user repair UI or automatic execution replay.",
+    "Local actual-provider scope is OpenAI PNG and long UTF-8 text. Other providers/deployments, maximum sizes, binary compaction, rollback re-inline export and remaining migration/deletion/security/release gates remain open."
+  ]
+}

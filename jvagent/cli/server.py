@@ -30,6 +30,7 @@ from jvagent.core.config import (
     resolve_log_db_path,
     resolve_pageindex_purge_path,
 )
+from jvagent.core.errors import ConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +297,7 @@ def run_server(
         debug: If True, enable debug logging.
         app_root: Path to the app root directory. If None, uses current working directory.
         stress_seed: When set (``StressSeedConfig``), populate the graph after bootstrap
-            and before ``server.run()``, on the same database the server will use.
+            and before serving, on the same database and event loop the server will use.
     """
     if app_root is None:
         app_root = os.getcwd()
@@ -312,13 +313,14 @@ def run_server(
     bootstrap_log = BootstrapLogger("Startup")
     bootstrap_log.start("jvagent application")
 
-    try:
+    async def serve() -> None:
+        # Bootstrap resources (including schedulers) must retain the serving loop.
         # Create server from configuration (pass app_root to load app.yaml)
         server = create_server_from_config(debug=debug, app_root=app_root)
 
         # Perform bootstrap tasks before server starts
-        admin_exists = asyncio.run(
-            pre_startup_bootstrap(server, update_mode=update_mode, app_root=app_root)
+        admin_exists = await pre_startup_bootstrap(
+            server, update_mode=update_mode, app_root=app_root
         )
 
         if stress_seed is not None:
@@ -336,7 +338,7 @@ def run_server(
                 stress_seed.user_memory_nodes,
                 stress_seed.interactions_per_user_memory_node,
             )
-            asyncio.run(execute_stress_seed_graph(stress_seed))
+            await execute_stress_seed_graph(stress_seed)
             from jvagent.core.app import App
 
             App.clear_cache()
@@ -352,7 +354,7 @@ def run_server(
 
         # Register startup event to display summary after server has started
         # This ensures the summary appears after all uvicorn logs
-        async def show_startup_summary():
+        async def show_startup_summary() -> None:
             """Display startup summary after server has started."""
             # Small delay to ensure uvicorn logs appear first
             await asyncio.sleep(0.5)
@@ -392,10 +394,18 @@ def run_server(
         # is a guaranteed startup crash *after* bootstrap already consumed the
         # one-shot update_mode. `debug` still controls verbose logging via
         # log_level; it must not imply auto-reload here. AUDIT-cli (debug reload).
-        run_kwargs: dict[str, Any] = {"reload": False}
+        # Parked response subscriptions must not keep a deployment draining
+        # indefinitely. Uvicorn owns cancellation and lifespan shutdown.
+        run_kwargs: dict[str, Any] = {
+            "reload": False,
+            "timeout_graceful_shutdown": 30,
+        }
         if is_serverless_mode():
             run_kwargs["workers"] = 1
-        server.run(**run_kwargs)
+        await server.run_async(**run_kwargs)
+
+    try:
+        asyncio.run(serve())
     except Exception:
         # If server fails to start, display summary and remove handler
         summary = log_counter.get_summary()
@@ -517,7 +527,8 @@ async def bootstrap_only(
         # This ensures runtime components like channel adapters are initialized
         from jvagent.core.startup import run_app_startup
 
-        await run_app_startup()
+        if not await run_app_startup():
+            raise ConfigError("Action initialization failed; startup refused")
 
         await ensure_admin_user()
 

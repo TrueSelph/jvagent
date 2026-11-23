@@ -1,0 +1,121 @@
+---
+name: signup-interview
+description: >-
+  Sign up or register for jvagent training. Collect full name, training
+  availability slot, email, and optional phone number, then record the
+  signup details locally. Use when the user wants to sign up, register, enroll, or
+  join jvagent training.
+spec: jv
+requires-actions:
+  - InterviewAction
+extends: action:jvagent/interview
+interview:
+  title: JVAgent Training Signup
+  summary: >-
+    Collect full name, training slot, email, and optional phone for jvagent
+    training registration. Branching: Saturday slots ask in-person vs virtual;
+    @mail.com work emails ask employer name before optional phone.
+  confirm: manual
+  fields:
+    - key: user_name
+      prompt: "What's your full name?"
+      required: true
+      hint: >-
+        Ask for first and last name (and middle names if they have them) as they
+        appear on an ID. On clarify, explain you need a real full name — not filler.
+      guidance: >-
+        A real person's first and last name (e.g. "Jane Doe", "Li Wei"). Not an
+        acknowledgement, filler, or conversational reply. If the user says "ok",
+        "sure", or repeats a filler word, do not store it — ask again for their name.
+      validator: validate_full_name
+    - key: available_times
+      prompt: "What times are you available to train?"
+      required: true
+      guidance: >-
+        Preferred training slot from the available times list. pre_processor shows
+        slots — user must pick one of the listed options.
+      pre_processor: get_available_training_times
+      validator: validate_available_times
+      branches:
+        - when: { op: contains, value: Saturday }
+          goto: training_format
+      else: user_email
+    - key: training_format
+      prompt: "For your Saturday session, will you attend in person or join virtually?"
+      required: true
+      guidance: >-
+        Only asked when the user picked a Saturday slot. Accept clear answers like
+        "in person", "onsite", "virtual", "online", or "remote".
+      validator: validate_training_format
+    - key: user_email
+      prompt: "What is your email?"
+      required: true
+      guidance: >-
+        Valid email for training contact. post_processor may append a note for
+        @mail.com work addresses after save.
+      post_processor: append_work_email_note
+      validator: validate_signup_email
+      branches:
+        - when: { op: contains, value: "@mail.com" }
+          goto: employer_name
+      else: phone_number
+    - key: employer_name
+      prompt: "What company or organization is your @mail.com address associated with?"
+      required: true
+      guidance: >-
+        Only asked for @mail.com work emails. Organization or employer name —
+        not a job title alone.
+    - key: phone_number
+      prompt: "What is your phone number?"
+      required: false
+      hint: >-
+        Optional. Decline or say you don't have one to skip. Any digits the
+        user gives should be stored immediately (never acknowledge in a
+        reply-only turn). The phone validator accepts a 7-digit local number
+        or a full 10-digit number (country code 592 is applied for bare local
+        numbers).
+      guidance: >-
+        Optional phone contact. Skip the field when the user declines or has
+        nothing to add. Always store the digits they typed with set_fields —
+        do not ask for country/area code as a separate chat turn; validation
+        handles length.
+      validator: phone
+      validator_args:
+        exact_length: 10
+        country_code: "592"
+  handlers:
+    review: signup_review
+    complete: signup_complete
+tags: [signup, training, interview, onboarding]
+---
+
+## Custom instructions
+
+### When to use
+- User wants to **sign up**, **register**, **enroll**, or **join jvagent training**.
+
+### Tone
+Relay the prompts in a friendly and helpful manner. Field hints are model-only
+compose steering — do not read them aloud.
+
+### Local record and validation
+This example records confirmed details in the conversation. It does not book a
+training place, send email, schedule follow-up or verify an email address. State
+only what the tools confirm. Preserve the user's supplied day, time, minutes and
+AM/PM when validating availability. Do not silently change an unavailable time
+to one of the offered slots. Ask the user to choose a correction.
+
+### Side questions
+Preserve interview progress when the user asks a side question. Answer using an
+appropriate available, authorized skill when needed, then continue the interview
+when the user is ready. Do not store a side question as a field answer or invent
+values to move the interview forward.
+
+### Phone number
+- Digits in the latest message → call `interview__set_fields` with
+  `{"fields": {"phone_number": "<digits>"}}` **this turn**. Do not reply-only
+  thank or ask for country/area code instead of storing.
+- Decline / "I don't have one" / skip → `interview__skip_field` for
+  `phone_number`, then continue (`next_field` / `review`).
+- On `ok: false`, follow `response_directive` (re-ask). Never invent a soft
+  confirmation before the validator has run.

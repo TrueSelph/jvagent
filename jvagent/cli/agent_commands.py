@@ -26,10 +26,10 @@ def _handle_agent_create_command(args: List[str], app_root: str = None) -> None:
     )
     parser.add_argument(
         "--profile",
-        default="orchestrator",
+        default="native",
         help=(
-            "Profile when spec has no @profile (default: orchestrator). "
-            "Builtins: orchestrator, minimal, conversational, research, "
+            "Profile when spec has no @profile (default: native). "
+            "Builtins: native; transitional orchestrator, minimal, conversational, research, "
             "whatsapp_voice."
         ),
     )

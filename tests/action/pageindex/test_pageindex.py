@@ -5,7 +5,6 @@ import pytest
 pytest.importorskip("openai")
 pytest.importorskip("tiktoken")
 pytest.importorskip("litellm")
-pytest.importorskip("pypdf")
 
 from unittest.mock import AsyncMock, patch
 
@@ -29,6 +28,7 @@ from jvagent.action.pageindex.document_walker import DocumentWalker
 from jvagent.action.pageindex.documents import (
     _build_metadata_query,
     assimilate_document,
+    count_document_chunks,
     enrich_structure_titles,
     export_documents,
     get_document_root,
@@ -83,6 +83,17 @@ def pageindex_temp_db(temp_dir):
         unregister_database(PAGEINDEX_DB_NAME)
     except Exception:
         pass
+
+
+@pytest.mark.asyncio
+async def test_count_document_chunks_reads_index_collection(pageindex_temp_db):
+    await persist_structure(
+        "Counted handbook",
+        [{"title": "Section", "node_id": "1", "text": "Indexed text"}],
+        collection_name="counted",
+    )
+    assert await count_document_chunks("Counted handbook", "counted") == 1
+    assert await count_document_chunks("Counted handbook", "another") == 0
 
 
 @pytest.fixture
@@ -2386,7 +2397,7 @@ async def test_t_list_docs_compact_payload_fits_observation_budget(caplog):
             return_value="n.Agent.silvie",
         ),
         patch(
-            "jvagent.tooling.tool_executor.get_tool_visitor",
+            "jvagent.tooling.context.get_tool_visitor",
             return_value=None,
         ),
         caplog.at_level(
@@ -2453,7 +2464,7 @@ async def test_t_list_docs_drops_entries_rather_than_overflow_budget():
             return_value=listed,
         ),
         patch.object(PageIndexAction, "_resolve_collection", return_value="col"),
-        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+        patch("jvagent.tooling.context.get_tool_visitor", return_value=None),
     ):
         payload = await PageIndexAction._t_list_docs(action, summary=True)
 
@@ -2485,7 +2496,7 @@ async def test_t_search_omitted_limit_uses_configured_limit():
 
     with (
         patch.object(PageIndexAction, "search", new=_fake_search),
-        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+        patch("jvagent.tooling.context.get_tool_visitor", return_value=None),
     ):
         await PageIndexAction._t_search(action, query="anything")
 
@@ -2506,7 +2517,7 @@ async def test_t_search_explicit_limit_is_forwarded():
 
     with (
         patch.object(PageIndexAction, "search", new=_fake_search),
-        patch("jvagent.tooling.tool_executor.get_tool_visitor", return_value=None),
+        patch("jvagent.tooling.context.get_tool_visitor", return_value=None),
     ):
         await PageIndexAction._t_search(action, query="anything", limit=3)
 
@@ -2521,3 +2532,39 @@ def test_pageindex_default_limit_is_the_effective_search_default():
     is the tool's effective default — it used to be a hardcoded 5.
     """
     assert PageIndexAction.model_fields["limit"].default == 10
+
+
+@pytest.mark.asyncio
+async def test_native_action_assimilation_refuses_before_legacy_model_lookup():
+    from jvagent.action.pageindex.pageindex_action import PageIndexAction
+
+    action = PageIndexAction()
+    with (
+        patch.object(PageIndexAction, "get_agent", AsyncMock(return_value=object())),
+        patch(
+            "jvagent.core.execution_owner.uses_native_harness",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(PageIndexAction, "get_model_action", AsyncMock()) as model,
+    ):
+        with pytest.raises(ValidationError, match="Native PageIndex ingestion"):
+            await action.assimilate("# Fixture", doc_name="blocked.md")
+    model.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_native_action_tree_search_refuses_before_legacy_model_lookup():
+    from jvagent.action.pageindex.pageindex_action import PageIndexAction
+
+    action = PageIndexAction()
+    with (
+        patch.object(PageIndexAction, "get_agent", AsyncMock(return_value=object())),
+        patch(
+            "jvagent.core.execution_owner.uses_native_harness",
+            AsyncMock(return_value=True),
+        ),
+        patch.object(PageIndexAction, "get_model_action", AsyncMock()) as model,
+    ):
+        with pytest.raises(ValidationError, match="accounted completion"):
+            await action.search("fixture", strategy="tree_search")
+    model.assert_not_awaited()

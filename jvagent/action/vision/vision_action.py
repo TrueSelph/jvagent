@@ -131,7 +131,7 @@ class VisionAction(Action):
         **kwargs: Any,
     ) -> Any:
         """Describe the image(s) attached to the current message. Returns an extensive text interpretation you can use to answer the user's question about them."""  # noqa: E501
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
         from jvagent.tooling.tool_result import ToolResult
 
         # ``visitor`` may be passed explicitly by a caller/executor; otherwise

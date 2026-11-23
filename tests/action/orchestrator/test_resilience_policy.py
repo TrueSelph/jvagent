@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import time
 from typing import Any, Dict, List
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -276,6 +277,62 @@ def test_turn_cost_is_summed_from_model_call_events(make_visitor):
     assert ex._turn_budget_exhausted(v) is False
 
 
+def test_turn_cost_prefers_litellm_reported_cost_over_estimate(make_visitor):
+    ex = OrchestratorInteractAction()
+    visitor = make_visitor()
+    event = _model_call_event(prompt=1_000_000)
+    event["data"]["cost_usd"] = 0.0123
+    event["data"]["cost_source"] = "litellm_response_cost"
+    visitor.interaction.observability_metrics = [event]
+
+    assert ex._turn_cost_usd(visitor) == pytest.approx(0.0123)
+
+
+def test_unknown_provider_cost_fails_closed_for_turn_budget(make_visitor):
+    ex = OrchestratorInteractAction()
+    ex.max_turn_cost_usd = 1.0
+    visitor = make_visitor()
+    event = _model_call_event(prompt=100, completion=10)
+    event["data"].update(provider="unlisted-provider", model="private-model")
+    visitor.interaction.observability_metrics = [event]
+
+    assert ex._turn_cost_usd(visitor) == 0.0
+    assert ex._turn_budget_exhausted(visitor) is True
+
+
+def test_reported_zero_cost_is_complete_not_unknown(make_visitor):
+    ex = OrchestratorInteractAction()
+    ex.max_turn_cost_usd = 1.0
+    visitor = make_visitor()
+    event = _model_call_event(prompt=100, completion=10)
+    event["data"].update(cost_usd=0.0, cost_source="provider_reported")
+    visitor.interaction.observability_metrics = [event]
+
+    assert ex._turn_cost_usd(visitor) == 0.0
+    assert ex._turn_budget_exhausted(visitor) is False
+
+
+def test_failed_transport_attempt_without_cost_fails_closed(make_visitor):
+    ex = OrchestratorInteractAction()
+    ex.max_turn_cost_usd = 1.0
+    visitor = make_visitor()
+    visitor.interaction.observability_metrics = [
+        {
+            "event_type": "model_attempt",
+            "data": {
+                "operation": "language_model_query",
+                "provider": "ollama",
+                "model": "glm-5.3:cloud",
+                "outcome": "failed",
+                "usage_status": "provider_unreported",
+            },
+        }
+    ]
+
+    assert ex._turn_cost_usd(visitor) == 0.0
+    assert ex._turn_budget_exhausted(visitor) is True
+
+
 @pytest.mark.asyncio
 async def test_turn_ceiling_ends_the_loop_with_one_partial_compose(
     make_orchestrator, make_visitor, monkeypatch
@@ -358,3 +415,93 @@ async def test_turn_cost_is_settled_onto_the_conversation_when_a_ceiling_is_set(
     await ex._settle_conversation_cost(v)
     assert v.conversation.context["_cost_usd_total"] == pytest.approx(0.65)
     v.conversation.save.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unknown_provider_marks_conversation_cost_incomplete_and_blocks_next_turn(
+    make_visitor,
+):
+    ex = OrchestratorInteractAction()
+    ex.max_conversation_cost_usd = 5.0
+    visitor = make_visitor()
+    event = _model_call_event(prompt=100, completion=10)
+    event["data"].update(provider="unlisted-provider", model="private-model")
+    visitor.interaction.observability_metrics = [event]
+
+    await ex._settle_conversation_cost(visitor)
+
+    assert visitor.conversation.context["_cost_accounting_incomplete"] is True
+    assert visitor.conversation.context.get("_cost_usd_total", 0.0) == 0.0
+    assert ex._conversation_budget_exhausted(visitor) is True
+
+
+@pytest.mark.parametrize(
+    "corrupt_total", [-0.01, "not-a-number", float("inf"), float("nan"), True]
+)
+def test_corrupt_conversation_cost_fails_closed(make_visitor, corrupt_total):
+    ex = OrchestratorInteractAction()
+    ex.max_conversation_cost_usd = 5.0
+    visitor = make_visitor()
+    visitor.conversation.context["_cost_usd_total"] = corrupt_total
+
+    assert ex._conversation_budget_exhausted(visitor) is True
+
+
+@pytest.mark.asyncio
+async def test_cost_settlement_does_not_reset_corrupt_conversation_total(make_visitor):
+    ex = OrchestratorInteractAction()
+    ex.max_conversation_cost_usd = 5.0
+    visitor = make_visitor()
+    visitor.conversation.context["_cost_usd_total"] = -1.0
+    visitor.interaction.observability_metrics = [_model_call_event()]
+
+    with pytest.raises(RuntimeError, match="settlement failed"):
+        await ex._settle_conversation_cost(visitor)
+
+    assert visitor.conversation.context["_cost_usd_total"] == -1.0
+    assert visitor.conversation.context["_cost_accounting_incomplete"] is True
+
+
+@pytest.mark.asyncio
+async def test_failed_cost_persistence_fails_closed_and_blocks_followup_spend(
+    make_visitor, caplog
+):
+    ex = OrchestratorInteractAction()
+    ex.max_conversation_cost_usd = 5.0
+    visitor = make_visitor()
+    visitor.interaction.observability_metrics = [_model_call_event()]
+    visitor.conversation.save.side_effect = OSError("sensitive database detail")
+
+    with pytest.raises(RuntimeError, match="settlement failed") as raised:
+        await ex._settle_conversation_cost(visitor)
+
+    assert "sensitive database detail" not in str(raised.value)
+    assert visitor.conversation.context["_cost_accounting_incomplete"] is True
+    assert ex._conversation_budget_exhausted(visitor) is True
+    assert "OSError" in caplog.text
+    assert "sensitive database detail" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_pilot_failure_still_settles_known_conversation_cost(
+    make_visitor, monkeypatch
+):
+    ex = OrchestratorInteractAction()
+    ex.skill_runtime = "capability_pilot"
+    ex.max_conversation_cost_usd = 1.0
+    visitor = make_visitor()
+    visitor.interaction.observability_metrics = []
+    visitor.conversation.id = "conversation-pilot-cost"
+
+    async def run_failed_pilot(turn_visitor):
+        turn_visitor.interaction.observability_metrics.append(_model_call_event())
+        raise RuntimeError("pilot failed after a priced model response")
+
+    monkeypatch.setattr(ex, "_curate_walk_path", AsyncMock())
+    monkeypatch.setattr(ex, "_run_capability_pilot", run_failed_pilot)
+
+    with pytest.raises(RuntimeError, match="priced model response"):
+        await ex._execute_turn(visitor)
+
+    assert visitor.conversation.context["_cost_usd_total"] == pytest.approx(0.15)
+    visitor.conversation.save.assert_awaited()

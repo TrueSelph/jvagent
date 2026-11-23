@@ -34,7 +34,7 @@ def signup_action():
 @pytest.mark.asyncio
 async def test_skip_field_tool_accepts_field_key(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "eldon.marks@gmail.com")
@@ -57,7 +57,7 @@ async def test_skip_field_tool_accepts_field_key(signup_action):
 @pytest.mark.asyncio
 async def test_skip_field_inlines_review_once(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "eldon.marks@gmail.com")
@@ -77,7 +77,7 @@ async def test_skip_field_inlines_review_once(signup_action):
 @pytest.mark.asyncio
 async def test_review_directive_is_confirmation_not_completion(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Eldon Marks")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "eldon@mail.com")
@@ -99,7 +99,7 @@ async def test_review_directive_is_confirmation_not_completion(signup_action):
 @pytest.mark.asyncio
 async def test_review_omits_off_path_and_skipped_fields(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "jane@gmail.com")

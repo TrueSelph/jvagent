@@ -171,7 +171,7 @@ closing a numbered defect in its description.
 
 ## 5. Open questions for the reporter
 
-- Was the Integral deployment on `ollama/` or `ollama_chat/`? (The route fix
+- Was the deployment on `ollama/` or `ollama_chat/`? (The route fix
   in R3 is only a change if the former.)
 - One transcript of the `Tool Calls: [` leak (the `model_call` event's
   `response` field) would let R3's salvage parser target the real shape rather

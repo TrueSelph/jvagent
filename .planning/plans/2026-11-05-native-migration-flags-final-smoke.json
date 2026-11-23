@@ -1,0 +1,621 @@
+{
+  "parent_revision": "git-commit:9747a1d084f630dd225e04af93e13867b8175c55",
+  "source_blobs": {
+    "jvagent/cli/harness_migrate.py": "git-blob:3ae6d1d22f20ed971251ffa8b167b048bd90058d",
+    "jvagent/cli/main.py": "git-blob:478df3e3ae6dbb42f46e24c7de78b0802130002e",
+    "jvagent/cli/commands.py": "git-blob:f2a18260001f42ae4dd91c25c20bf90126900771",
+    "jvagent/harness/skill_assets.py": "git-blob:9f78389b24d97ebf2345352a016ef64c945ba42f",
+    "tests/cli/test_harness_migrate.py": "git-blob:944b66df18d5bfce5c25631efbb4f55bafbd5626",
+    "pyproject.toml": "git-blob:eeaa539bcb6ba38d9117cf461e9c00ceca16447a",
+    "uv.lock": "git-blob:5bce62c019de0ec10819d0e8a425c90e03abd843",
+    "jvagent/cli/server.py": "git-blob:a3b18dc5ed131f1d7a4d4157bf1fe5ed6395869c",
+    "tests/cli/test_server_loop_lifetime.py": "git-blob:a3f8eccc01e32ce944867abe52b795fcd0d714fc",
+    "jvagent/action/reply/reply_action.py": "git-blob:d36ce5ce301ad52a3b2b74895f02cd0c001b92ca",
+    "tests/action/reply/test_publish_metadata.py": "git-blob:dd2082c8aaf29f15307560e9a587374c0e4ef5eb",
+    "jvagent/action/reply/endpoints.py": "git-blob:3e6587a381dd8cbbbbda46096a68fe09277ea74d",
+    "jvagent/action/response/response_bus.py": "git-blob:55b7f4aff61041aec3d469aed5ed03f3f0995842",
+    "jvagent/action/response/streaming.py": "git-blob:2f21bc5ea1438264f6c18abb28791f20c45f13cc",
+    "jvagent/action/response/native_replay.py": "git-blob:7552ec6a2432c860bfcf2e047ce2720d24038f8d",
+    "jvchat/src/config/api.ts": "git-blob:70c3513aeb567edcb045717f898b8573c3426785",
+    "jvchat/src/hooks/useAuth.ts": "git-blob:682eff88e7d4da608dac5055336f0f989b85952d",
+    "jvchat/src/hooks/useStreaming.ts": "git-blob:c5b4d03e416ed96706495a5df8cd5b415471639b",
+    "jvchat/src/config/api.auth-recovery.test.ts": "git-blob:6f2b0b20e206adf1e8cac943ddc192c2852a81d2",
+    "jvchat/src/hooks/useStreaming.channel.test.tsx": "git-blob:9d6b573e29a2ea96ab9eee3584631d2950f80b0b",
+    "jvchat/src/lib/channelMessages.ts": "git-blob:4349931d03b12ce4675814ddc4f84e86f033aeb9",
+    "tests/action/reply/test_native_subscription.py": "git-blob:dba84151c50527b7382e36883a32e8efdbe0e29d",
+    "tests/action/response/test_subscription_bounds.py": "git-blob:a4472b337616d8f257954b769c28b9b699c98332",
+    "jvagent/core/app.py": "git-blob:234ac33a77cc8c37f9c43b49cc835faee77bf4f6",
+    "tests/core/test_scheduling_clock.py": "git-blob:864fe065c4977580e5f9f7939e2c9218e36624a2",
+    "jvagent/core/task_dispatch.py": "git-blob:3d354440470af6e5c1a8c3471661358983a3658e",
+    "jvagent/action/task_monitor/task_monitor.py": "git-blob:d0f60fda9a8ec92a108ff1cd19e2f35e6e479c40",
+    "jvagent/action/task_monitor/finalize.py": "git-blob:fa26ff72734306780d447825bfdf34924b92f191",
+    "jvagent/action/interact/interact_walker.py": "git-blob:0d3eef8a3bd41030b5900dd2aa305fbf854c1f81",
+    "tests/harness/native/test_proactive.py": "git-blob:dec02dfdf61927f0caf7c8e9fe80c3d0f0897623",
+    "tests/core/test_native_task_dispatch.py": "git-blob:a634943db17912d2fdcbae885fa208f42c904787",
+    "tests/action/task_monitor/test_native_outcome.py": "git-blob:6901dd860827fbc2d3d5d46e3aaac98e7c681fe4",
+    "jvagent/action/interview/for_each.py": "git-blob:10f1740f26caa5fd456b975d7ff9c305ba73ac03",
+    "tests/harness/native/test_interview_repeats.py": "git-blob:34595626ec75f44cff33771208c45b635f2d94dc",
+    "tests/action/interview/test_repeated_integrity.py": "git-blob:9bb287ab711aad8ad98f64a3026417da728fa582",
+    "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+    "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+    "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+    "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+    "jvagent/harness/accounting.py": "git-blob:7609d626699ca481803e37b54905bd47f7824c6a",
+    "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+    "tests/harness/native/test_accounting.py": "git-blob:0204dd4a6c2ba2a29ba0c1dd6012c4b2abd1eb71",
+    "jvagent/action/interview/engine.py": "git-blob:38c5146f341e7d67112e151ab72dec18a2187964",
+    "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+    "tests/harness/native/test_interview_branches.py": "git-blob:f83ae80314a5297143cf432722525fea79404756",
+    "tests/action/interview/test_native_branch_admission.py": "git-blob:e172a4dad0ec18f4c3d03e7707a4f08b3e3f7b75",
+    "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+    "jvagent/harness/native.py": "git-blob:3a364a3c9942fab2f074f59141400c4cec821283",
+    "jvagent/action/interview/native.py": "git-blob:8a90f0197e3b4dcdfbe9d7645806a0b51f3055a8",
+    "jvagent/action/interview/native_skill/SKILL.md": "git-blob:d656ef8762f09b0e10742f294c8726084c062d2f",
+    "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:ff35b7f49d4aec9f3e3ab3b4fe592fdf9b97903e",
+    "tests/harness/native/test_interview.py": "git-blob:3c55a412013a708514231e39cdcb549f6162063b",
+    "tests/harness/native/test_postgres_store.py": "git-blob:847a9312d407d338d9eeeef6609db78ecc0d8f9b"
+  },
+  "phase": "final",
+  "observed_at": "2026-11-06T00:46:38.248856+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-migration-smoke",
+    "database": "jvagent_native_migration_20261105",
+    "model": "openai:gpt-4.1",
+    "api_port": 8138,
+    "ui_port": 3136,
+    "public_entrypoint": true,
+    "skill": "migrated summary skill with reviewed MCP lookup",
+    "access_token_lifetime_minutes": 60,
+    "patched_execution_functions": false
+  },
+  "frontend_source_blobs": {
+    "jvchat/src/config/api.ts": "git-blob:70c3513aeb567edcb045717f898b8573c3426785",
+    "jvchat/src/hooks/useAuth.ts": "git-blob:682eff88e7d4da608dac5055336f0f989b85952d",
+    "jvchat/src/hooks/useStreaming.ts": "git-blob:c5b4d03e416ed96706495a5df8cd5b415471639b",
+    "jvchat/src/config/api.auth-recovery.test.ts": "git-blob:6f2b0b20e206adf1e8cac943ddc192c2852a81d2",
+    "jvchat/src/hooks/useStreaming.channel.test.tsx": "git-blob:9d6b573e29a2ea96ab9eee3584631d2950f80b0b"
+  },
+  "frontend_source_note": "Frontend served independently on 3136; module_observation frontend hashes are backend-startup observations, not a served-bundle fingerprint. Browser asset names and current frontend blobs qualify the final UI build.",
+  "outage_interaction_ids": [],
+  "conversations": [
+    {
+      "id": "n.Conversation.6fd90713b2e641ad8eca1e81",
+      "session_id": "sess_829884978f8646d8",
+      "interview": null,
+      "tasks": [],
+      "budget_counters": {
+        "default|conversation|*|sess_829884978f8646d8": {
+          "spent": {
+            "usd": "0.001764",
+            "tokens": 747,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 2,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-1cc5778531f14695b167ebff0356f941": {
+          "spent": {
+            "usd": "0.001764",
+            "tokens": 747,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 2,
+          "reserve_markers": 0
+        }
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.15f75048af284bfcb1017be5",
+      "user_id": "o.User.f39c65e315ab472b949bc133",
+      "session_id": "sess_829884978f8646d8",
+      "utterance": "NATIVE-MIGRATION-FLAGS-CHECK: Look up REHEARSAL-47 and tell me its room and start time.",
+      "response": "REHEARSAL-47 is scheduled in room Cedar and starts at 14:30.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 702,
+          "output_tokens": 45
+        },
+        "output": "REHEARSAL-47 is scheduled in room Cedar and starts at 14:30.",
+        "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T00:46:05.146101+00:00",
+                "total_tokens": 747,
+                "prompt_tokens": 702,
+                "total_cost_usd": 0.001764,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 45,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001764,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.999,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.999,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-1cc5778531f14695b167ebff0356f941"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T00:46:05.165535+00:00",
+        "total_tokens": 747,
+        "prompt_tokens": 702,
+        "total_cost_usd": 0.001764,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 45,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001764,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.999,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.999,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T20:46:00.971857",
+      "completed_at": "2026-11-05T20:46:05.165490",
+      "closed": true,
+      "emitted": true,
+      "agent_trace": [
+        {
+          "content": "mcp_records__lookup_record",
+          "message_id": "o.ResponseMessage.2ec7d41ace6b45758c0607f9",
+          "segment_id": "call_bSJUJyWDXmgAvZDQuZGRCs6q",
+          "started_at": "2026-11-06T00:46:03.409577+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T00:46:03.409582+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}",
+          "message_id": "o.ResponseMessage.490f0ef1779c490d8e9dd7cd",
+          "segment_id": "call_bSJUJyWDXmgAvZDQuZGRCs6q",
+          "started_at": "2026-11-06T00:46:03.450999+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T00:46:03.451004+00:00",
+          "thought_type": "tool_result"
+        }
+      ],
+      "actions": [
+        "NativeHarnessAction"
+      ],
+      "directives": [],
+      "parameters": [],
+      "metric_types": [
+        "model_call",
+        "model_call",
+        "model_attempt",
+        "model_attempt"
+      ],
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 8,
+        "effects": 1,
+        "snapshots": 6
+      },
+      "snapshots": [
+        {
+          "state": "complete",
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "messages": [
+            {
+              "kind": "request",
+              "parts": [
+                {
+                  "content": "NATIVE-MIGRATION-FLAGS-CHECK: Look up REHEARSAL-47 and tell me its room and start time.",
+                  "part_kind": "user-prompt",
+                  "timestamp": "2026-11-06T00:46:01.577640Z"
+                },
+                {
+                  "loaded": [
+                    "summary"
+                  ],
+                  "part_kind": "capability-load-delta",
+                  "tool_call_id": null
+                },
+                {
+                  "part_kind": "instruction-baseline",
+                  "instructions": [
+                    {
+                      "id": "agent",
+                      "dynamic": false,
+                      "part_kind": "instruction-digest",
+                      "content_hash": "sha256:98cb313086b00b74f815dce24f1f1bd6a19a2319a5e98c86b1bdb1e9f33ea9a8"
+                    },
+                    {
+                      "id": "capability:deferred_capabilities",
+                      "name": null,
+                      "content": "The following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- summary: Look up a rehearsal record and prepare its scheduled summary",
+                      "dynamic": true,
+                      "on_change": "append",
+                      "part_kind": "instruction"
+                    }
+                  ]
+                },
+                {
+                  "id": "capability:summary",
+                  "content": "# Skill: summary\n\nFor a scheduled summary, call the declared lookup_record tool with the reference\nfrom the objective. Report the actual returned reference, room and start time.\nNever invent a result or claim an external action. State lookup failures plainly.",
+                  "base_hash": null,
+                  "part_kind": "instruction-delta"
+                }
+              ],
+              "state": "complete",
+              "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+              "metadata": null,
+              "timestamp": "2026-11-06T00:46:01.577860Z",
+              "instructions": "Agent identity: Migrated Native Harness\n\nRole: A concise assistant using modular read integrations\n\nAnswer concisely using the selected skill and successful tool results. Never invent completed work.\n\nThe following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- summary: Look up a rehearsal record and prepare its scheduled summary",
+              "conversation_id": "sess_829884978f8646d8"
+            },
+            {
+              "kind": "response",
+              "parts": [
+                {
+                  "id": "fc_06b1b47e468c9379006aed234b20e087d288e080537d08bffa",
+                  "args": "{\"reference\":\"REHEARSAL-47\"}",
+                  "part_kind": "tool-call",
+                  "tool_kind": null,
+                  "tool_name": "mcp_records__lookup_record",
+                  "tool_call_id": "call_bSJUJyWDXmgAvZDQuZGRCs6q",
+                  "provider_name": "openai",
+                  "provider_details": null
+                }
+              ],
+              "state": "complete",
+              "usage": {
+                "cost": "0.000840",
+                "details": {
+                  "reasoning_tokens": 0
+                },
+                "input_tokens": 324,
+                "audio_seconds": 0.0,
+                "output_tokens": 24,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "input_audio_tokens": 0,
+                "output_audio_tokens": 0,
+                "cache_write_1h_tokens": 0,
+                "cache_audio_read_tokens": 0,
+                "output_reasoning_tokens": 0
+              },
+              "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+              "metadata": null,
+              "model_id": "openai:gpt-4.1",
+              "timestamp": "2026-11-06T00:46:02.882787Z",
+              "model_name": "gpt-4.1-2025-04-14",
+              "provider_url": "https://api.openai.com/v1/",
+              "finish_reason": "stop",
+              "provider_name": "openai",
+              "workspace_ref": {
+                "id": "/private/tmp/jvagent-native-migration-smoke/agents/jvagent/migration/skills",
+                "provider": "local"
+              },
+              "history_digest": null,
+              "conversation_id": "sess_829884978f8646d8",
+              "failed_attempts": null,
+              "canonical_system": "openai",
+              "provider_details": {
+                "timestamp": "2026-11-06T00:46:02Z",
+                "service_tier": "default",
+                "finish_reason": "completed"
+              },
+              "provider_response_id": "resp_06b1b47e468c9379006aed234a679c87d2abe7a017c0242137"
+            },
+            {
+              "kind": "request",
+              "parts": [
+                {
+                  "retry": null,
+                  "content": {
+                    "room": "Cedar",
+                    "start": "14:30",
+                    "reference": "REHEARSAL-47"
+                  },
+                  "outcome": "success",
+                  "metadata": null,
+                  "part_kind": "tool-return",
+                  "timestamp": "2026-11-06T00:46:03.450683Z",
+                  "tool_kind": null,
+                  "tool_name": "mcp_records__lookup_record",
+                  "tool_call_id": "call_bSJUJyWDXmgAvZDQuZGRCs6q",
+                  "content_file_digests": []
+                }
+              ],
+              "state": "complete",
+              "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+              "metadata": null,
+              "timestamp": "2026-11-06T00:46:03.515276Z",
+              "instructions": "Agent identity: Migrated Native Harness\n\nRole: A concise assistant using modular read integrations\n\nAnswer concisely using the selected skill and successful tool results. Never invent completed work.\n\nThe following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- summary: Look up a rehearsal record and prepare its scheduled summary",
+              "conversation_id": "sess_829884978f8646d8"
+            },
+            {
+              "kind": "response",
+              "parts": [
+                {
+                  "id": "msg_03db866e4816b70f006aed234c8adc87d2a03791de51eadb43",
+                  "content": "REHEARSAL-47 is scheduled in room Cedar and starts at 14:30.",
+                  "citations": null,
+                  "part_kind": "text",
+                  "provider_name": "openai",
+                  "provider_details": null
+                }
+              ],
+              "state": "complete",
+              "usage": {
+                "cost": "0.000924",
+                "details": {
+                  "reasoning_tokens": 0
+                },
+                "input_tokens": 378,
+                "audio_seconds": 0.0,
+                "output_tokens": 21,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "input_audio_tokens": 0,
+                "output_audio_tokens": 0,
+                "cache_write_1h_tokens": 0,
+                "cache_audio_read_tokens": 0,
+                "output_reasoning_tokens": 0
+              },
+              "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+              "metadata": null,
+              "model_id": "openai:gpt-4.1",
+              "timestamp": "2026-11-06T00:46:04.339965Z",
+              "model_name": "gpt-4.1-2025-04-14",
+              "provider_url": "https://api.openai.com/v1/",
+              "finish_reason": "stop",
+              "provider_name": "openai",
+              "workspace_ref": {
+                "id": "/private/tmp/jvagent-native-migration-smoke/agents/jvagent/migration/skills",
+                "provider": "local"
+              },
+              "history_digest": null,
+              "conversation_id": "sess_829884978f8646d8",
+              "failed_attempts": null,
+              "canonical_system": "openai",
+              "provider_details": {
+                "timestamp": "2026-11-06T00:46:04Z",
+                "service_tier": "default",
+                "finish_reason": "completed"
+              },
+              "provider_response_id": "resp_03db866e4816b70f006aed234c289c87d2ac37f9b9847ef1eb"
+            }
+          ],
+          "timestamp": "2026-11-06T00:46:04.891128Z",
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "5:2:complete"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-06T00:46:01.039356Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-06T00:46:01.611429Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-06T00:46:03.362318Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "2:1:model_request_completed:"
+        },
+        {
+          "kind": "tool_call_started",
+          "error": null,
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-06T00:46:03.417048Z",
+          "tool_name": "mcp_records__lookup_record",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_bSJUJyWDXmgAvZDQuZGRCs6q",
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "3:1:tool_call_started:call_bSJUJyWDXmgAvZDQuZGRCs6q"
+        },
+        {
+          "kind": "tool_call_completed",
+          "error": null,
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-06T00:46:03.446350Z",
+          "tool_name": "mcp_records__lookup_record",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": "call_bSJUJyWDXmgAvZDQuZGRCs6q",
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "4:1:tool_call_completed:call_bSJUJyWDXmgAvZDQuZGRCs6q"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-06T00:46:03.568518Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "5:2:model_request_started:"
+        },
+        {
+          "kind": "model_request_completed",
+          "error": null,
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-06T00:46:04.816931Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 2,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "6:2:model_request_completed:"
+        },
+        {
+          "kind": "run_completed",
+          "error": null,
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-06T00:46:04.931253Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_829884978f8646d8",
+          "idempotency_key": "7:0:run_completed:"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-1cc5778531f14695b167ebff0356f941",
+          "status": "completed",
+          "ended_at": "2026-11-06T00:46:03.435696Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-06T00:46:03.412516Z",
+          "tool_call_id": "call_bSJUJyWDXmgAvZDQuZGRCs6q",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "duration_seconds": 4.193633
+    }
+  ],
+  "module_observation": {
+    "python_executable": "/private/tmp/jvagent-unified-test-311/bin/python",
+    "jvagent_origin": "/Users/eldonmarks/Briefcase/dev/jv/jvagent/jvagent/__init__.py",
+    "source_blobs": {
+      "jvagent/cli/harness_migrate.py": "git-blob:14d9747b123fca5d3a3633a837fd6a95e9031407",
+      "jvagent/cli/main.py": "git-blob:fe54b33867922b02d9c2d99b8e59ddaa945e65ee",
+      "jvagent/harness/skill_assets.py": "git-blob:9f78389b24d97ebf2345352a016ef64c945ba42f",
+      "pyproject.toml": "git-blob:eeaa539bcb6ba38d9117cf461e9c00ceca16447a",
+      "uv.lock": "git-blob:5bce62c019de0ec10819d0e8a425c90e03abd843",
+      "jvagent/cli/server.py": "git-blob:a3b18dc5ed131f1d7a4d4157bf1fe5ed6395869c",
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:7609d626699ca481803e37b54905bd47f7824c6a",
+      "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/action/interview/engine.py": "git-blob:38c5146f341e7d67112e151ab72dec18a2187964",
+      "jvagent/core/task_dispatch.py": "git-blob:3d354440470af6e5c1a8c3471661358983a3658e",
+      "jvagent/core/app.py": "git-blob:234ac33a77cc8c37f9c43b49cc835faee77bf4f6",
+      "jvagent/action/reply/endpoints.py": "git-blob:3e6587a381dd8cbbbbda46096a68fe09277ea74d",
+      "jvagent/action/reply/reply_action.py": "git-blob:d36ce5ce301ad52a3b2b74895f02cd0c001b92ca",
+      "jvagent/action/response/response_bus.py": "git-blob:55b7f4aff61041aec3d469aed5ed03f3f0995842",
+      "jvagent/action/response/streaming.py": "git-blob:2f21bc5ea1438264f6c18abb28791f20c45f13cc",
+      "jvagent/action/response/native_replay.py": "git-blob:7552ec6a2432c860bfcf2e047ce2720d24038f8d",
+      "jvchat/src/config/api.ts": "git-blob:70c3513aeb567edcb045717f898b8573c3426785",
+      "jvchat/src/hooks/useAuth.ts": "git-blob:682eff88e7d4da608dac5055336f0f989b85952d",
+      "jvchat/src/hooks/useStreaming.ts": "git-blob:c5b4d03e416ed96706495a5df8cd5b415471639b",
+      "jvchat/src/lib/channelMessages.ts": "git-blob:4349931d03b12ce4675814ddc4f84e86f033aeb9",
+      "jvchat/src/lib/threadMessages.ts": "git-blob:8b885c78d888afaf15089611618f607f88da65f8",
+      "jvchat/src/lib/messageObservability.ts": "git-blob:42f8da47d9f982eb0255058d32f166b9bf8588f8",
+      "jvchat/src/components/assistant-ui/message-stats.tsx": "git-blob:bff76ac6f6e76c9fb452d9fae9baf7b9fe68ac3a",
+      "jvagent/action/task_monitor/task_monitor.py": "git-blob:d0f60fda9a8ec92a108ff1cd19e2f35e6e479c40",
+      "jvagent/action/task_monitor/finalize.py": "git-blob:fa26ff72734306780d447825bfdf34924b92f191",
+      "jvagent/action/interact/interact_walker.py": "git-blob:0d3eef8a3bd41030b5900dd2aa305fbf854c1f81",
+      "jvagent/action/interview/native_repeats.py": "git-blob:ae5f03478ffec03963cf9056ffb01f379c7b5def",
+      "jvagent/action/interview/for_each.py": "git-blob:10f1740f26caa5fd456b975d7ff9c305ba73ac03",
+      "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+      "jvagent/harness/native.py": "git-blob:3a364a3c9942fab2f074f59141400c4cec821283",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+      "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+      "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+      "jvagent/action/interview/native.py": "git-blob:8a90f0197e3b4dcdfbe9d7645806a0b51f3055a8",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:d656ef8762f09b0e10742f294c8726084c062d2f",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:ff35b7f49d4aec9f3e3ab3b4fe592fdf9b97903e"
+    },
+    "process_id": 19607,
+    "observed_at": "2026-11-06T00:10:43.129263+00:00",
+    "modules": [],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-06T00:46:38.309354+00:00"
+  },
+  "snapshot_export_scope": "Final typed SDK snapshot per Interaction; full persisted record counts retained.",
+  "snapshot_content_hash_encoding": "sha256-prefixed display; persisted SDK values unchanged"
+}

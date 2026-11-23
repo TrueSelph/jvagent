@@ -4,6 +4,43 @@ Single-source definitions for terms used throughout jvagent. Whenever a defined 
 
 ---
 
+### Tool deadline
+An Action-declared positive finite `Tool.timeout_seconds` value mapped to public
+Pydantic AI `Tool.timeout` for native execution. It is separate from the overall
+run deadline and does not promise hard preemption or write rollback. Sources:
+`jvagent/tooling/tool.py:49`, `jvagent/harness/native.py:216`. See
+[native tool deadlines](runbooks/native-tool-deadlines.md).
+
+### Channel instructions
+Literal host presentation/context text appended to base SDK instructions for one
+exact channel label. This is model guidance and grants no authority or tool
+access. Source: `jvagent/harness/instructions.py:6`. See
+[native channel instructions](runbooks/native-channel-instructions.md).
+
+### Native media
+Conversation-owned immutable payloads referenced by official Harness media markers
+in SDK snapshots. The public MediaStore adapter stores each payload once per
+agent/user/session/conversation scope in existing jvspatial nodes; it is not a
+public URL or a second state database. Sources: `jvagent/memory/native_media.py:9`,
+`jvagent/harness/media_store.py:31`. See [storage and recovery](runbooks/native-media.md).
+
+### Native plan
+Conversation-scoped checklist edited by official Harness `Planning` tools and
+persisted through JV's public `PlanStore` adapter. Its statuses are authored
+progress indications, not verified domain completion, permissions or scheduled
+TaskStore work. Sources: `jvagent/harness/native.py:423`,
+`jvagent/harness/plan_store.py:11`. See the
+[qualification boundary](plans/2026-11-06-native-planning.md).
+
+### Native script workspace
+The official Harness workspace used by the optional native CodeExecution
+profile. SDK messages carry its container reference; the Conversation graph
+retains host authorization policy and SDK execution records. The current bounded
+tmpfs development profile is separate from per-user FileInterface storage and
+does not establish container-restart durability. Sources:
+`jvagent/harness/script_sandbox.py:136`, `:163`. See the
+[storage and migration boundary](runbooks/native-script-sandbox.md).
+
 ### Action
 Pluggable component that extends an agent. Subclass of jvspatial `Node`. Source: [`jvagent/action/base.py:49`](../jvagent/action/base.py). Has lifecycle hooks (`on_register`, `on_enable`, etc.), attribute config, optional endpoints, optional tools (via `get_tools()`) for the agentic loop. Lives in a directory under `jvagent/action/{namespace}/{action_name}/`. See [`action-authoring.md`](reference/action-authoring.md).
 
@@ -49,7 +86,18 @@ HTTP route defined by the `@endpoint` decorator from jvspatial. Actions ship end
 ### Orchestrator
 The single orchestrator of the Orchestrator pattern. Implemented by [`OrchestratorInteractAction`](../jvagent/action/orchestrator/orchestrator_interact_action.py) at weight `-200`. Runs the whole turn inside one `execute()` call: when a turn-spanning flow has an active control-task on the conversation `TaskStore` it surfaces that flow as a tool and notes it, then runs a bounded think-act-observe loop over a unified tool surface (routing is tool selection) in which the model decides whether to continue the flow. No recruited centers, no reflex, no separate router. Supersedes the Executive + Centers pattern. See [`adr/0012-skill-executive-architecture.md`](adr/0012-skill-executive-architecture.md), [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md), [`PATTERNS.md`](PATTERNS.md).
 
+### Channel limits
+
+Native host resource ceilings selected by exact channel label. They only tighten
+the agent's base run allowance; the public SDK enforces execution and official
+Harness spending remains shared by conversation. They grant no channel authority,
+tool access or prompt overrides. See the [run limits guide](runbooks/native-run-limits.md)
+and `jvagent/harness/run_limits.py:48`.
+
 ### Flow continuation
+
+This entry describes the transitional Orchestrator. Native execution uses
+*Skill continuation* below; it does not invoke the legacy flow router.
 The mechanism by which a turn-spanning flow keeps (or releases) the turn under the Orchestrator. A *flow* records a control-task on the conversation `TaskStore` while active (the flow manages this itself). Each turn the Orchestrator detects it via `active_flow_owner(visitor)` (the active task's `owner_action`, equal to the flow's tool name). The mode is set by `lock_active_flow` ([ADR-0013](adr/0013-togglable-deterministic-turn-lock.md)): when **True** (default) the loop restricts its callable surface to that flow's IA tool and dispatches it with no model round-trip (mechanistic turn-lock); when **False** it surfaces the flow's tool and injects `active_flow_note(tool_name)`, and the model either continues the flow (selecting its tool, whose `get_tools` → `execute` advances the session) or routes an off-topic request elsewhere (the flow is not forced to run, its control-task persists, and it resumes when the user returns). In neither mode does the flow gain a resume entry point or outcome enum — its only orchestrator-facing surface is `get_tools()`. Source: [`jvagent/action/orchestrator/continuation.py`](../jvagent/action/orchestrator/continuation.py). See [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md).
 
 ### Graph repair
@@ -72,6 +120,15 @@ jvspatial `Walker` subclass that drives the interact subsystem. Source: `jvagent
 
 ### `NativeCaller`
 Admission identity `(agent_id, user_id, session_id)`. Host scopes map to `session_id` outside jvagent. Source: [`jvagent/harness/contracts.py`](../jvagent/harness/contracts.py). See ADR-0054.
+
+### Native mutation tool
+A reviewed JV domain write declared with `NativeMutationTool`; the official SDK
+owns dispatch and effect persistence. The host adapter binds the caller and
+annotates the SDK effect before I/O. This declaration is neither a sandbox nor
+automatic retry/rollback permission. Failed or interrupted mutations require
+reconciliation. Source: [`mutation_tools.py:25`](../jvagent/harness/mutation_tools.py:25),
+[`native.py:115`](../jvagent/harness/native.py:115). The existing conversation-write
+marker is retained for historical records; new markers use `jv:mutation:`.
 
 ### `HarnessRuntime`
 Store-backed harness runtime: snapshots, TurnRun journal, invocation ledger, outbox, session leases, traces, skill staging. Share a `HarnessStore` for two-worker tests. Source: [`jvagent/harness/runtime.py`](../jvagent/harness/runtime.py).
@@ -130,6 +187,36 @@ Server-minted HS256 JWT that authorizes resuming one web `Conversation` on the p
 ### Skill
 A `SKILL.md`-first folder the Orchestrator loads through progressive disclosure (`find_skill` / `use_skill`, [`jvagent/action/orchestrator/skills.py`](../jvagent/action/orchestrator/skills.py)). A skill is *judgment over capability* — distinct from `Action`s. Two specs (ADR-0017), set by a `spec` frontmatter key: **JV** (`spec: jv`, default) coordinates existing action/IA tools by `namespace__tool` name (no code); **Claude** (`spec: claude`) is a standard Anthropic Agent Skills folder whose bundled `scripts/` the model runs via the `code_execution__bash` substrate, staged into the caller's per-user sandbox. See [`adr/0017-two-skill-specs-code-execution-substrate.md`](adr/0017-two-skill-specs-code-execution-substrate.md), [`adr/0011-skills-two-kinds.md`](adr/0011-skills-two-kinds.md), and [`jvagent/skills/README.md`](../jvagent/skills/README.md).
 
+### Native skill catalog
+An explicit `NativeHarnessAction.skill_directories` list offered through official
+Pydantic AI Harness Skills. The library owns deferred loading and persisted
+activation; JV enforces authored tool ownership and current host access, with
+output obligations scoped to a run's skill invocation. The singular
+`skill_directory` remains an explicitly loaded primary skill. A
+`library:<directory>` reference selects a contained installed package asset without
+embedding a machine-specific installation path. Source:
+[`skill_catalog.py:24`](../jvagent/harness/skill_catalog.py#L24).
+See [the catalog runbook](runbooks/native-skill-catalog.md).
+
+### Compiled skill contract (pilot proposal)
+An immutable, validated binding of an existing skill's SOP, Action dependencies,
+tool schemas, lifecycle bindings, state/output models, and limits. Proposed in
+the [Pydantic-inspired pilot plan](plans/2026-10-04-pydantic-inspired-skill-pilot.md#4-composition-contract-and-ownership);
+it is not a new skill authoring format or an implemented runtime guarantee.
+
+### Capability Pilot task (pilot proposal)
+A `CAPABILITY_PILOT` task is a proposed TaskStore task type for one opt-in,
+Pydantic AI-driven skill run. Legacy skill-task continuation filters it out so
+the two drivers cannot claim the same task. The pilot implementation is
+experimental and is not yet integrated at the Orchestrator execute boundary.
+See the [pilot plan](plans/2026-10-04-pydantic-inspired-skill-pilot.md).
+
+### Skill run context (pilot proposal)
+Fresh server-created state for one skill execution, containing native caller
+identity, channel, capability snapshot, run/invocation services, and cancellation.
+It is distinct from installed Action configuration and the persistent task
+snapshot. See the [pilot plan](plans/2026-10-04-pydantic-inspired-skill-pilot.md#4-composition-contract-and-ownership).
+
 ### InterviewAction
 `Action` (not `InteractAction`) that registers `interview__*` tools and runs the interview session pipeline for skills with `interview:` frontmatter and `extends: action:jvagent/interview`. Source: [`jvagent/action/interview/`](../jvagent/action/interview/). Follows the *thin harness* design — session + hooks + raw tools only; the model drives turns via the composed SOP.
 
@@ -154,6 +241,17 @@ Grouped `then` keys evaluated by the test runner. Framework-owned: `task_graph`,
 ### Thin harness (principle)
 jvagent-wide design contract: **thin server harness** (Orchestrator, Actions, turn-lock hooks — session, validation dispatch, raw tool JSON, no conversation steering) and **thick SOP + skill extensions** (intent routing, extraction, domain logic in skills and `custom_tools.py`). Forbidden platform-wide: server intent classification, prep steering, activation auto-store, response inlining, orchestrator action special-casing. Canonical rules: [`docs/thin-harness.md`](../docs/thin-harness.md). Interview-specific profile: [`jvagent/action/interview/docs/thin-harness.md`](../jvagent/action/interview/docs/thin-harness.md).
 
+### Skill continuation
+
+Native workflow progress through official SDK skill loading and explicit domain
+tools. The model can handle a detour and later resume using authoritative domain
+results; a status lookup is available when progress is unclear. Domain session
+and TaskStore state persist independently of the current question. Host identity,
+tool ownership, permissions and required-field/review checks remain enforced by
+the adapters and domain tools. The legacy routing switch retires explicitly;
+retained tasks are not automatically converted. See [ADR-0059](adr/0059-native-skill-continuation.md)
+and `jvagent/action/interview/native_skill/SKILL.md:38`.
+
 ### Sustained activation (turn-lock)
 A flow declaring it owns the turn across user messages. Realized as **flow continuation**, whose mode is set by `lock_active_flow` (ADR-0013): the flow records a control-task on the conversation's declarative `TaskStore` while active, and each turn the Orchestrator detects it. When `lock_active_flow=True` (default) the orchestrator routes the turn deterministically to the flow's IA (mechanistic turn-lock); when `False` it surfaces the flow as a tool and the model decides whether to continue it or route an off-topic request elsewhere (the control-task persists and resumes later). See *Flow continuation* and [`../docs/ORCHESTRATOR.md`](../docs/ORCHESTRATOR.md).
 
@@ -167,6 +265,9 @@ A named callable wrapped with a JSON Schema for arguments, exposed to the model.
 A slim index of the available tools that the Orchestrator carries in the prompt instead of every tool schema, with `find_tool` / `load_tool` meta-tools for progressive disclosure — bounding prompt size as the tool surface grows (mirrors the skills `find_skill` / `use_skill` meta-tools). Source: [`jvagent/action/orchestrator/catalog.py`](../jvagent/action/orchestrator/catalog.py).
 
 ### Turn-lock
+
+The description below is transitional. Native execution retires this routing
+switch into *Skill continuation*, with explicit migration review.
 Declares that an `InteractAction` owns the next turn end-to-end (e.g. interview, form, gated workflow). Under the Orchestrator turn-lock is realized as **flow continuation**, configurable via `lock_active_flow` (ADR-0013): the flow records a control-task on the conversation `TaskStore` while active. When `lock_active_flow=True` (default) the loop restricts its callable surface to the flow's IA tool and dispatches it with no model round-trip — a mechanistic lock; the IA owns interruption/cancel. When `False` the flow is surfaced as a tool and the lock is emergent — the model continues the flow by selecting its tool or routes an off-topic message elsewhere (interruptibility automatic). In both modes the flow's own session logic handles its steps. See *Sustained activation (turn-lock)* and *Flow continuation*.
 
 ### Update mode
@@ -205,3 +306,184 @@ The framework-free IIFE (`jvmessenger/src/loader/`) a customer embeds. Runs in t
 **Budget guard** — the per-turn (`max_turn_cost_usd`) and per-conversation (`max_conversation_cost_usd`) cost ceilings the Orchestrator enforces from metadata-priced `model_call` events (ADR-0046).
 
 **Parallel batch** — the sibling tool calls one model response returned together (same `group_id`) that the Orchestrator dispatches concurrently within a single tick when `max_concurrent_tools` > 1; each sibling passes the pre-dispatch guards first and gets its own call-id-stamped observation (ADR-0048). Counted per turn as `parallel_batches` in the activation telemetry.
+
+**Native delegate** — a host-configured SKILL.md specialist run by the official `SubAgents` capability with a separate message history, shared caller access checks and bounded parent usage. Declaration and conversation scope: `jvagent/harness/delegation.py:9`; composition: `jvagent/harness/native.py:196`. Background and remote modes remain unqualified.
+
+### Native usage reserve
+
+An explicit administrator-approved estimate for an interrupted native run's unknown
+provider cost. It retains the original unknown receipt, charges the existing SDK
+budget windows idempotently and only permits already-qualified input-history
+continuation. It is not a provider invoice or permission to replay effects.
+Source: `jvagent/harness/reconciliation.py:56`; [operator record](plans/2026-11-05-native-reserve.md).
+
+### Blocked recovery notice
+
+A closed, emitted, literal host response explaining that a predecessor needs
+reconciliation. It has no SDK records, model metrics, directives or other Action
+execution. A bounded, identity-checked chain preserves its user messages only after
+the original execution passes normal SDK history admission. Source:
+`jvagent/harness/recovery.py:52`; [acceptance record](plans/2026-11-05-native-notices.md).
+
+### Native context compaction
+The official Harness capability summarizes older model messages while retaining a
+recent suffix and tool-call pairing. JV configures the capability and persists its
+public snapshots and spend receipts; it does not implement another history editor.
+The context trigger is an estimate, and the retained suffix is a floor, not a hard
+request-size cap. Source: [`jvagent/harness/native.py:188`](../jvagent/harness/native.py).
+
+### Accepted-input checkpoint
+A public Harness snapshot captured before model execution, containing the admitted
+question and prior context. The native host may use it for a new user request
+after a terminal failed/cancelled read-only run, after checking caller scope,
+run-tree termination, settled usage and unresolved effects. It does not authorize replay or turn
+an undelivered model answer into conversation history. Sources:
+[`native.py:150`](../jvagent/harness/native.py),
+[`recovery.py:18`](../jvagent/harness/recovery.py).
+
+### Public identity binding
+Server-established provenance for a native public Conversation, persisted as
+`public_identity_kind` (`unbound`, `bearer`, or `anonymous`). Binding occurs under
+the conversation lock, rechecks caller proof and strictly commits secret rotation
+before minting capabilities or executing a turn. Historical capabilities cannot
+establish ownership. This is ingress authorization, not another harness engine.
+Sources: [`session_token.py:604`](../jvagent/action/interact/session_token.py:604),
+[`conversation.py`](../jvagent/memory/conversation.py).
+
+### Platform replay state
+The bounded consumed-host-nonce ledger in Conversation context, keyed by
+`HOST_CONTEXT_REPLAY_KEY`. Domain scratch cleanup retains it independently of
+skill-specific retain lists; clearing an interview must not reopen signed requests.
+Sources: [`core/host_context.py:20`](../jvagent/core/host_context.py:20),
+[`interview/session.py:109`](../jvagent/action/interview/session.py:109).
+
+### SOP projection
+
+A read-only view of composed JV skill procedure text and inherited declarations,
+supplied to official Skills through its public workspace boundary without rewriting
+authored files or adding an execution engine. See `jvagent/harness/skill_assets.py:34`
+and [the qualification record](plans/2026-11-05-native-sop-projection.md).
+
+### Conversation mutation effect
+
+A reviewed Action operation on the admitted Conversation, annotated in the official
+SDK effect ledger before dispatch and acknowledged after strict graph persistence.
+A failed run with this marker requires reconciliation; it is not rollback proof.
+See `jvagent/harness/conversation_tools.py:11` and
+[the interview acceptance record](plans/2026-11-05-native-interview.md).
+
+### Native task dispatch binding
+
+Ephemeral server-only attribution of a claimed PROACTIVE task to its agent,
+conversation, caller, lease and unchanged payload. It permits scheduled input with
+an empty user utterance through the ordinary native entrypoint. It is domain
+admission, not an execution checkpoint or a second run engine. See
+`jvagent/core/task_dispatch.py:34` and [qualification](plans/2026-11-05-native-proactive.md).
+
+### Native reply readback
+
+Read-only projection of completed native replies, paired plain user input and tool traces from existing
+Interaction state and public SDK records into the authorized reply subscription.
+It does not rerun models/tools or redeliver external effects. Client receipt,
+uncertain delivery reconciliation and arbitrary cursor replay are separate gates.
+See `jvagent/action/response/native_replay.py:9` and
+[qualification](plans/2026-11-05-native-replay.md).
+Approved historical text adds a bounded readback cohort through the protected
+import receipt; see [qualification](plans/2026-11-06-native-history-readback.md).
+
+### Native migration candidate
+
+A new YAML declaration proposed by the offline `harness-migrate` command. It
+does not modify source configuration, migrate graph state or certify runtime
+compatibility. See [the migration runbook](runbooks/native-harness-migration.md).
+
+### Retained-state preflight
+
+Offline inspection of an operator-supplied Conversation/Interaction snapshot
+that separates verified retained receipts from the historical ledger and flags
+unresolved work. It never grants cutover authority or writes graph state. See
+[the migration runbook](runbooks/native-harness-migration.md).
+
+### Published-text import
+
+An operator-approved projection of completed historical user/assistant text into
+public SDK messages, paired with an explicitly estimated historical conversation
+spend baseline. It preserves original records and does not replay old tools or
+invent provider receipts. See `jvagent/harness/history_import.py:69` and
+[the migration runbook](runbooks/native-harness-migration.md).
+
+### ToolDispatchContext
+
+The host's immutable, task-local caller/agent/session/Interaction identity for
+Action tools. Native execution binds it through `jvagent.tooling.context`; it
+does not authorize a tool independently of skill and host access policy. The
+separate compatibility visitor is mutable and only for services that require it.
+Source: `jvagent/tooling/context.py:11`. See
+[the extraction record](plans/2026-11-06-native-context-decoupling.md).
+
+### Operator-verified effect recovery
+
+A host-authorized continuation that supplies independently verified current domain
+state through the official SDK's deferred tool results, without replaying or
+rewriting the original mutation. The initial local text-write profile requires a
+stopped owner, immutable graph/resource scope and known model receipts; its first
+resumed turn is read-only. Sources:
+[`effect_recovery.py:48`](../jvagent/harness/effect_recovery.py:48),
+[`native.py:98`](../jvagent/harness/native.py:98).
+
+### Model preflight refusal
+
+An observed refusal from the official SDK spend-admission hook before provider
+execution. Host telemetry binds it to an exact SDK run/step/request-start boundary;
+the original SDK checkpoint/event stays intact. It is neither a paid model receipt
+nor an unknown-billing attempt. Source:
+[`accounting.py:56`](../jvagent/harness/accounting.py:56).
+
+### Artifact snapshot
+
+A bounded copy of a caller-owned file held outside SDK/user writable mounts in
+the existing file service. Sharing issues an expiring bearer download capability
+backed by the existing jvspatial URLProxy; a digest binds the delivered bytes.
+It is application data, not a second execution checkpoint or file store. Source:
+[`sharing.py:39`](../jvagent/action/file_interface/sharing.py:39).
+
+### Tool execution mode
+
+The public SDK scheduling mode scoped around a native run: parallel, sequential,
+or parallel execution with ordered events. JV validates the library-owned type
+and delegates scheduling to its public context manager. It is not an exact
+numeric concurrency quota or distributed capacity guarantee. Source:
+[`native.py:635`](../jvagent/harness/native.py:635).
+
+### Tracked asset inventory
+
+A read-only source listing of Git-tracked Action manifests, SKILL.md files,
+agent declarations and companion-content bindings. It includes app-local and
+fixture scope. Matching the reviewed listing proves coverage, not runtime
+admission, compatibility or deletion approval. See the
+[coverage contract](runbooks/harness-asset-coverage.md) and
+[`harness_asset_inventory.py:91`](../scripts/harness_asset_inventory.py:91).
+
+### Native interview hook approval
+
+Host-reviewed fingerprint of an interview SOP and its custom_tools.py entrypoint,
+configured on InterviewAction rather than granted by skill metadata. It permits
+reviewed conversation-local callbacks inside SDK-dispatched Action tools. It is
+not a Python sandbox, transitive dependency pin or external-effect authorization.
+Source: [`native_hooks.py:1`](../jvagent/action/interview/native_hooks.py:1).
+
+### Idempotency key
+
+A host-chosen identifier recorded by official SDK effect persistence before I/O.
+A reviewed domain may bind a normalized request to an Interaction; another SDK
+call/run cannot claim the same key in that graph adapter. This does not guarantee
+provider-wide exactly-once delivery. See [ADR-0058](adr/0058-native-channel-authority-and-send-effects.md),
+`jvagent/harness/mutation_tools.py:52` and `jvagent/harness/step_store.py:144`.
+
+### Uncertain external outcome
+
+A dispatched operation whose acceptance cannot safely be established, or a
+duplicate claim requiring reconciliation. Mutation facts remain on the SDK
+journal; a missing receipt is not successful delivery or authority to retry.
+See [ADR-0058](adr/0058-native-channel-authority-and-send-effects.md) and
+`jvagent/action/whatsapp/native_tools.py:124`.

@@ -131,6 +131,8 @@ jvagent - Agentive Platform
                                 After bootstrap, populate the memory graph, then start the server (same DB)
     jvagent [<app_root>] status             Show application status
     jvagent [<app_root>] validate [--strict]  Check app.yaml and agent.yaml structure (exit 1 if issues; for CI)
+    jvagent <app_root> harness-migrate --agent ns/name --skill name [--output new.yaml]
+                                           Plan native configuration migration without graph changes
                                   --strict: also fail on advisory findings (heuristic lints,
                                             e.g. a channel override missing its sibling channel)
     jvagent [<app_root>] stress-seed --user-memory-nodes N --interactions-per-user-memory-node M

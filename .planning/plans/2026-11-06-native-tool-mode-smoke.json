@@ -1,0 +1,765 @@
+{
+  "observed_at": "2026-11-06T15:16:56.850408+00:00",
+  "parent_revision": "git-commit:e07139c0072057c143626e2bb56d1482aafc91e2",
+  "runtime_observer": {
+    "process_id": 25023,
+    "observed_at": "2026-11-06T15:16:56.589210+00:00",
+    "source_blobs": {
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:a8a835692d98a9d0e07f3d97bdbb4d8bf4f8547e",
+      "jvagent/cli/harness_migrate.py": "git-blob:d9e50de0f40462c69d9ab4544b894980a47009fb",
+      "jvagent/harness/model_settings.py": "git-blob:e61132232f5693eec8a10ad70d447d2e6922c4b1",
+      "jvagent/harness/native.py": "git-blob:7f85bf7a1eab684a4046472fccc4d35e794b5fa6"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-tool-mode-smoke",
+    "backend": 8159,
+    "ui": 3140,
+    "graph": "isolated PostgreSQL",
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    },
+    "mcp_fixture_git_blob": "git-blob:c72610722fe8ac7a20bf3a60f6455127db2e5969",
+    "synthetic_tool_delay_seconds": 0.35
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.9a1b6a95886a4d7783ad1401",
+      "mode": "sequential",
+      "utterance": "Look up records ALPHA, BETA and GAMMA using the record tool and list each room and start time. Batch the independent lookups together when possible. Use only actual returned data.",
+      "response": "Here are the rooms and start times for each record:\n\n- ALPHA: Room Cedar, Start 14:30\n- BETA: Room Maple, Start 15:00\n- GAMMA: Room Oak, Start 15:30",
+      "started_at": "2026-11-06T11:08:21.635695",
+      "completed_at": "2026-11-06T11:08:29.695289",
+      "duration_seconds": 8.059594,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 749,
+          "output_tokens": 126
+        },
+        "output": "Here are the rooms and start times for each record:\n\n- ALPHA: Room Cedar, Start 14:30\n- BETA: Room Maple, Start 15:00\n- GAMMA: Room Oak, Start 15:30",
+        "run_id": "corr-5fa77a05d7124d40a7b0d4d81bd6dc87",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T15:08:29.677947+00:00",
+                "total_tokens": 875,
+                "prompt_tokens": 749,
+                "total_cost_usd": 0.002506,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 126,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.002506,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 3.983,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.983,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-5fa77a05d7124d40a7b0d4d81bd6dc87"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "sdk_registration": [
+        {
+          "run_id": "corr-5fa77a05d7124d40a7b0d4d81bd6dc87",
+          "metadata": {
+            "jv_user_id": "o.User.57e14b1613f94681b2e494dc",
+            "jv_agent_id": "n.Agent.183bf538f7e3418198ab51b7",
+            "jv_session_id": "sess_2aeeb9da29b04312",
+            "jv_worker_pid": "24634",
+            "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+            "jv_worker_epoch": "19ada201-10e8-4668-b44a-c8cf4f551ea2",
+            "jv_interaction_id": "n.Interaction.9a1b6a95886a4d7783ad1401",
+            "jv_conversation_id": "n.Conversation.58dd320be2234dc9a7a72ac9",
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-06T15:08:23.235705Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_2aeeb9da29b04312",
+          "registration_id": "b17479c9-f6a5-42c0-97b9-a4ab8a9a4aea"
+        }
+      ],
+      "sdk_digest": "sha256:ec0ae369caef4b30491a353be32a087c1fbf6a8c5d93458111cb9d242cbae6dc",
+      "tool_batches": [
+        [],
+        [
+          {
+            "id": "fc_0ff6661da47741fa006aeded69f08487d2bceeb88483d79db1",
+            "args": "{\"reference\":\"ALPHA\"}",
+            "part_kind": "tool-call",
+            "tool_kind": null,
+            "tool_name": "mcp_records__lookup_record",
+            "tool_call_id": "call_GyDi228cCMDYhH1USlIXQxzu",
+            "provider_name": "openai",
+            "provider_details": null
+          },
+          {
+            "id": "fc_0ff6661da47741fa006aeded69f09487d281610df8605d04da",
+            "args": "{\"reference\":\"BETA\"}",
+            "part_kind": "tool-call",
+            "tool_kind": null,
+            "tool_name": "mcp_records__lookup_record",
+            "tool_call_id": "call_1d0J5THYFJ6IH10EJ14z5zzf",
+            "provider_name": "openai",
+            "provider_details": null
+          },
+          {
+            "id": "fc_0ff6661da47741fa006aeded69f09887d2bd981fec50dba676",
+            "args": "{\"reference\":\"GAMMA\"}",
+            "part_kind": "tool-call",
+            "tool_kind": null,
+            "tool_name": "mcp_records__lookup_record",
+            "tool_call_id": "call_jzPN4Vf0MIxQImF09ysbgsS0",
+            "provider_name": "openai",
+            "provider_details": null
+          }
+        ],
+        [],
+        []
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T15:08:29.695333+00:00",
+        "total_tokens": 875,
+        "prompt_tokens": 749,
+        "total_cost_usd": 0.002506,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 126,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002506,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.983,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.983,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 380,
+            "prompt_tokens": 305,
+            "completion_tokens": 75,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00121,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5fa77a05d7124d40a7b0d4d81bd6dc87",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-5fa77a05d7124d40a7b0d4d81bd6dc87:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 495,
+            "prompt_tokens": 444,
+            "completion_tokens": 51,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001296,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5fa77a05d7124d40a7b0d4d81bd6dc87",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-5fa77a05d7124d40a7b0d4d81bd6dc87:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "conversation": {
+        "id": "n.Conversation.58dd320be2234dc9a7a72ac9",
+        "session_id": "sess_2aeeb9da29b04312",
+        "spent": {
+          "usd": "0.002506",
+          "tokens": 875,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "task_count": 0
+      }
+    },
+    {
+      "id": "n.Interaction.ef26cecbbed44deeb467699e",
+      "mode": "parallel",
+      "utterance": "Look up records ALPHA, BETA and GAMMA using the record tool and list each room and start time. Batch the independent lookups together when possible. Use only actual returned data.",
+      "response": "Here are the rooms and start times for each record:\n\n- ALPHA: Room Cedar, Start 14:30\n- BETA: Room Maple, Start 15:00\n- GAMMA: Room Oak, Start 15:30",
+      "started_at": "2026-11-06T11:09:05.351795",
+      "completed_at": "2026-11-06T11:09:09.584302",
+      "duration_seconds": 4.232507,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 749,
+          "output_tokens": 126
+        },
+        "output": "Here are the rooms and start times for each record:\n\n- ALPHA: Room Cedar, Start 14:30\n- BETA: Room Maple, Start 15:00\n- GAMMA: Room Oak, Start 15:30",
+        "run_id": "corr-96bd0ba075584c299ed8b260136fc321",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T15:09:09.568094+00:00",
+                "total_tokens": 875,
+                "prompt_tokens": 749,
+                "total_cost_usd": 0.002506,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 126,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.002506,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.609,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.609,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-96bd0ba075584c299ed8b260136fc321"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "sdk_registration": [
+        {
+          "run_id": "corr-96bd0ba075584c299ed8b260136fc321",
+          "metadata": {
+            "jv_user_id": "o.User.57e14b1613f94681b2e494dc",
+            "jv_agent_id": "n.Agent.c8c35b078e4d4a97bf0725ec",
+            "jv_session_id": "sess_422f5ae9b2b4433c",
+            "jv_worker_pid": "24634",
+            "jv_worker_host": "sha256:719d9eda37dc3e548f2ec16003f3cfe653f8c94b3c6fa6e8d59d6659b61192ec",
+            "jv_worker_epoch": "19ada201-10e8-4668-b44a-c8cf4f551ea2",
+            "jv_interaction_id": "n.Interaction.ef26cecbbed44deeb467699e",
+            "jv_conversation_id": "n.Conversation.9324680499bd47d3b012281f",
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "agent_name": "jvagent-native",
+          "started_at": "2026-11-06T15:09:05.405174Z",
+          "parent_run_id": null,
+          "conversation_id": "sess_422f5ae9b2b4433c",
+          "registration_id": "6dd42129-6443-4fbd-953e-a6655e05548e"
+        }
+      ],
+      "sdk_digest": "sha256:e450a6bac27a4e941f58d03614730b908df66abd3535651cf72dbdcf26a7e1d0",
+      "tool_batches": [
+        [],
+        [
+          {
+            "id": "fc_0d6f485621207f5b006aeded93aaec87d291bc8e18fdf8a8ea",
+            "args": "{\"reference\":\"ALPHA\"}",
+            "part_kind": "tool-call",
+            "tool_kind": null,
+            "tool_name": "mcp_records__lookup_record",
+            "tool_call_id": "call_9SCa3taGDd9B7yOP7knSOUIo",
+            "provider_name": "openai",
+            "provider_details": null
+          },
+          {
+            "id": "fc_0d6f485621207f5b006aeded93aafc87d2a673c7d7ef1d789a",
+            "args": "{\"reference\":\"BETA\"}",
+            "part_kind": "tool-call",
+            "tool_kind": null,
+            "tool_name": "mcp_records__lookup_record",
+            "tool_call_id": "call_Gpi73okfBr9XVaqXVgvrC8SQ",
+            "provider_name": "openai",
+            "provider_details": null
+          },
+          {
+            "id": "fc_0d6f485621207f5b006aeded93ab0887d2b4cb1d8b529a5fe2",
+            "args": "{\"reference\":\"GAMMA\"}",
+            "part_kind": "tool-call",
+            "tool_kind": null,
+            "tool_name": "mcp_records__lookup_record",
+            "tool_call_id": "call_s3AgKyzQrnfrJEz2yESHyNeQ",
+            "provider_name": "openai",
+            "provider_details": null
+          }
+        ],
+        [],
+        []
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T15:09:09.584346+00:00",
+        "total_tokens": 875,
+        "prompt_tokens": 749,
+        "total_cost_usd": 0.002506,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 126,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002506,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.609,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.609,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 380,
+            "prompt_tokens": 305,
+            "completion_tokens": 75,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00121,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-96bd0ba075584c299ed8b260136fc321",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-96bd0ba075584c299ed8b260136fc321:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 495,
+            "prompt_tokens": 444,
+            "completion_tokens": 51,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001296,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-96bd0ba075584c299ed8b260136fc321",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-96bd0ba075584c299ed8b260136fc321:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "conversation": {
+        "id": "n.Conversation.9324680499bd47d3b012281f",
+        "session_id": "sess_422f5ae9b2b4433c",
+        "spent": {
+          "usd": "0.002506",
+          "tokens": 875,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "task_count": 0
+      }
+    }
+  ],
+  "external_tool_audit": {
+    "serial": {
+      "events": [
+        {
+          "event": "start",
+          "reference": "ALPHA",
+          "pid": 24722,
+          "monotonic": 270355.469026333
+        },
+        {
+          "event": "end",
+          "reference": "ALPHA",
+          "pid": 24722,
+          "monotonic": 270355.820080291
+        },
+        {
+          "event": "start",
+          "reference": "BETA",
+          "pid": 24722,
+          "monotonic": 270355.882367958
+        },
+        {
+          "event": "end",
+          "reference": "BETA",
+          "pid": 24722,
+          "monotonic": 270356.233146791
+        },
+        {
+          "event": "start",
+          "reference": "GAMMA",
+          "pid": 24722,
+          "monotonic": 270356.265530041
+        },
+        {
+          "event": "end",
+          "reference": "GAMMA",
+          "pid": 24722,
+          "monotonic": 270356.616504791
+        }
+      ],
+      "peak_active_calls": 1,
+      "tool_span_seconds": 1.147478458005935,
+      "fixture_process_exited": true
+    },
+    "parallel": {
+      "events": [
+        {
+          "event": "start",
+          "reference": "ALPHA",
+          "pid": 24797,
+          "monotonic": 270397.210363833
+        },
+        {
+          "event": "start",
+          "reference": "BETA",
+          "pid": 24797,
+          "monotonic": 270397.244552083
+        },
+        {
+          "event": "start",
+          "reference": "GAMMA",
+          "pid": 24797,
+          "monotonic": 270397.247891666
+        },
+        {
+          "event": "end",
+          "reference": "ALPHA",
+          "pid": 24797,
+          "monotonic": 270397.563048958
+        },
+        {
+          "event": "end",
+          "reference": "BETA",
+          "pid": 24797,
+          "monotonic": 270397.596515541
+        },
+        {
+          "event": "end",
+          "reference": "GAMMA",
+          "pid": 24797,
+          "monotonic": 270397.598297375
+        }
+      ],
+      "peak_active_calls": 3,
+      "tool_span_seconds": 0.3879335420206189,
+      "fixture_process_exited": true
+    }
+  },
+  "persisted_action_modes": [
+    {
+      "id": "n.NativeHarnessAction.9a7ec36a00074eb7b73092e7",
+      "agent_id": "n.Agent.183bf538f7e3418198ab51b7",
+      "tool_execution_mode": "sequential"
+    },
+    {
+      "id": "n.NativeHarnessAction.356143bca969443a81eb5d33",
+      "agent_id": "n.Agent.c8c35b078e4d4a97bf0725ec",
+      "tool_execution_mode": "parallel"
+    }
+  ],
+  "migration_reports": {
+    "serial": {
+      "schema": "jvagent.native-config-migration.v1",
+      "source": "agents/demo/serial/agent.yaml",
+      "source_digest": "sha256:fe5bccfd2edb90943630795394bac69dc424d88968c2a1a4773efce7b81be3bb",
+      "status": "candidate",
+      "blockers": [],
+      "mappings": {
+        "max_concurrent_tools": "tool_execution_mode",
+        "activation_budget": "max_requests",
+        "max_duration_seconds": "timeout_seconds",
+        "max_turn_cost_usd": "max_run_cost_usd",
+        "max_conversation_cost_usd": "max_conversation_cost_usd",
+        "model": "model",
+        "model_action_type": "native provider",
+        "system_prompt_extra": "instructions",
+        "model_temperature": "model_settings.temperature",
+        "model_max_tokens": "model_settings.max_tokens",
+        "enabled": "enabled"
+      },
+      "bounded_defaults": [
+        "max_tokens"
+      ],
+      "preserved_action_count": 2,
+      "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+      "required_review": [
+        "Skills, scripts, Action tools and channel compatibility",
+        "Credentials and native provider settings",
+        "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+        "Fresh isolated bootstrap and actual-provider browser rehearsal"
+      ],
+      "retired_settings": {},
+      "selected_skill_count": 1,
+      "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+    },
+    "parallel": {
+      "schema": "jvagent.native-config-migration.v1",
+      "source": "agents/demo/parallel/agent.yaml",
+      "source_digest": "sha256:76be018f06cf835db0c1ccd33a10feb3de495c498f9bd8ad84e810f3b162091d",
+      "status": "candidate",
+      "blockers": [],
+      "mappings": {
+        "max_concurrent_tools": "tool_execution_mode",
+        "activation_budget": "max_requests",
+        "max_duration_seconds": "timeout_seconds",
+        "max_turn_cost_usd": "max_run_cost_usd",
+        "max_conversation_cost_usd": "max_conversation_cost_usd",
+        "model": "model",
+        "model_action_type": "native provider",
+        "system_prompt_extra": "instructions",
+        "model_temperature": "model_settings.temperature",
+        "model_max_tokens": "model_settings.max_tokens",
+        "enabled": "enabled"
+      },
+      "bounded_defaults": [
+        "max_tokens"
+      ],
+      "preserved_action_count": 2,
+      "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+      "required_review": [
+        "Skills, scripts, Action tools and channel compatibility",
+        "Credentials and native provider settings",
+        "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+        "Fresh isolated bootstrap and actual-provider browser rehearsal"
+      ],
+      "retired_settings": {},
+      "selected_skill_count": 1,
+      "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+    }
+  },
+  "reference_migration": {
+    "schema": "jvagent.native-config-migration.v1",
+    "source": "agents/jvagent/orchestrator_agent/agent.yaml",
+    "source_digest": "sha256:4a84450f53dfdcc1b606e55f79f59eea61b2e0cc5ed5e1e9058104eb2b15c437",
+    "status": "blocked",
+    "blockers": [
+      "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+      "Unmapped execution setting: block_raw_tool_invocation",
+      "Unmapped execution setting: stream_reasoning_trace",
+      "Unmapped execution setting: tool_servers",
+      "Unmapped execution setting: tool_tier",
+      "Setting requires qualified native policy migration: channel_overrides",
+      "Setting requires qualified native policy migration: vision",
+      "Setting requires qualified native policy migration: lock_active_flow",
+      "Selected skill 6 needs native format/name/spec migration",
+      "Selected skill 7 needs native format/name/spec migration",
+      "Selected skill 8 needs native format/name/spec migration",
+      "Selected skill 9 needs native format/name/spec migration",
+      "Selected skill 10 needs native format/name/spec migration",
+      "Selected skill 11 needs native format/name/spec migration",
+      "Model service has unqualified callers or provider declarations; review before removal"
+    ],
+    "mappings": {
+      "light_model": "retired",
+      "light_model_action_type": "retired",
+      "light_model_temperature": "retired",
+      "light_model_max_tokens": "retired",
+      "enable_transient_ack": "retired",
+      "ack_on_first_tool_call": "retired",
+      "ack_interval_ms": "retired",
+      "first_emit_timeout_ms": "retired",
+      "ack_statements": "retired",
+      "stream_internal_progress": "retired",
+      "lean_tool_threshold": "retired",
+      "lean_presurface_k": "retired",
+      "history_limit": "retired",
+      "pinned_tools": "retired inactive control",
+      "skill_only_tools": "retired inactive control",
+      "with_event": "retired inactive control",
+      "tool_call_timeout": "retired inactive control",
+      "pilot_max_model_requests": "retired inactive pilot control",
+      "pilot_max_total_tokens": "retired inactive pilot control",
+      "pilot_max_runtime_seconds": "retired inactive pilot control",
+      "pilot_max_output_tokens": "retired inactive pilot control",
+      "pilot_max_tool_calls": "retired inactive pilot control",
+      "max_concurrent_tools": "tool_execution_mode",
+      "activation_budget": "max_requests",
+      "max_duration_seconds": "timeout_seconds"
+    },
+    "bounded_defaults": [
+      "timeout_seconds",
+      "max_run_cost_usd",
+      "max_conversation_cost_usd",
+      "max_tokens"
+    ],
+    "preserved_action_count": 17,
+    "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+    "required_review": [
+      "Skills, scripts, Action tools and channel compatibility",
+      "Credentials and native provider settings",
+      "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+      "Fresh isolated bootstrap and actual-provider browser rehearsal",
+      "Planning uses official write_plan/read_plan tools and scoped graph state; retained legacy plan tasks require separate migration",
+      "Review explicit control retirements and native single-model/context/event behavior before cutover"
+    ],
+    "retired_settings": {
+      "light_model": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_action_type": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_temperature": "Retired model gearing; use the configured native model and remeasure cost",
+      "light_model_max_tokens": "Retired model gearing; use the configured native model and remeasure cost",
+      "enable_transient_ack": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_on_first_tool_call": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_interval_ms": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "first_emit_timeout_ms": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "ack_statements": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "stream_internal_progress": "Retired synthetic loop progress/acknowledgements; native SDK events remain",
+      "lean_tool_threshold": "Retired legacy pre-surfacing; official Skills and host tool ownership replace it",
+      "lean_presurface_k": "Retired legacy pre-surfacing; official Skills and host tool ownership replace it",
+      "history_limit": "Retired turn-count prompt window; native bounded SDK compaction replaces it",
+      "pinned_tools": "Explicitly empty/disabled legacy control; no active policy removed",
+      "skill_only_tools": "Explicitly empty/disabled legacy control; no active policy removed",
+      "with_event": "Explicitly empty/disabled legacy control; no active policy removed",
+      "tool_call_timeout": "Explicitly empty/disabled legacy control; no active policy removed",
+      "pilot_max_model_requests": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_total_tokens": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_runtime_seconds": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_output_tokens": "Inactive pilot declaration; active legacy limits migrate separately",
+      "pilot_max_tool_calls": "Inactive pilot declaration; active legacy limits migrate separately"
+    },
+    "selected_skill_count": 5,
+    "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+  },
+  "restart_cache_restore": {
+    "label": "restored",
+    "interaction_hashes": {
+      "n.Interaction.9a1b6a95886a4d7783ad1401": "sha256:de550392fcce69743e3834db8a07c8f060b40df7a06ee3c416afdd21be3ebaa7",
+      "n.Interaction.ef26cecbbed44deeb467699e": "sha256:482a0344c28e5d2ea0be7a5bfd2f49fc94e4e124b14a11b9f0713b132137de62"
+    },
+    "interaction_count": 2,
+    "registration_count": 2,
+    "conversations": {
+      "n.Conversation.58dd320be2234dc9a7a72ac9": {
+        "native_spend_digest": "sha256:6d079cb8dd8d8161dd939bf50775a2a09ef25bc7175c25bf744b826a27470d19",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_2aeeb9da29b04312": {
+            "spent": {
+              "usd": "0.002506",
+              "tokens": 875,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T15:08:29.219781+00:00"
+          },
+          "default|run|*|corr-5fa77a05d7124d40a7b0d4d81bd6dc87": {
+            "spent": {
+              "usd": "0.002506",
+              "tokens": 875,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T15:08:29.219781+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.9324680499bd47d3b012281f": {
+        "native_spend_digest": "sha256:3c9671f4340eb475ae31b384ad09bc8aa8f8dda448598a7602168731e2771b3f",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_422f5ae9b2b4433c": {
+            "spent": {
+              "usd": "0.002506",
+              "tokens": 875,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T15:09:09.150446+00:00"
+          },
+          "default|run|*|corr-96bd0ba075584c299ed8b260136fc321": {
+            "spent": {
+              "usd": "0.002506",
+              "tokens": 875,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T15:09:09.150446+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "totals": {
+    "delivered": 2,
+    "provider_requests": 4,
+    "provider_reported_tokens": 1750,
+    "estimated_cost_usd": "0.005012",
+    "unknown_cost_calls": 0
+  },
+  "limits": [
+    "One three-call actual-model batch per mode, synthetic read-only MCP service and fixed delays; no general performance, throughput, p95 or production optimization claim.",
+    "Official SDK child inheritance and cancellation/failure scope restoration are deterministic regressions, not actual-provider child/cancellation browser tests in this cohort.",
+    "Numeric widths greater than one remain migration blockers; parallel mode is not an exact numeric concurrency ceiling.",
+    "Distributed limits, effect recovery, remaining compatibility, migration/deletion and enterprise release remain open."
+  ],
+  "metadata_projection": "Worker epochs use equivalent hyphenated UUID presentation; canonical SDK records and their digests are unchanged."
+}

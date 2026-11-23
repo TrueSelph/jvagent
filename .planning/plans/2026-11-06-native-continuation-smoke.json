@@ -1,0 +1,1762 @@
+{
+  "parent_revision": "git-commit:7ded3a4ba8dc4b2a7fe17ce9bfcd92537437ab81",
+  "scope": "Disposable PostgreSQL, jvchat 3140/backend 8177, actual OpenAI GPT-4.1, no external delivery. Native detour/resumption and reviewed signup hooks; no retained-task migration or performance qualification.",
+  "source_blobs": {
+    "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+    "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+    "jvagent/action/interview/AGENTS.md": "git-blob:3e4148017ed36b897c594e26342cd198227347fc",
+    "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+    "jvagent/action/interview/native_skill/SKILL.md": "git-blob:68de05753e716e912d22414bc3e1ea718a1c1ae1",
+    "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+  },
+  "migration": {
+    "schema": "jvagent.native-config-migration.v1",
+    "source": "agents/demo/assistant/agent.yaml",
+    "source_digest": "sha256:175a3001675ae9d46402bd0e8d7213fb7ef625fd5f252206b36ad8b134476050",
+    "status": "candidate",
+    "blockers": [],
+    "mappings": {
+      "lock_active_flow": "retired",
+      "tool_tier": "declared clock service",
+      "skills": "skill_directories",
+      "skills_source": "skill_directories",
+      "max_concurrent_tools": "tool_execution_mode",
+      "activation_budget": "max_requests",
+      "max_duration_seconds": "timeout_seconds",
+      "max_turn_cost_usd": "max_run_cost_usd",
+      "max_conversation_cost_usd": "max_conversation_cost_usd",
+      "model": "model",
+      "model_action_type": "native provider",
+      "system_prompt_extra": "instructions",
+      "model_temperature": "model_settings.temperature",
+      "model_max_tokens": "model_settings.max_tokens",
+      "enabled": "enabled"
+    },
+    "bounded_defaults": [
+      "tool_execution_mode",
+      "max_tokens"
+    ],
+    "preserved_action_count": 2,
+    "scope": "Configuration candidate only; no graph/state migration or runtime qualification",
+    "required_review": [
+      "Skills, scripts, Action tools and channel compatibility",
+      "Credentials and native provider settings",
+      "Historical tasks, usage, checkpoints and uncertain effects before graph cutover",
+      "Fresh isolated bootstrap and actual-provider browser rehearsal",
+      "Qualify skill detours/resumption and domain validation; retained legacy flow/task locks require separate state migration",
+      "Review explicit control retirements and native single-model/context/event behavior before cutover",
+      "Review explicit AgentUtils clock declaration, app timezone, skill tool ownership and host permissions",
+      "Qualify the reviewed interview's tools, hooks, task state and completion in an isolated native app before cutover",
+      "Qualify the reviewed interview's tools, hooks, task state and completion in an isolated native app before cutover"
+    ],
+    "retired_settings": {
+      "lock_active_flow": "Retired deterministic turn routing; official SDK skill ownership and persisted domain task state support model-led continuation, not a hard turn lock",
+      "tool_tier": "Retired core-tool tier; clock refresh is an AgentUtils service governed by active skill tools and host permission"
+    },
+    "added_actions": [
+      "jvagent/agent_utils"
+    ],
+    "selected_skill_count": 3,
+    "skill_format_preflight": "JV policy projection and official Skills loader; runtime tools/Action prerequisites still require qualification"
+  },
+  "regenerated_candidate_exact": true,
+  "candidate_actions": [
+    "jvagent/native_harness",
+    "jvagent/interview",
+    "jvagent/reply",
+    "jvagent/agent_utils"
+  ],
+  "initial_acceptance": {
+    "scope": "Model-led native skill detour/resumption replaces legacy deterministic routing; no automatic retained-task cutover",
+    "required": [
+      "explicit SDK skill loading and validated initial email",
+      "general skill detour leaves domain session/task exact",
+      "terminal worker exit and unchanged cold readback",
+      "resume through get_status; no duplicate start or old answer rewrite",
+      "review and later user confirmation before completion",
+      "reload restores tools/answers/usage without execution"
+    ],
+    "external_effects": false,
+    "optimization_claim": false
+  },
+  "procedural_expectation_missed": "Initial cold resume skipped the proposed mandatory get_status read, while validated tools preserved authoritative session/task state. Final SOP requests status when progress is unclear rather than requiring a redundant read. Initial confirmation overlapped this asset edit and is not final-source proof. Final-source cohort starts fresh and spans a terminal cold restart.",
+  "turns": [
+    {
+      "index": 0,
+      "cohort": "initial-procedure",
+      "interaction_id": "n.Interaction.077b6d3224ad4ffdaf236258",
+      "conversation_id": "n.Conversation.07566b1aa41a472eaf090f20",
+      "session_id": "sess_0482cb8212be4ea7",
+      "utterance": "Start the contact-interview skill. My contact email is tester@training.invalid.",
+      "response": "What delivery preference should I record? (For example: email, phone, or another method.)",
+      "started_at": "2026-11-06T22:10:51.891325",
+      "completed_at": "2026-11-06T22:11:04.323591",
+      "elapsed_seconds": 12.432266,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:11:04.323755+00:00",
+        "total_tokens": 7903,
+        "prompt_tokens": 7805,
+        "total_cost_usd": 0.011402,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 5,
+        "completion_tokens": 98,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.011402,
+        "model_attempt_count": 5,
+        "cached_prompt_tokens": 3328,
+        "total_duration_seconds": 6.267,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 6.267,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "94230",
+      "worker_epoch": "worker-epoch:434e6759594e42e79533e451a9c574b1",
+      "calls": [
+        {
+          "name": "load_capability",
+          "args": {
+            "id": "contact-interview"
+          }
+        },
+        {
+          "name": "interview__start",
+          "args": {
+            "interview_type": "contact-interview"
+          }
+        },
+        {
+          "name": "interview__set_fields",
+          "args": {
+            "fields": {
+              "contact_email": "tester@training.invalid"
+            }
+          }
+        },
+        {
+          "name": "interview__next_field",
+          "args": {}
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-5c62f9863c9741d38e4e5e130cab9d38",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:10:56.675223Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T02:10:56.658364Z",
+          "tool_call_id": "sha256:8529e2be167517b750f058bf3cd63d0e4092a32db263307bb50f0ca6e6791080",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-5c62f9863c9741d38e4e5e130cab9d38",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:10:58.525654Z",
+          "tool_name": "interview__start",
+          "started_at": "2026-11-07T02:10:58.447475Z",
+          "tool_call_id": "sha256:2c6b37bfa4508a42989b1d09afd05c2a9b665885c1561259435d14839f3e3a13",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-5c62f9863c9741d38e4e5e130cab9d38/sha256:2c6b37bfa4508a42989b1d09afd05c2a9b665885c1561259435d14839f3e3a13"
+        },
+        {
+          "run_id": "corr-5c62f9863c9741d38e4e5e130cab9d38",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:11:00.410248Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T02:11:00.337086Z",
+          "tool_call_id": "sha256:9128a60ecf6c17e6e026951c1b06077bd108163a3dcdc6a8123a101becc8467a",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-5c62f9863c9741d38e4e5e130cab9d38/sha256:9128a60ecf6c17e6e026951c1b06077bd108163a3dcdc6a8123a101becc8467a"
+        },
+        {
+          "run_id": "corr-5c62f9863c9741d38e4e5e130cab9d38",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:11:02.195364Z",
+          "tool_name": "interview__next_field",
+          "started_at": "2026-11-07T02:11:02.087825Z",
+          "tool_call_id": "sha256:c21167103ab405c0f2fd9b251c1f64ab74b3041ee4b86fbe686c2877293bc026",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-5c62f9863c9741d38e4e5e130cab9d38/sha256:c21167103ab405c0f2fd9b251c1f64ab74b3041ee4b86fbe686c2877293bc026"
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 5,
+        "model_request_completed": 5,
+        "tool_call_started": 4,
+        "tool_call_completed": 4,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 1,
+      "cohort": "initial-procedure",
+      "interaction_id": "n.Interaction.ed0a745f640242ac81922064",
+      "conversation_id": "n.Conversation.07566b1aa41a472eaf090f20",
+      "session_id": "sess_0482cb8212be4ea7",
+      "utterance": "Pause the interview for a side question. Use the general skill to calculate 23 times 17. Do not change my interview answers.",
+      "response": "Calculation: 23 times 17 is 391.\n\nYour interview answers remain unchanged. Let me know when you're ready to resume the contact interview.",
+      "started_at": "2026-11-06T22:11:29.230381",
+      "completed_at": "2026-11-06T22:11:33.815679",
+      "elapsed_seconds": 4.585298,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:11:33.815780+00:00",
+        "total_tokens": 4362,
+        "prompt_tokens": 4315,
+        "total_cost_usd": 0.003246,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 47,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.003246,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 3840,
+        "total_duration_seconds": 2.108,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.108,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "94230",
+      "worker_epoch": "worker-epoch:434e6759594e42e79533e451a9c574b1",
+      "calls": [
+        {
+          "name": "load_capability",
+          "args": {
+            "id": "general"
+          }
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-a180c5b6736b4d61ad4a816741bf02bb",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:11:31.721091Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T02:11:31.694170Z",
+          "tool_call_id": "sha256:8de7880e5e8897261e7429f2b366645abb58d15f6170c7a12d1bd198dca200c1",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 2,
+        "model_request_completed": 2,
+        "tool_call_started": 1,
+        "tool_call_completed": 1,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 2,
+      "cohort": "initial-procedure",
+      "interaction_id": "n.Interaction.d7a47aacdeb7485cba35e3a1",
+      "conversation_id": "n.Conversation.07566b1aa41a472eaf090f20",
+      "session_id": "sess_0482cb8212be4ea7",
+      "utterance": "Resume the contact interview. My delivery preference is email.",
+      "response": "Please review the details:\n\n**Contact Email**: tester@training.invalid  \n**Delivery Preference**: email\n\nIf everything looks correct, reply \"Confirm\" or \"Yes\" to continue. If you'd like to make changes, just let me know.",
+      "started_at": "2026-11-06T22:16:17.616561",
+      "completed_at": "2026-11-06T22:16:26.743267",
+      "elapsed_seconds": 9.126706,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:16:26.743471+00:00",
+        "total_tokens": 7316,
+        "prompt_tokens": 7229,
+        "total_cost_usd": 0.00517,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 87,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00517,
+        "model_attempt_count": 3,
+        "cached_prompt_tokens": 6656,
+        "total_duration_seconds": 3.985,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.985,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "94430",
+      "worker_epoch": "worker-epoch:4f38c7f081ca4f39bbd0668e621dc170",
+      "calls": [
+        {
+          "name": "interview__set_fields",
+          "args": {
+            "fields": {
+              "delivery_preference": "email"
+            }
+          }
+        },
+        {
+          "name": "interview__review",
+          "args": {}
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-9062dc830ebe4954acd215ca164ce0b9",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:16:22.199313Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T02:16:22.121460Z",
+          "tool_call_id": "sha256:4b6a7496e378370169e0a9c1dbc7b05a84e41ccafa1d994b85061bb7b79c9e57",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-9062dc830ebe4954acd215ca164ce0b9/sha256:4b6a7496e378370169e0a9c1dbc7b05a84e41ccafa1d994b85061bb7b79c9e57"
+        },
+        {
+          "run_id": "corr-9062dc830ebe4954acd215ca164ce0b9",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:16:24.391514Z",
+          "tool_name": "interview__review",
+          "started_at": "2026-11-07T02:16:24.290946Z",
+          "tool_call_id": "sha256:a3e157b24320fe8a8368acebf56fd744ac04ea681d7efe0b14be934b71d11ea3",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-9062dc830ebe4954acd215ca164ce0b9/sha256:a3e157b24320fe8a8368acebf56fd744ac04ea681d7efe0b14be934b71d11ea3"
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 3,
+        "model_request_completed": 3,
+        "tool_call_started": 2,
+        "tool_call_completed": 2,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 3,
+      "cohort": "initial-procedure",
+      "interaction_id": "n.Interaction.818a5ac3ca00401895d91d52",
+      "conversation_id": "n.Conversation.07566b1aa41a472eaf090f20",
+      "session_id": "sess_0482cb8212be4ea7",
+      "utterance": "Yes, I confirm those contact details.",
+      "response": "Your contact details have been recorded successfully:\n\n- Contact Email: tester@training.invalid\n- Delivery Preference: email\n\nIf you need to start a new contact interview or have any other requests, just let me know!",
+      "started_at": "2026-11-06T22:19:01.567276",
+      "completed_at": "2026-11-06T22:19:06.743949",
+      "elapsed_seconds": 5.176673,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:19:06.744047+00:00",
+        "total_tokens": 5942,
+        "prompt_tokens": 5884,
+        "total_cost_usd": 0.005128,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 58,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005128,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 4736,
+        "total_duration_seconds": 2.62,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.62,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "94430",
+      "worker_epoch": "worker-epoch:4f38c7f081ca4f39bbd0668e621dc170",
+      "calls": [
+        {
+          "name": "interview__complete",
+          "args": {}
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-4b76ee4dce6949d8921654a933540ffb",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:19:04.363899Z",
+          "tool_name": "interview__complete",
+          "started_at": "2026-11-07T02:19:04.285407Z",
+          "tool_call_id": "sha256:647001fe7dcbea1770359980a6be1361e9d71cac5c19e880251227f5c5aa0f85",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-4b76ee4dce6949d8921654a933540ffb/sha256:647001fe7dcbea1770359980a6be1361e9d71cac5c19e880251227f5c5aa0f85"
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 2,
+        "model_request_completed": 2,
+        "tool_call_started": 1,
+        "tool_call_completed": 1,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 4,
+      "cohort": "final-source",
+      "interaction_id": "n.Interaction.95bd7cc6ee554a649ab4bfff",
+      "conversation_id": "n.Conversation.87616aa32f5940e1a28d673d",
+      "session_id": "sess_81f2af02e6b84433",
+      "utterance": "Start the contact-interview skill. My contact email is fresh@training.invalid.",
+      "response": "What delivery preference should I record? (For example: email, phone, or another method.)",
+      "started_at": "2026-11-06T22:24:01.834238",
+      "completed_at": "2026-11-06T22:24:13.759073",
+      "elapsed_seconds": 11.924835,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:24:13.759251+00:00",
+        "total_tokens": 7927,
+        "prompt_tokens": 7829,
+        "total_cost_usd": 0.01145,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 5,
+        "completion_tokens": 98,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.01145,
+        "model_attempt_count": 5,
+        "cached_prompt_tokens": 3328,
+        "total_duration_seconds": 5.695,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 5.695,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "94851",
+      "worker_epoch": "worker-epoch:3214011b7eed45ee8d8fc3530b2e8bfd",
+      "calls": [
+        {
+          "name": "load_capability",
+          "args": {
+            "id": "contact-interview"
+          }
+        },
+        {
+          "name": "interview__start",
+          "args": {
+            "interview_type": "contact-interview"
+          }
+        },
+        {
+          "name": "interview__set_fields",
+          "args": {
+            "fields": {
+              "contact_email": "fresh@training.invalid"
+            }
+          }
+        },
+        {
+          "name": "interview__next_field",
+          "args": {}
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-0a370e4465d54669869823cbd562c697",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:24:05.771334Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T02:24:05.750890Z",
+          "tool_call_id": "sha256:fadd86f562b123709dd3150136ce3160bb276128a3df31062e3aab0dd912538e",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-0a370e4465d54669869823cbd562c697",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:24:07.534738Z",
+          "tool_name": "interview__start",
+          "started_at": "2026-11-07T02:24:07.451256Z",
+          "tool_call_id": "sha256:e66191d167de57d09ee72bd377f90dfdb0fca38f99a80006e25bca89552ff5ec",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-0a370e4465d54669869823cbd562c697/sha256:e66191d167de57d09ee72bd377f90dfdb0fca38f99a80006e25bca89552ff5ec"
+        },
+        {
+          "run_id": "corr-0a370e4465d54669869823cbd562c697",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:24:09.626301Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T02:24:09.542850Z",
+          "tool_call_id": "sha256:45227c4983fd0f8e66db079350b9dba76df47e09e857fbf03e45ca97d89a3be2",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-0a370e4465d54669869823cbd562c697/sha256:45227c4983fd0f8e66db079350b9dba76df47e09e857fbf03e45ca97d89a3be2"
+        },
+        {
+          "run_id": "corr-0a370e4465d54669869823cbd562c697",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:24:11.449544Z",
+          "tool_name": "interview__next_field",
+          "started_at": "2026-11-07T02:24:11.359541Z",
+          "tool_call_id": "sha256:59c44cba0859f12e6926d76d47220e0c147a9fbc05bba83367e01d77074bb70c",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-0a370e4465d54669869823cbd562c697/sha256:59c44cba0859f12e6926d76d47220e0c147a9fbc05bba83367e01d77074bb70c"
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 5,
+        "model_request_completed": 5,
+        "tool_call_started": 4,
+        "tool_call_completed": 4,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 5,
+      "cohort": "final-source",
+      "interaction_id": "n.Interaction.dbda84b907f946b9ba0f3281",
+      "conversation_id": "n.Conversation.87616aa32f5940e1a28d673d",
+      "session_id": "sess_81f2af02e6b84433",
+      "utterance": "Pause the interview for a side question. Use the general skill to calculate 31 times 9. Do not change my interview answers.",
+      "response": "Calculation: 31 times 9 is 279.\n\nYour interview answers remain unchanged. Let me know when you're ready to resume.",
+      "started_at": "2026-11-06T22:25:14.468308",
+      "completed_at": "2026-11-06T22:25:18.918984",
+      "elapsed_seconds": 4.450676,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:25:18.919101+00:00",
+        "total_tokens": 4371,
+        "prompt_tokens": 4327,
+        "total_cost_usd": 0.003438,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 44,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.003438,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 3712,
+        "total_duration_seconds": 1.883,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.883,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "94851",
+      "worker_epoch": "worker-epoch:3214011b7eed45ee8d8fc3530b2e8bfd",
+      "calls": [
+        {
+          "name": "load_capability",
+          "args": {
+            "id": "general"
+          }
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-0c3a5f9867bb4971ab2d8ec04c758eef",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:25:16.637340Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T02:25:16.610063Z",
+          "tool_call_id": "sha256:a81fdf18806bdda2cd786659138fc155e26efdfbd839e9d91c8aac8899105855",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 2,
+        "model_request_completed": 2,
+        "tool_call_started": 1,
+        "tool_call_completed": 1,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 6,
+      "cohort": "final-source",
+      "interaction_id": "n.Interaction.933bf382702645539e9a3445",
+      "conversation_id": "n.Conversation.87616aa32f5940e1a28d673d",
+      "session_id": "sess_81f2af02e6b84433",
+      "utterance": "Resume the contact interview. My delivery preference is phone.",
+      "response": "Please review the details:\n\n**Contact Email**: fresh@training.invalid  \n**Delivery Preference**: phone\n\nIf everything looks correct, reply \"Confirm\" or \"Yes\" to continue. If you'd like to make changes, just let me know.",
+      "started_at": "2026-11-06T22:35:28.081189",
+      "completed_at": "2026-11-06T22:35:37.024467",
+      "elapsed_seconds": 8.943278,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:35:37.024620+00:00",
+        "total_tokens": 7325,
+        "prompt_tokens": 7238,
+        "total_cost_usd": 0.005572,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 3,
+        "completion_tokens": 87,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005572,
+        "model_attempt_count": 3,
+        "cached_prompt_tokens": 6400,
+        "total_duration_seconds": 3.599,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.599,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "95194",
+      "worker_epoch": "worker-epoch:3f91cc4f8e564c1fa527512c50d17f69",
+      "calls": [
+        {
+          "name": "interview__set_fields",
+          "args": {
+            "fields": {
+              "delivery_preference": "phone"
+            }
+          }
+        },
+        {
+          "name": "interview__review",
+          "args": {}
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-bb33c4174ca0482ba5c0939ab162c4b1",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:35:32.332017Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T02:35:32.265636Z",
+          "tool_call_id": "sha256:767559468c113da0653c7bae23261a835a8f17d260ffa922cdb2a6b5f05a134d",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-bb33c4174ca0482ba5c0939ab162c4b1/sha256:767559468c113da0653c7bae23261a835a8f17d260ffa922cdb2a6b5f05a134d"
+        },
+        {
+          "run_id": "corr-bb33c4174ca0482ba5c0939ab162c4b1",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:35:34.507129Z",
+          "tool_name": "interview__review",
+          "started_at": "2026-11-07T02:35:34.409723Z",
+          "tool_call_id": "sha256:c5fb8c8239e2495bdb9278b265bb855bddf6d74adf5e06fcf0a37140e44c59f9",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-bb33c4174ca0482ba5c0939ab162c4b1/sha256:c5fb8c8239e2495bdb9278b265bb855bddf6d74adf5e06fcf0a37140e44c59f9"
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 3,
+        "model_request_completed": 3,
+        "tool_call_started": 2,
+        "tool_call_completed": 2,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 7,
+      "cohort": "final-source",
+      "interaction_id": "n.Interaction.4b962cd3f980419280c558c9",
+      "conversation_id": "n.Conversation.87616aa32f5940e1a28d673d",
+      "session_id": "sess_81f2af02e6b84433",
+      "utterance": "Yes, I confirm those contact details.",
+      "response": "Your contact details have been recorded successfully:\n\n- Contact Email: fresh@training.invalid\n- Delivery Preference: phone\n\nThe interview is now complete. If you need to update your details or start a new interview, just let me know!",
+      "started_at": "2026-11-06T22:35:55.839824",
+      "completed_at": "2026-11-06T22:36:00.834922",
+      "elapsed_seconds": 4.995098,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:36:00.835022+00:00",
+        "total_tokens": 5510,
+        "prompt_tokens": 5448,
+        "total_cost_usd": 0.004096,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 62,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004096,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 4864,
+        "total_duration_seconds": 2.262,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.262,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "95194",
+      "worker_epoch": "worker-epoch:3f91cc4f8e564c1fa527512c50d17f69",
+      "calls": [
+        {
+          "name": "interview__complete",
+          "args": {}
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-091d3ae485d94b73b75c96da3025b26f",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:35:58.432840Z",
+          "tool_name": "interview__complete",
+          "started_at": "2026-11-07T02:35:58.336894Z",
+          "tool_call_id": "sha256:bf8a4c2128e8900279aab34e42a40ec854559248a63b20f2fd863cd74ab10e2e",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-091d3ae485d94b73b75c96da3025b26f/sha256:bf8a4c2128e8900279aab34e42a40ec854559248a63b20f2fd863cd74ab10e2e"
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 2,
+        "model_request_completed": 2,
+        "tool_call_started": 1,
+        "tool_call_completed": 1,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 8,
+      "cohort": "final-source",
+      "interaction_id": "n.Interaction.0eb7ebaff1d840cc8249bbe3",
+      "conversation_id": "n.Conversation.672f281801b04ccea9d270b2",
+      "session_id": "sess_d4f5afcaddad4af9",
+      "utterance": "Start signup-interview. My full name is Jane Doe, my preferred slot is Monday at 9 AM, and my email is jane@training.invalid. I decline to provide a phone number. Please show the review before completing.",
+      "response": "Here's a summary of your jvagent training signup. Please confirm these details are correct before I record your signup:\n\n**User Name**: Jane Doe  \n**Available Times**: Monday 9:00 AM - 11:00 AM  \n**User Email**: jane@training.invalid\n\nIf everything looks correct, reply 'Confirm' or 'Yes' to continue. If you'd like to make changes, just let me know.",
+      "started_at": "2026-11-06T22:36:25.683228",
+      "completed_at": "2026-11-06T22:36:39.752712",
+      "elapsed_seconds": 14.069484,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:36:39.752921+00:00",
+        "total_tokens": 14064,
+        "prompt_tokens": 13863,
+        "total_cost_usd": 0.021462,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 6,
+        "completion_tokens": 201,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.021462,
+        "model_attempt_count": 6,
+        "cached_prompt_tokens": 5248,
+        "total_duration_seconds": 7.884,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 7.884,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "95194",
+      "worker_epoch": "worker-epoch:3f91cc4f8e564c1fa527512c50d17f69",
+      "calls": [
+        {
+          "name": "load_capability",
+          "args": {
+            "id": "signup-interview"
+          }
+        },
+        {
+          "name": "interview__start",
+          "args": {
+            "interview_type": "signup-interview"
+          }
+        },
+        {
+          "name": "interview__set_fields",
+          "args": {
+            "fields": {
+              "user_name": "Jane Doe",
+              "available_times": "Monday at 9 AM",
+              "user_email": "jane@training.invalid"
+            }
+          }
+        },
+        {
+          "name": "interview__skip_field",
+          "args": {
+            "field_key": "phone_number"
+          }
+        },
+        {
+          "name": "interview__review",
+          "args": {}
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-aadc2524e7f3429a8fc8689e763fe24e",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:36:28.139211Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T02:36:28.121783Z",
+          "tool_call_id": "sha256:bda11a018e56c369ba6f77119097fca66f7f636e2d5c5370e34654271cc6202e",
+          "effect_summary": null,
+          "idempotency_key": null
+        },
+        {
+          "run_id": "corr-aadc2524e7f3429a8fc8689e763fe24e",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:36:30.316223Z",
+          "tool_name": "interview__start",
+          "started_at": "2026-11-07T02:36:30.188236Z",
+          "tool_call_id": "sha256:31196475e4580c448d85c7ec89d01d9c365ca769a49c4fdff28dc1edf9cf5b79",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-aadc2524e7f3429a8fc8689e763fe24e/sha256:31196475e4580c448d85c7ec89d01d9c365ca769a49c4fdff28dc1edf9cf5b79"
+        },
+        {
+          "run_id": "corr-aadc2524e7f3429a8fc8689e763fe24e",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:36:32.236358Z",
+          "tool_name": "interview__set_fields",
+          "started_at": "2026-11-07T02:36:32.030822Z",
+          "tool_call_id": "sha256:5dfbd2e15d98c299d71da59b844bfbf8b6c885a1e5c595e6046ae4095dbeb435",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-aadc2524e7f3429a8fc8689e763fe24e/sha256:5dfbd2e15d98c299d71da59b844bfbf8b6c885a1e5c595e6046ae4095dbeb435"
+        },
+        {
+          "run_id": "corr-aadc2524e7f3429a8fc8689e763fe24e",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:36:34.255363Z",
+          "tool_name": "interview__skip_field",
+          "started_at": "2026-11-07T02:36:34.110289Z",
+          "tool_call_id": "sha256:f2a8e8d2c4fd0ee5ea80d4771515378d493031f7bb3b21111027f295e8e1ec78",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-aadc2524e7f3429a8fc8689e763fe24e/sha256:f2a8e8d2c4fd0ee5ea80d4771515378d493031f7bb3b21111027f295e8e1ec78"
+        },
+        {
+          "run_id": "corr-aadc2524e7f3429a8fc8689e763fe24e",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:36:36.857198Z",
+          "tool_name": "interview__review",
+          "started_at": "2026-11-07T02:36:36.673581Z",
+          "tool_call_id": "sha256:85b738670135e71dd4bee117d46ab4a7be44bb6e1bc33f7597b50a911b2ce7cf",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-aadc2524e7f3429a8fc8689e763fe24e/sha256:85b738670135e71dd4bee117d46ab4a7be44bb6e1bc33f7597b50a911b2ce7cf"
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 6,
+        "model_request_completed": 6,
+        "tool_call_started": 5,
+        "tool_call_completed": 5,
+        "run_completed": 1
+      }
+    },
+    {
+      "index": 9,
+      "cohort": "final-source",
+      "interaction_id": "n.Interaction.4018a94a96a14aa2bdf944cb",
+      "conversation_id": "n.Conversation.672f281801b04ccea9d270b2",
+      "session_id": "sess_d4f5afcaddad4af9",
+      "utterance": "Yes, I confirm those signup details.",
+      "response": "Thank you, Jane Doe! Your training signup details are recorded locally. No booking or notification has been made. Your preferred time was: Monday 9:00 AM - 11:00 AM.",
+      "started_at": "2026-11-06T22:36:56.256680",
+      "completed_at": "2026-11-06T22:37:01.518235",
+      "elapsed_seconds": 5.261555,
+      "status": "delivered",
+      "usage": {
+        "last_updated": "2026-11-07T02:37:01.518349+00:00",
+        "total_tokens": 6998,
+        "prompt_tokens": 6943,
+        "total_cost_usd": 0.009526,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 55,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.009526,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 3200,
+        "total_duration_seconds": 2.573,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.573,
+        "unmeasured_model_attempt_count": 0
+      },
+      "worker_pid": "95194",
+      "worker_epoch": "worker-epoch:3f91cc4f8e564c1fa527512c50d17f69",
+      "calls": [
+        {
+          "name": "interview__complete",
+          "args": {}
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-362590b7774245e086bc713c054f87a9",
+          "status": "completed",
+          "ended_at": "2026-11-07T02:36:59.006583Z",
+          "tool_name": "interview__complete",
+          "started_at": "2026-11-07T02:36:58.863894Z",
+          "tool_call_id": "sha256:5c2e152f6b62efbf44312e36d82330aed7d46a81d2ef520737017db287892b3a",
+          "effect_summary": "jv:conversation-mutation:v1",
+          "idempotency_key": "corr-362590b7774245e086bc713c054f87a9/sha256:5c2e152f6b62efbf44312e36d82330aed7d46a81d2ef520737017db287892b3a"
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 2,
+        "model_request_completed": 2,
+        "tool_call_started": 1,
+        "tool_call_completed": 1,
+        "run_completed": 1
+      }
+    }
+  ],
+  "totals": {
+    "model_requests": 32,
+    "provider_reported_tokens": 71718,
+    "estimated_cost_usd": "0.080490",
+    "reported_cost_usd": 0.0,
+    "unknown_cost_call_count": 0
+  },
+  "checks": {
+    "cold_readback": {
+      "interactions": 2,
+      "conversations": 1,
+      "records_exact": true,
+      "digest": "sha256:66960b909164cd5f7eae0e741b805909be58209caaad3e052e29470d74ee4721"
+    },
+    "detour": {
+      "conversation_id": "n.Conversation.07566b1aa41a472eaf090f20",
+      "session_exact": true,
+      "tasks_exact": true,
+      "session": {
+        "interview": {
+          "fields": {
+            "contact_email": "tester@training.invalid"
+          },
+          "status": "active",
+          "context": {},
+          "started_at": "2026-11-07T02:10:58.496447+00:00",
+          "interview_type": "contact-interview",
+          "skipped_fields": []
+        }
+      },
+      "tasks": [
+        {
+          "id": "task_2d440f6506ec",
+          "data": {
+            "interview_type": "contact-interview",
+            "interview_managed": true
+          },
+          "seed": {},
+          "order": 0,
+          "steps": [],
+          "title": "Contact record",
+          "status": "active",
+          "resumes": null,
+          "snapshot": {},
+          "task_type": "SKILL",
+          "blocked_on": [],
+          "created_at": "2026-11-07T02:10:58.502038+00:00",
+          "updated_at": "2026-11-07T02:10:58.508749+00:00",
+          "description": "Collect and confirm contact details locally; no external delivery.",
+          "completed_at": null,
+          "owner_action": "contact-interview"
+        }
+      ]
+    },
+    "final-cold_readback": {
+      "interactions": 6,
+      "conversations": 2,
+      "records_exact": true,
+      "digest": "sha256:3af0279826dbf04e53dc0b97e21da896de5adf8048a2a6c705e3d1a27e5dcba5"
+    },
+    "final-detour": {
+      "conversation_id": "n.Conversation.87616aa32f5940e1a28d673d",
+      "session_exact": true,
+      "tasks_exact": true,
+      "session": {
+        "interview": {
+          "fields": {
+            "contact_email": "fresh@training.invalid"
+          },
+          "status": "active",
+          "context": {},
+          "started_at": "2026-11-07T02:24:07.508553+00:00",
+          "interview_type": "contact-interview",
+          "skipped_fields": []
+        }
+      },
+      "tasks": [
+        {
+          "id": "task_932f1d27096f",
+          "data": {
+            "interview_type": "contact-interview",
+            "interview_managed": true
+          },
+          "seed": {},
+          "order": 0,
+          "steps": [],
+          "title": "Contact record",
+          "status": "active",
+          "resumes": null,
+          "snapshot": {},
+          "task_type": "SKILL",
+          "blocked_on": [],
+          "created_at": "2026-11-07T02:24:07.511816+00:00",
+          "updated_at": "2026-11-07T02:24:07.517437+00:00",
+          "description": "Collect and confirm contact details locally; no external delivery.",
+          "completed_at": null,
+          "owner_action": "contact-interview"
+        }
+      ]
+    }
+  },
+  "final_review_session": {
+    "fields": {
+      "contact_email": "fresh@training.invalid",
+      "delivery_preference": "phone"
+    },
+    "status": "review",
+    "context": {
+      "review_presented_fields": "{\"contact_email\": \"fresh@training.invalid\", \"delivery_preference\": \"phone\"}",
+      "review_presented_marker": "n.Interaction.933bf382702645539e9a3445"
+    },
+    "started_at": "2026-11-07T02:24:07.508553+00:00",
+    "interview_type": "contact-interview",
+    "skipped_fields": []
+  },
+  "spend_and_tasks": [
+    {
+      "conversation_id": "n.Conversation.07566b1aa41a472eaf090f20",
+      "spent": {
+        "usd": "0.024946",
+        "tokens": 25523,
+        "requests": 12,
+        "unpriced_requests": 0
+      },
+      "tasks": [
+        {
+          "id": "task_2d440f6506ec",
+          "data": {
+            "interview_type": "contact-interview",
+            "interview_managed": true
+          },
+          "seed": {},
+          "order": 0,
+          "steps": [],
+          "title": "Contact record",
+          "status": "completed",
+          "resumes": null,
+          "snapshot": {},
+          "task_type": "SKILL",
+          "blocked_on": [],
+          "created_at": "2026-11-07T02:10:58.502038+00:00",
+          "updated_at": "2026-11-07T02:19:04.344865+00:00",
+          "description": "Collect and confirm contact details locally; no external delivery.",
+          "completed_at": "2026-11-07T02:19:04.344865+00:00",
+          "owner_action": "contact-interview"
+        }
+      ],
+      "interview_session_cleared": true
+    },
+    {
+      "conversation_id": "n.Conversation.672f281801b04ccea9d270b2",
+      "spent": {
+        "usd": "0.030988",
+        "tokens": 21062,
+        "requests": 8,
+        "unpriced_requests": 0
+      },
+      "tasks": [
+        {
+          "id": "task_85bb7d25930b",
+          "data": {
+            "interview_type": "signup-interview",
+            "interview_managed": true
+          },
+          "seed": {},
+          "order": 0,
+          "steps": [],
+          "title": "JVAgent Training Signup",
+          "status": "completed",
+          "resumes": null,
+          "snapshot": {},
+          "task_type": "SKILL",
+          "blocked_on": [],
+          "created_at": "2026-11-07T02:36:30.292953+00:00",
+          "updated_at": "2026-11-07T02:36:58.974382+00:00",
+          "description": "Collect full name, training slot, email, and optional phone for jvagent training registration. Branching: Saturday slots ask in-person vs virtual; @mail.com work emails ask employer name before optional phone.",
+          "completed_at": "2026-11-07T02:36:58.974382+00:00",
+          "owner_action": "signup-interview"
+        }
+      ],
+      "interview_session_cleared": true
+    },
+    {
+      "conversation_id": "n.Conversation.87616aa32f5940e1a28d673d",
+      "spent": {
+        "usd": "0.024556",
+        "tokens": 25133,
+        "requests": 12,
+        "unpriced_requests": 0
+      },
+      "tasks": [
+        {
+          "id": "task_932f1d27096f",
+          "data": {
+            "interview_type": "contact-interview",
+            "interview_managed": true
+          },
+          "seed": {},
+          "order": 0,
+          "steps": [],
+          "title": "Contact record",
+          "status": "completed",
+          "resumes": null,
+          "snapshot": {},
+          "task_type": "SKILL",
+          "blocked_on": [],
+          "created_at": "2026-11-07T02:24:07.511816+00:00",
+          "updated_at": "2026-11-07T02:35:58.410945+00:00",
+          "description": "Collect and confirm contact details locally; no external delivery.",
+          "completed_at": "2026-11-07T02:35:58.410945+00:00",
+          "owner_action": "contact-interview"
+        }
+      ],
+      "interview_session_cleared": true
+    }
+  ],
+  "signup_hook_calls": [
+    {
+      "at": "2026-11-07T02:36:32.153530+00:00",
+      "pid": 95194,
+      "method": "validate_full_name",
+      "phase": "validate",
+      "field": "user_name",
+      "interaction_id": "n.Interaction.0eb7ebaff1d840cc8249bbe3"
+    },
+    {
+      "at": "2026-11-07T02:36:32.170219+00:00",
+      "pid": 95194,
+      "method": "get_available_training_times",
+      "phase": "store",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.0eb7ebaff1d840cc8249bbe3"
+    },
+    {
+      "at": "2026-11-07T02:36:32.186734+00:00",
+      "pid": 95194,
+      "method": "validate_available_times",
+      "phase": "validate",
+      "field": "available_times",
+      "interaction_id": "n.Interaction.0eb7ebaff1d840cc8249bbe3"
+    },
+    {
+      "at": "2026-11-07T02:36:32.205077+00:00",
+      "pid": 95194,
+      "method": "validate_signup_email",
+      "phase": "validate",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.0eb7ebaff1d840cc8249bbe3"
+    },
+    {
+      "at": "2026-11-07T02:36:32.222208+00:00",
+      "pid": 95194,
+      "method": "append_work_email_note",
+      "phase": "post",
+      "field": "user_email",
+      "interaction_id": "n.Interaction.0eb7ebaff1d840cc8249bbe3"
+    },
+    {
+      "at": "2026-11-07T02:36:36.842137+00:00",
+      "pid": 95194,
+      "method": "signup_review",
+      "phase": "review",
+      "field": null,
+      "interaction_id": "n.Interaction.0eb7ebaff1d840cc8249bbe3"
+    },
+    {
+      "at": "2026-11-07T02:36:58.973750+00:00",
+      "pid": 95194,
+      "method": "signup_complete",
+      "phase": "complete",
+      "field": null,
+      "interaction_id": "n.Interaction.4018a94a96a14aa2bdf944cb"
+    }
+  ],
+  "expected_projected_skill_hashes": {
+    "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69",
+    "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5",
+    "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+  },
+  "final_source_projection_observations": [
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 94851,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/contact-interview",
+      "document_sha256": "sha256:16842f58251bce5312da3f2ea59ded4db32bf5da1792b1063ea54dc68bc27e69"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:edc648f2dcd5d53e93c4df0d8d6cfa1735a81fc072077cc8daadbeac6cc337c5"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    },
+    {
+      "pid": 95194,
+      "directory": "/private/tmp/jvagent-native-continuation-smoke/agents/demo/assistant/skills/signup-interview",
+      "document_sha256": "sha256:7ffc469fb50cfb86c389d3dfb1a2462c1d1651a0b3f4cb80e2faa8ac64b24c3f"
+    }
+  ],
+  "module_observations": [
+    {
+      "process_id": 93804,
+      "observed_at": "2026-11-07T02:02:19.670638+00:00",
+      "source_blobs": {
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:b606d28e5e8419569ac9d48fc0215ca78a81cc6c",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 93804,
+      "observed_at": "2026-11-07T02:02:22.015977+00:00",
+      "source_blobs": {
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:b606d28e5e8419569ac9d48fc0215ca78a81cc6c",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 94056,
+      "observed_at": "2026-11-07T02:06:36.880236+00:00",
+      "source_blobs": {
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:b606d28e5e8419569ac9d48fc0215ca78a81cc6c",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 94056,
+      "observed_at": "2026-11-07T02:06:39.429111+00:00",
+      "source_blobs": {
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:b606d28e5e8419569ac9d48fc0215ca78a81cc6c",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 94230,
+      "observed_at": "2026-11-07T02:10:11.798314+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:b606d28e5e8419569ac9d48fc0215ca78a81cc6c",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 94230,
+      "observed_at": "2026-11-07T02:10:14.179085+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:b606d28e5e8419569ac9d48fc0215ca78a81cc6c",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 94430,
+      "observed_at": "2026-11-07T02:14:04.565077+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:b606d28e5e8419569ac9d48fc0215ca78a81cc6c",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 94430,
+      "observed_at": "2026-11-07T02:14:07.078675+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:b606d28e5e8419569ac9d48fc0215ca78a81cc6c",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 94851,
+      "observed_at": "2026-11-07T02:22:29.014163+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+        "jvagent/action/interview/AGENTS.md": "git-blob:3e4148017ed36b897c594e26342cd198227347fc",
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:68de05753e716e912d22414bc3e1ea718a1c1ae1",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 94851,
+      "observed_at": "2026-11-07T02:22:31.999474+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+        "jvagent/action/interview/AGENTS.md": "git-blob:3e4148017ed36b897c594e26342cd198227347fc",
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:68de05753e716e912d22414bc3e1ea718a1c1ae1",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 95194,
+      "observed_at": "2026-11-07T02:29:43.983779+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+        "jvagent/action/interview/AGENTS.md": "git-blob:3e4148017ed36b897c594e26342cd198227347fc",
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:68de05753e716e912d22414bc3e1ea718a1c1ae1",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 95194,
+      "observed_at": "2026-11-07T02:29:46.765469+00:00",
+      "source_blobs": {
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml": "git-blob:b5ecfaa5a3e9b3b1dbb82cd2dc10c9cf402de91a",
+        "examples/jvagent_app/agents/jvagent/orchestrator_agent/skills/signup-interview/scripts/custom_tools.py": "git-blob:0362fcebe5142a5db9c0011ef39b4a288a9bf832",
+        "jvagent/action/interview/AGENTS.md": "git-blob:3e4148017ed36b897c594e26342cd198227347fc",
+        "jvagent/action/interview/engine.py": "git-blob:e3e3eddc8ce0fabac73b8447d1a6c23eec3e751c",
+        "jvagent/action/interview/native_skill/SKILL.md": "git-blob:68de05753e716e912d22414bc3e1ea718a1c1ae1",
+        "jvagent/cli/harness_migrate.py": "git-blob:ccbfd0c5a208291b01984dd7a8868c4570055f00"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "reload": {
+    "interactions": 10,
+    "conversations": 3,
+    "exact": true,
+    "digest": "sha256:b481eefb3f142d7809bce0a57dd31b3d5572cab8a447d18ec70c72fef843d595"
+  },
+  "initial_four_interactions_unchanged": true,
+  "teardown": {
+    "owned_final_worker_pid": 95194,
+    "exec_session": 43286,
+    "terminal_exit_code": 143,
+    "browser_page_closed": 82
+  },
+  "tests": {
+    "affected_311": "571 passed, 43 warnings",
+    "affected_312": "571 passed, 43 warnings",
+    "removed_required_guard": "2 failed",
+    "removed_lock_retirement": "3 failed",
+    "first_broad_run": "5112 passed, 71 skipped; one stale tracked-asset inventory failure; final refreshed-inventory gates recorded in qualification document",
+    "refreshed_inventory_broad_run": "5113 passed, 71 skipped, 31 warnings in 120.75s",
+    "all_file_pre_commit": "passed",
+    "complete_native_host_postgres_311": "799 passed, 417 warnings, no skips in 110.32s",
+    "complete_native_host_postgres_312": "799 passed, 417 warnings, no skips in 112.77s"
+  },
+  "limits": [
+    "No generic legacy IA-flow or retained active-task conversion",
+    "No external callback/delivery, remote delegation or distributed recovery qualification",
+    "No new optimization or enterprise-release claim"
+  ]
+}

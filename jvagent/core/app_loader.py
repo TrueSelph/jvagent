@@ -20,6 +20,7 @@ from jvagent.core.app import App
 from jvagent.core.app_yaml_validator import warn_app_yaml_descriptor
 from jvagent.core.bootstrap_logger import BootstrapLogger
 from jvagent.core.config import get_file_storage_config, load_app_config
+from jvagent.core.errors import ConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -507,17 +508,16 @@ class AppLoader:
                 logger.error(f"Failed to install agent: {namespace}/{agent_name}")
                 failed_count += 1
 
+        if failed_count:
+            raise ConfigError("Declared agent installation failed; startup refused")
+
         # Source mode: remove agents connected to this app but absent from app.yaml
         # (mirrors action _reconcile_actions).
         if update_mode == "source":
             await self._reconcile_agents(descriptor)
 
         # Log summary (debug logs for individual agents already shown above)
-        if failed_count > 0:
-            logger.warning(
-                f"Agents: {installed_count} installed, {updated_count} updated, {failed_count} failed"
-            )
-        elif installed_count > 0 or updated_count > 0:
+        if installed_count > 0 or updated_count > 0:
             parts = []
             if installed_count > 0:
                 parts.append(f"{installed_count} installed")

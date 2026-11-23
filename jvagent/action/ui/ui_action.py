@@ -168,7 +168,7 @@ class UiAction(InteractAction):
         **kwargs: Any,
     ) -> Any:
         """Render a UI component beneath your reply. Use for structured results (an order, a comparison) or a small set of choices — not for ordinary prose. At most one per turn; add a short framing sentence and do not repeat the component's contents."""  # noqa: E501
-        from jvagent.tooling.tool_executor import get_tool_visitor
+        from jvagent.tooling.context import get_tool_visitor
         from jvagent.tooling.tool_result import ToolResult
 
         visitor = kwargs.get("visitor") or get_tool_visitor()

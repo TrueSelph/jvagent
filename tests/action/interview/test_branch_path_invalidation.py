@@ -100,7 +100,7 @@ async def test_pivot_preserves_shared_downstream(branching_spec):
 @pytest.mark.asyncio
 async def test_signup_email_pivot_preserves_phone(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "jane@gmail.com")
@@ -124,7 +124,7 @@ async def test_signup_email_pivot_preserves_phone(signup_action):
 @pytest.mark.asyncio
 async def test_signup_slot_pivot_preserves_downstream(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Saturday 9:00 AM - 12:00 PM")
     session.set_value("training_format", "Virtual")
@@ -166,7 +166,7 @@ async def test_prune_clears_skipped_for_dead_branch(branching_spec):
 @pytest.mark.asyncio
 async def test_post_pivot_extraction_stores_next_field(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Saturday 9:00 AM - 12:00 PM")
     session.set_value("training_format", "Virtual")
@@ -197,7 +197,7 @@ async def test_post_pivot_extraction_stores_next_field(signup_action):
 @pytest.mark.asyncio
 async def test_off_path_validation_failure_is_ignored_post_settlement(signup_action):
     action, spec = signup_action
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     action._get_session_and_contract = AsyncMock(return_value=(session, spec))
     action._save_session = AsyncMock()

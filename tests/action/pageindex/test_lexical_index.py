@@ -5,7 +5,6 @@ import pytest
 pytest.importorskip("openai")
 pytest.importorskip("tiktoken")
 pytest.importorskip("litellm")
-pytest.importorskip("pypdf")
 
 from jvspatial.db import unregister_database
 
@@ -23,6 +22,8 @@ from jvagent.action.pageindex.config import (
 from jvagent.action.pageindex.documents import (
     assimilate_document,
     delete_document,
+    get_document_roots,
+    import_documents,
 )
 from jvagent.action.pageindex.lexical_index import (
     index_node,
@@ -334,6 +335,27 @@ async def test_delete_cleans_lexical_index(pageindex_temp_db, sample_markdown):
     assert not any(r["doc_name"] == "del_lex_doc" for r in results_after)
 
 
+@pytest.mark.asyncio
+async def test_delete_root_preserves_same_name_replacement(pageindex_temp_db):
+    name, collection = "orientation.pdf", "replacement"
+    old_id = await persist_structure(
+        name, [{"title": "amberturnstile"}], collection_name=collection
+    )
+    replacement_id = await persist_structure(
+        name, [{"title": "quartzobservatory"}], collection_name=collection
+    )
+
+    assert not await delete_document(name, "foreign", root_id=old_id)
+    assert not await delete_document("different.pdf", collection, root_id=old_id)
+    assert await delete_document(name, collection, root_id=old_id)
+    assert not await delete_document(name, collection, root_id=old_id)
+    assert {root.id for root in await get_document_roots(collection)} == {
+        replacement_id
+    }
+    assert not await search("amberturnstile", collection)
+    assert await search("quartzobservatory", collection)
+
+
 # ---------------------------------------------------------------------------
 # Integration: two-stage retrieval
 # ---------------------------------------------------------------------------
@@ -530,3 +552,36 @@ async def test_multiple_docs_lexical_ranking(pageindex_temp_db):
     results = await search("budget", "rank_col")
     assert len(results) == 2
     assert results[0]["node_id"] == "rank_n1"
+
+
+@pytest.mark.asyncio
+async def test_import_cannot_restore_drive_source_binding(pageindex_temp_db):
+    await persist_structure(
+        "local.pdf",
+        [{"title": "Local"}],
+        collection_name="local",
+        drive_source_key="local-source",
+        drive_revision_key="local-revision",
+        drive_operation_id="local-operation",
+    )
+    await import_documents(
+        {
+            "roots": [
+                {
+                    "doc_name": "imported.pdf",
+                    "collection_name": "imported",
+                    "drive_source_key": "copied-source",
+                    "drive_revision_key": "copied-revision",
+                    "drive_operation_id": "copied-operation",
+                }
+            ]
+        }
+    )
+    (local,) = await get_document_roots("local")
+    (imported,) = await get_document_roots("imported")
+    assert local.drive_source_key == "local-source"
+    assert local.drive_revision_key == "local-revision"
+    assert local.drive_operation_id == "local-operation"
+    assert imported.drive_source_key is None
+    assert imported.drive_revision_key is None
+    assert imported.drive_operation_id is None

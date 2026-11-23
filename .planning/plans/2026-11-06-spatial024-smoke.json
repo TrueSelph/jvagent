@@ -1,0 +1,304 @@
+{
+  "tested_parent_revision": "git:9a6b2226801277ca000b8de3e88f064170e848bb",
+  "source_changes": {
+    "pyproject.toml": "git-blob:23f58a21a1b6ae6aef20f3ea8acb6f50ee7e5e1c",
+    "requirements.txt": "git-blob:66a8994ed5a76871fbcc1a6e65ed969a8a28a3b6",
+    "requirements-all.txt": "git-blob:48526ee92910b99b18094ef5c6ac46373b7634dd",
+    "uv.lock": "git-blob:c80d3db95e0ec84c26c8eb7843586aa130914c31",
+    "tests/core/test_storage_stream_consumption.py": "git-blob:d3fc03030af30f3b9a3324c8691304cb88c63303"
+  },
+  "installed_wheel": {
+    "path": "/private/tmp/jv-spatial024-wheel/jvagent-0.1.8rc20-py3-none-any.whl",
+    "sha256": "sha256:845bb8f2a9587679d0ae93aaf0fd0c27fb26e693bfcf743ce57f3945a81bf69a",
+    "editable": false
+  },
+  "runtime": {
+    "pid": 66596,
+    "jvagent_file": "/private/tmp/jvagent-spatial024-wheel-311/lib/python3.11/site-packages/jvagent/__init__.py",
+    "versions": {
+      "jvagent": "0.1.8rc20",
+      "jvspatial": "0.2.4",
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0"
+    },
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "clone": {
+    "source": "/private/tmp/jvagent-native-context-decoupling-smoke",
+    "target": "/private/tmp/jvagent-native-spatial024-upgrade-smoke",
+    "database": "jvagent_native_spatial024_upgrade_20261106",
+    "collections": {
+      "node": {
+        "count": 14,
+        "digest": "sha256:2877bfe7544d2921fca34644319e011c24358986b307688277480c229cb34f0c"
+      },
+      "edge": {
+        "count": 13,
+        "digest": "sha256:cba4cb844cd7a442c50267eb61022ba08a41bc3f9a5a9b7738090731559f0387"
+      },
+      "object": {
+        "count": 1,
+        "digest": "sha256:920b589acbd5dea99f8563a4994304991b6ef0927566c94c60944ce950ebd677"
+      }
+    },
+    "refresh_tokens_copied": false,
+    "jwt_secret_rotated": true,
+    "configured_workspace_retained": "/private/tmp/jvagent-native-context-decoupling-smoke/agents/demo/assistant/skills",
+    "sdk_messages_rewritten": false,
+    "app_configuration_changes": [
+      "display name",
+      "isolated storage/audit paths",
+      "absolute declaration of same existing workspace",
+      "MCP child interpreter version"
+    ]
+  },
+  "explicit_configuration_apply": {
+    "reason": "Merge preserves persisted values; apply only declared fixture configuration, not run state",
+    "changes": [
+      {
+        "id": "n.Agent.62d22f06023f4493bc0e2637",
+        "fields": [
+          "alias"
+        ]
+      },
+      {
+        "id": "n.NativeHarnessAction.3273093082004a8bb696e2a2",
+        "fields": [
+          "skill_directory"
+        ]
+      },
+      {
+        "id": "n.MCPAction.84f46455960d447abf5630ae",
+        "fields": [
+          "servers"
+        ]
+      }
+    ]
+  },
+  "original_source_collections_unchanged": {
+    "node": true,
+    "edge": true,
+    "object": false
+  },
+  "auth_note": {
+    "source_and_clone_differ_only_in": [
+      "last_accessed"
+    ],
+    "source_auth_hash_changed": "Live original browser authentication continues to update last_accessed; source graph node and edge hashes remain exact"
+  },
+  "original_interactions_unchanged": true,
+  "restore_without_execution": true,
+  "restart_cache_loss_without_execution": true,
+  "interaction": {
+    "id": "n.Interaction.d047904daa8d4ef4a1dd0d59",
+    "utterance": "Use the record integration to look up REHEARSAL-47 again and tell me its room and start time.",
+    "response": "REHEARSAL-47 is in the Cedar room and starts at 14:30.",
+    "closed": true,
+    "emitted": true,
+    "native_run": {
+      "usage": {
+        "requests": 2,
+        "input_tokens": 854,
+        "output_tokens": 45
+      },
+      "output": "REHEARSAL-47 is in the Cedar room and starts at 14:30.",
+      "run_id": "corr-b717cdbb39dd45dc908fe666cfb5f960",
+      "status": "delivered",
+      "history_source": {
+        "frontier": "delivered",
+        "source_run_id": "corr-4bee5b72c9e04e6f8e701329d9d1ba3d"
+      },
+      "usage_complete": true
+    },
+    "calls": [
+      {
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "total_tokens": 424,
+          "prompt_tokens": 400,
+          "completion_tokens": 24,
+          "cache_write_tokens": 0,
+          "cached_prompt_tokens": 0
+        },
+        "provider": "openai",
+        "cost_record": {
+          "amount": 0.000992,
+          "source": "pydantic_ai_pricing",
+          "currency": "USD",
+          "estimated": true,
+          "pricing_version": null
+        },
+        "usage_status": "provider_reported",
+        "native_run_id": "corr-b717cdbb39dd45dc908fe666cfb5f960",
+        "native_step_index": 1,
+        "native_receipt_key": "spend:default|run|*|corr-b717cdbb39dd45dc908fe666cfb5f960:1",
+        "native_spend_receipt": true,
+        "native_receipt_origin": "spend_snapshot"
+      },
+      {
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "total_tokens": 475,
+          "prompt_tokens": 454,
+          "completion_tokens": 21,
+          "cache_write_tokens": 0,
+          "cached_prompt_tokens": 0
+        },
+        "provider": "openai",
+        "cost_record": {
+          "amount": 0.001076,
+          "source": "pydantic_ai_pricing",
+          "currency": "USD",
+          "estimated": true,
+          "pricing_version": null
+        },
+        "usage_status": "provider_reported",
+        "native_run_id": "corr-b717cdbb39dd45dc908fe666cfb5f960",
+        "native_step_index": 2,
+        "native_receipt_key": "spend:default|run|*|corr-b717cdbb39dd45dc908fe666cfb5f960:2",
+        "native_spend_receipt": true,
+        "native_receipt_origin": "spend_snapshot"
+      }
+    ],
+    "attempts": [
+      {
+        "outcome": "completed",
+        "duration": 1.963131,
+        "started_at": "2026-11-06T06:38:15.206532+00:00",
+        "completed_at": "2026-11-06T06:38:17.169663+00:00",
+        "usage_status": "receipt_recorded",
+        "native_run_id": "corr-b717cdbb39dd45dc908fe666cfb5f960",
+        "duration_scope": "sdk_model_request",
+        "native_step_index": 1,
+        "native_attempt_origin": "step_events_v1"
+      },
+      {
+        "outcome": "completed",
+        "duration": 1.252842,
+        "started_at": "2026-11-06T06:38:17.586904+00:00",
+        "completed_at": "2026-11-06T06:38:18.839746+00:00",
+        "usage_status": "receipt_recorded",
+        "native_run_id": "corr-b717cdbb39dd45dc908fe666cfb5f960",
+        "duration_scope": "sdk_model_request",
+        "native_step_index": 2,
+        "native_attempt_origin": "step_events_v1"
+      }
+    ],
+    "trace": [
+      {
+        "content": "mcp_records__lookup_record",
+        "message_id": "o.ResponseMessage.c27daa01ebc1403ca7e49084",
+        "segment_id": "call_fjBTf4aBaB5SmkUiz86b5p3x",
+        "started_at": "2026-11-06T06:38:17.268741+00:00",
+        "action_name": "",
+        "completed_at": "2026-11-06T06:38:17.268746+00:00",
+        "thought_type": "tool_call"
+      },
+      {
+        "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}",
+        "message_id": "o.ResponseMessage.fcbd715ddd684786b48244fe",
+        "segment_id": "call_fjBTf4aBaB5SmkUiz86b5p3x",
+        "started_at": "2026-11-06T06:38:17.509429+00:00",
+        "action_name": "",
+        "completed_at": "2026-11-06T06:38:17.509434+00:00",
+        "thought_type": "tool_result"
+      }
+    ],
+    "registrations": 1,
+    "interaction_seconds": 8.363991
+  },
+  "conversation": {
+    "id": "n.Conversation.111a4580e9094d439686097c",
+    "tasks": [],
+    "native_spend": {
+      "default|conversation|*|sess_62f5c36636684dd1": {
+        "spent": {
+          "usd": "0.003720",
+          "tokens": 1590,
+          "requests": 4,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-12-06T06:38:18.854450+00:00"
+      },
+      "default|run|*|corr-4bee5b72c9e04e6f8e701329d9d1ba3d": {
+        "spent": {
+          "usd": "0.001652",
+          "tokens": 691,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-11-07T05:57:51.043310+00:00"
+      },
+      "default|run|*|corr-b717cdbb39dd45dc908fe666cfb5f960": {
+        "spent": {
+          "usd": "0.002068",
+          "tokens": 899,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-11-07T06:38:18.854450+00:00"
+      }
+    }
+  },
+  "mcp_calls": [
+    "REHEARSAL-47"
+  ],
+  "lock_package_version_changes": {
+    "jvspatial": {
+      "old": "0.1.1",
+      "new": "0.2.4"
+    }
+  },
+  "limits": [
+    "No live S3 test",
+    "Native File Interface reads not yet admitted",
+    "No hard deadline for blocking storage I/O",
+    "Retained same SDK workspace; no relocation claim",
+    "No cross-platform release or whole harness qualification",
+    "Browser end-to-end timing unmeasured; interaction and SDK timing recorded"
+  ],
+  "tests": {
+    "native_real_pg_311": {
+      "passed": 458,
+      "seconds": 87.95
+    },
+    "native_real_pg_312": {
+      "passed": 458,
+      "seconds": 89.72
+    },
+    "full_native_311_before_added_storage_cases": {
+      "passed": 5136,
+      "skipped": 129,
+      "seconds": 175.75
+    },
+    "full_transitional_311_before_added_storage_cases": {
+      "passed": 4969,
+      "skipped": 48,
+      "seconds": 119.27
+    },
+    "storage_contract_311": {
+      "passed": 2,
+      "seconds": 0.5
+    },
+    "storage_contract_312": {
+      "passed": 2,
+      "seconds": 1.03
+    },
+    "old_011_storage_contract": {
+      "passed": 1,
+      "failed": 1,
+      "first_chunk_read_count": 1217
+    },
+    "promoted_focused_311": {
+      "passed": 28,
+      "skipped": 1,
+      "seconds": 0.42
+    },
+    "promoted_dependency_storage_312": {
+      "passed": 8,
+      "skipped": 1,
+      "seconds": 0.67
+    }
+  }
+}

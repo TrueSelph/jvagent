@@ -1,0 +1,19 @@
+{
+  "source_digest": "sha256:e70e627bc5fd6ddbcbbc38644dc39952692e5dac416b0fe8f2e206814dd57162",
+  "selected_skill_count": 10,
+  "blocked_channel_settings": [
+    "tool_call_timeout"
+  ],
+  "retired_channel_settings": [
+    "ack_statements",
+    "first_emit_timeout_ms",
+    "history_limit",
+    "pinned_tools"
+  ],
+  "blockers": [
+    "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+    "Model service has unqualified callers or provider declarations; review before removal",
+    "channel_overrides contains unsupported, invalid or widening policy; explicit review required"
+  ],
+  "candidate_generated": false
+}

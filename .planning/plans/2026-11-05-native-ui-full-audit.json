@@ -1,0 +1,292 @@
+{
+  "scope": "npm audit, full installed lockfile including build/development dependencies; advisory presence does not prove exploitability",
+  "counts": {
+    "info": 0,
+    "low": 0,
+    "moderate": 3,
+    "high": 18,
+    "critical": 2,
+    "total": 23
+  },
+  "packages": {
+    "@typescript-eslint/eslint-plugin": {
+      "severity": "high",
+      "direct": true,
+      "in_production_audit": false,
+      "range": "6.16.0 - 7.5.0",
+      "fixAvailable": true,
+      "advisory_urls": []
+    },
+    "@typescript-eslint/parser": {
+      "severity": "high",
+      "direct": true,
+      "in_production_audit": false,
+      "range": "6.16.0 - 7.5.0",
+      "fixAvailable": true,
+      "advisory_urls": []
+    },
+    "@typescript-eslint/type-utils": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "6.16.0 - 7.5.0",
+      "fixAvailable": true,
+      "advisory_urls": []
+    },
+    "@typescript-eslint/typescript-estree": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "6.16.0 - 7.5.0",
+      "fixAvailable": true,
+      "advisory_urls": []
+    },
+    "@typescript-eslint/utils": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "6.16.0 - 7.5.0",
+      "fixAvailable": true,
+      "advisory_urls": []
+    },
+    "@vitest/mocker": {
+      "severity": "moderate",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "<=4.1.11",
+      "fixAvailable": {
+        "name": "vitest",
+        "version": "2.0.5",
+        "isSemVerMajor": true
+      },
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+        "https://github.com/advisories/GHSA-qxg6-89mg-rqv8"
+      ]
+    },
+    "axios": {
+      "severity": "high",
+      "direct": true,
+      "in_production_audit": true,
+      "range": "1.0.0 - 1.19.0",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-vh66-26gq-q6x8",
+        "https://github.com/advisories/GHSA-9fr6-4gfg-395g",
+        "https://github.com/advisories/GHSA-c29m-xwm3-cm6r",
+        "https://github.com/advisories/GHSA-mghh-pgcx-3jjj",
+        "https://github.com/advisories/GHSA-x97p-jq2g-jp4f",
+        "https://github.com/advisories/GHSA-3pq3-5fj3-cg6v",
+        "https://github.com/advisories/GHSA-542g-h47m-68v8",
+        "https://github.com/advisories/GHSA-j8rh-479h-cp32",
+        "https://github.com/advisories/GHSA-4hqw-qxg8-jxx2",
+        "https://github.com/advisories/GHSA-m8m8-qj5v-23w3",
+        "https://github.com/advisories/GHSA-44g4-m2mj-wpvx",
+        "https://github.com/advisories/GHSA-r4gj-5m52-g5wh"
+      ]
+    },
+    "baseline-browser-mapping": {
+      "severity": "moderate",
+      "direct": false,
+      "in_production_audit": false,
+      "range": ">=2.0.0 <2.11.0",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-w5vr-8v7q-w6rv"
+      ]
+    },
+    "brace-expansion": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "<=1.1.20 || 2.0.0 - 2.1.6",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-3jxr-9vmj-r5cp",
+        "https://github.com/advisories/GHSA-3jxr-9vmj-r5cp",
+        "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+        "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+        "https://github.com/advisories/GHSA-rgw5-rvv9-x895",
+        "https://github.com/advisories/GHSA-rgw5-rvv9-x895",
+        "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+        "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+        "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+        "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+        "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+        "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p"
+      ]
+    },
+    "browserslist": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "<=4.28.6",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-c83g-rgw3-j3cx",
+        "https://github.com/advisories/GHSA-73wf-gq98-2v4g"
+      ]
+    },
+    "esbuild": {
+      "severity": "moderate",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "<=0.24.2",
+      "fixAvailable": {
+        "name": "vite",
+        "version": "8.3.6",
+        "isSemVerMajor": true
+      },
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-67mh-4wv8-2f99"
+      ]
+    },
+    "follow-redirects": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": true,
+      "range": "1.16.0 - 1.16.1",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-q3jh-wrc6-jgq8",
+        "https://github.com/advisories/GHSA-8r9p-f939-6h3c",
+        "https://github.com/advisories/GHSA-mrwp-f3q8-3g9p"
+      ]
+    },
+    "js-yaml": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "4.0.0 - 4.3.1",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-5p4m-2wfm-xmqj",
+        "https://github.com/advisories/GHSA-2883-xcg3-v3hh"
+      ]
+    },
+    "minimatch": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "7.0.0 - 11.0.0",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-3ppc-4f35-3m26",
+        "https://github.com/advisories/GHSA-7r86-cg39-jmmj",
+        "https://github.com/advisories/GHSA-23c5-xmqv-rm74",
+        "https://github.com/advisories/GHSA-g3hv-75wg-m249"
+      ]
+    },
+    "nanoid": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "<=3.3.17",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-28wg-ghj8-5hjv",
+        "https://github.com/advisories/GHSA-2v37-7h3g-55p8"
+      ]
+    },
+    "postcss": {
+      "severity": "high",
+      "direct": true,
+      "in_production_audit": false,
+      "range": "<=8.5.22",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-fxqj-rqcc-2cmp",
+        "https://github.com/advisories/GHSA-r28c-9q8g-f849"
+      ]
+    },
+    "react-router": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": true,
+      "range": "7.12.0 - 7.18.1",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-qwww-vcr4-c8h2"
+      ]
+    },
+    "react-router-dom": {
+      "severity": "high",
+      "direct": true,
+      "in_production_audit": true,
+      "range": "7.12.0-pre.0 - 7.18.1",
+      "fixAvailable": true,
+      "advisory_urls": []
+    },
+    "source-map-js": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "1.0.0 - 1.2.1",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-68fv-2mgg-jv7q"
+      ]
+    },
+    "tinypool": {
+      "severity": "critical",
+      "direct": false,
+      "in_production_audit": false,
+      "range": "<=2.1.1",
+      "fixAvailable": {
+        "name": "vitest",
+        "version": "2.0.5",
+        "isSemVerMajor": true
+      },
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-5gmw-xhrv-c9v3",
+        "https://github.com/advisories/GHSA-85c8-ppgw-ccpr"
+      ]
+    },
+    "vite": {
+      "severity": "high",
+      "direct": true,
+      "in_production_audit": false,
+      "range": "<=6.4.3",
+      "fixAvailable": {
+        "name": "vite",
+        "version": "8.3.6",
+        "isSemVerMajor": true
+      },
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-4w7w-66w2-5vf9",
+        "https://github.com/advisories/GHSA-v6wh-96g9-6wx3",
+        "https://github.com/advisories/GHSA-698v-4r3x-3vcv",
+        "https://github.com/advisories/GHSA-r825-w8mm-5pxw",
+        "https://github.com/advisories/GHSA-587h-7wmj-h5pm",
+        "https://github.com/advisories/GHSA-9jrq-w75r-8gcw",
+        "https://github.com/advisories/GHSA-rq7h-c2jc-7f22",
+        "https://github.com/advisories/GHSA-fx2h-pf6j-xcff"
+      ]
+    },
+    "vitest": {
+      "severity": "critical",
+      "direct": true,
+      "in_production_audit": false,
+      "range": "0.0.95 - 4.1.10",
+      "fixAvailable": {
+        "name": "vitest",
+        "version": "2.0.5",
+        "isSemVerMajor": true
+      },
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-82fw-gwwq-j7x9"
+      ]
+    },
+    "zod": {
+      "severity": "high",
+      "direct": false,
+      "in_production_audit": true,
+      "range": "<4.6.6",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+      ]
+    }
+  },
+  "disposition": "Open release supply-chain gate. Assess exposure and qualify compatible updates; no dependency changed here."
+}

@@ -78,7 +78,7 @@ async def test_get_access_token_raises_with_mcp_auth_url(cls):
             "jvagent.action.mcp_oauth.microsoft_hydrate.mcp_microsoft_365_auth_url",
             return_value=(
                 "https://x/api/mcp/microsoft_365/auth"
-                f"?account=integral&service={cls._MCP_SERVICE}"
+                f"?account=default&service={cls._MCP_SERVICE}"
             ),
         ),
     ):

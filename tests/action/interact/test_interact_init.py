@@ -23,7 +23,16 @@ async def test_initialize_interaction_no_memory():
 
 
 @pytest.mark.asyncio
-async def test_initialize_interaction_access_denied_at_entry():
+@pytest.mark.parametrize("native", [False, True])
+async def test_initialize_interaction_access_denied_at_entry(
+    monkeypatch: pytest.MonkeyPatch, native: bool
+) -> None:
+    from jvagent.action.native_harness import NativeHarnessAction
+
+    consume = AsyncMock()
+    monkeypatch.setattr(
+        "jvagent.core.host_context.consume_host_system_context", consume
+    )
     ac = AccessControlAction(
         permissions={
             "default": {
@@ -59,11 +68,15 @@ async def test_initialize_interaction_access_denied_at_entry():
     agent.get_memory = AsyncMock(return_value=memory)
     agent.get_response_bus = AsyncMock(return_value=MagicMock())
     agent.get_access_control_action = AsyncMock(return_value=ac)
+    agent.get_actions = AsyncMock(
+        return_value=[NativeHarnessAction()] if native else []
+    )
 
     result = await walker.initialize_interaction(agent)
     assert result.ok is False
     assert result.code == "access_denied"
     assert walker.interaction is None
+    consume.assert_not_called()
 
 
 @pytest.mark.asyncio

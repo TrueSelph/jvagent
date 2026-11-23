@@ -1,3 +1,9 @@
+> Native execution uses public Pydantic AI and official Harness Skills. Follow
+> [native catalog authoring](../../.planning/runbooks/native-skill-catalog.md).
+> The Orchestrator-specific execution descriptions below are transitional legacy
+> reference, not permission to add another skill interpreter. See the
+> [explicit asset name migrations](../../.planning/plans/2026-11-05-native-skill-assets.md).
+
 # Skills Standard — two specs
 
 A `jvagent` skill is a folder with a `SKILL.md` (YAML frontmatter + a Markdown
@@ -293,7 +299,7 @@ python staged_skills/<skill>/scripts/render_pdf.py --input doc.md --output outpu
 On activation the orchestrator stages the folder at `staged_skills/<name>/` inside the
 caller's per-user sandbox and tells the model where to run it. Anything a script
 writes lands in that user's slice and is visible to the file tools. See
-[`pdf_generation`](pdf_generation), [`triage`](triage), [`research`](research),
+[`pdf-generation`](pdf-generation), [`triage`](triage), [`research`](research),
 [`knowledge_ingest`](knowledge_ingest) (capture → report → assimilate; no
 write-file detour), and [`artifact_handler`](artifact_handler) (private
 document ingest via jvforge / PageIndex) for working examples.
@@ -337,7 +343,7 @@ docstrings for the full posture.
 5. **Host providers** (optional):
 embedders register callables via `register_host_skill_provider()` in
 `jvagent.action.orchestrator.skill_providers`; merged after filesystem discovery
-(filesystem wins on name collision). Integral documents the workspace overlay pattern in `docs/backend/workspace-agent-profile.md`.
+(filesystem wins on name collision). Embedding applications can provide workspace-specific skill overlays through the host provider interface.
 
 ```yaml
 - action: jvagent/orchestrator
@@ -394,7 +400,6 @@ from jvagent.scaffold.skill_resolve import (
 ## See also
 
 - [ADR-0023 placement standard](../../.planning/adr/0023-skill-placement-standard.md)
-- [Integral skill profile](../../.planning/reference/integral-skill-profile.md) — Integral platform extension (7-section bar, `integral_*` namespace, manifest sync)
 - [Orchestrator](../../docs/ORCHESTRATOR.md) — the loop and skill lifecycle
 - [`jvagent/code_execution`](../action/code_execution) — the sandbox substrate
 - [`jvagent/core/sandbox.py`](../core/sandbox.py) — the per-user FS convention

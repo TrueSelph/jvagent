@@ -20,8 +20,8 @@ _AGENT = SimpleNamespace(namespace="jvagent", name="orchestrator_agent")
 def _stub_resolver(monkeypatch):
     def _resolve(app_root, namespace, agent_name, *, include_builtin=True):
         return {
-            "integral_identity": {
-                "name": "integral_identity",
+            "workspace_identity": {
+                "name": "workspace_identity",
                 "description": "base identity",
                 "content": "base SOP",
                 "allowed_tools": [],
@@ -60,7 +60,7 @@ async def test_host_provider_merges_overlay_skills(monkeypatch):
 
     register_host_skill_provider(_provider)
     docs = discover_skill_docs(_AGENT, skills_source="app", selector="-all")
-    assert _names(docs) == ["content_factory__carousel_drafter", "integral_identity"]
+    assert _names(docs) == ["content_factory__carousel_drafter", "workspace_identity"]
 
 
 async def test_filesystem_wins_on_name_collision(monkeypatch):
@@ -69,7 +69,7 @@ async def test_filesystem_wins_on_name_collision(monkeypatch):
     def _provider(agent):
         return [
             SkillDoc(
-                name="integral_identity",
+                name="workspace_identity",
                 description="host shadow attempt",
                 body="should be dropped",
                 source="workspace",
@@ -85,7 +85,7 @@ async def test_filesystem_wins_on_name_collision(monkeypatch):
     register_host_skill_provider(_provider)
     docs = discover_skill_docs(_AGENT, skills_source="app", selector="-all")
     by_name = {d.name: d for d in docs}
-    assert by_name["integral_identity"].body == "base SOP"
+    assert by_name["workspace_identity"].body == "base SOP"
     assert "other_bundle__skill" in by_name
 
 
@@ -105,3 +105,30 @@ async def test_multiple_providers_merge(monkeypatch):
     docs = discover_skill_docs(_AGENT, skills_source="app", selector="-all")
     assert "a__one" in _names(docs)
     assert "b__two" in _names(docs)
+
+
+async def test_discovery_preserves_resolver_unsupported_skill_features(monkeypatch):
+    _stub_resolver(monkeypatch)
+
+    def _resolve_with_unsupported(*_args, **_kwargs):
+        return {
+            "scripted": {
+                "name": "scripted",
+                "description": "Scripted SOP",
+                "content": "Run the script.",
+                "source": "app",
+                "spec": "jv",
+                "digest": "digest",
+                "unsupported_features": ["bundled scripts", "frontmatter key hooks"],
+                "metadata": {},
+            }
+        }
+
+    monkeypatch.setattr(
+        skill_resolve, "resolve_merged_skill_bundles", _resolve_with_unsupported
+    )
+    docs = discover_skill_docs(_AGENT, skills_source="app", selector="-all")
+    assert docs[0].unsupported_features == (
+        "bundled scripts",
+        "frontmatter key hooks",
+    )

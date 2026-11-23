@@ -18,6 +18,7 @@ from jvagent.action.base import Action
 from jvagent.core.agent import Agent
 from jvagent.core.agent_yaml_validator import warn_agent_yaml
 from jvagent.core.app import App
+from jvagent.core.errors import ConfigError
 from jvagent.memory import Memory
 
 logger = logging.getLogger(__name__)
@@ -282,6 +283,8 @@ class AgentLoader:
 
             return agent
 
+        except ConfigError:
+            raise
         except Exception as e:
             logger.error(f"Error installing agent {agent_name}: {e}", exc_info=True)
             return None
@@ -758,15 +761,8 @@ class AgentLoader:
                 )
             )
             all_records = await self._get_all_action_records(agent)
-            kept_map = await self._reconcile_actions(
-                agent,
-                actions_manager,
-                expected_actions,
-                all_records,
-                expected_import_paths=expected_paths,
-            )
 
-            # Reload modules for surviving actions so code changes take effect.
+            # Reload declared existing modules before constructing replacements.
             # Use raw DB records for metadata — avoid Action.get() here so we do not
             # deserialize before action classes are loaded (subclass cache poisoning).
             #
@@ -774,7 +770,11 @@ class AgentLoader:
             # deduplicate, and reload each once via importlib.reload. This replaces
             # the previous core/non-core split which used different reload mechanisms.
             modules_to_reload: Dict[str, str] = {}  # module_name -> action label
-            for (ns, label), record in kept_map.items():
+            for record in all_records:
+                context = record.get("context") or {}
+                ns, label = context.get("namespace"), context.get("label")
+                if (ns, label) not in expected_actions:
+                    continue
                 try:
                     metadata_dict = (record.get("context") or {}).get("metadata") or {}
                     loaded_modules = metadata_dict.get("loaded_modules") or []
@@ -817,6 +817,16 @@ class AgentLoader:
             ),
         )
 
+        # Validate/construct declarations before removing persisted services.
+        # In particular a misspelled security Action must not remove the old one.
+        if update_mode is not None:
+            kept_map = await self._reconcile_actions(
+                agent,
+                actions_manager,
+                expected_actions,
+                all_records,
+                expected_import_paths=expected_paths,
+            )
         if not actions:
             return
 
@@ -835,9 +845,8 @@ class AgentLoader:
         )
         failed_count = sum(1 for ok in results.values() if not ok)
 
-        for label, success in results.items():
-            if not success:
-                logger.warning(f"Failed to register action: {label}")
+        if failed_count:
+            raise ConfigError("Declared Action registration failed; startup refused")
 
         if update_mode is not None:
             parts = []
@@ -847,14 +856,8 @@ class AgentLoader:
                 parts.append(f"{registered_count} registered")
             if updated_count:
                 parts.append(f"{updated_count} updated")
-            if failed_count:
-                parts.append(f"{failed_count} failed")
             if parts:
                 logger.info(f"Actions for {agent.name}: {', '.join(parts)}")
-        elif failed_count:
-            logger.warning(
-                f"Actions for {agent.name}: {registered_count} registered, {failed_count} failed"
-            )
 
     async def install_all_agents(
         self, update_mode: Optional[str] = None

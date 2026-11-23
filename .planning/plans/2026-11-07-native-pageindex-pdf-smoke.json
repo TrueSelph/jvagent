@@ -1,0 +1,1004 @@
+{
+  "parent_revision": "git-commit:eeb5ca39349b13eb473411af9f86646d33bc0b40",
+  "source_epochs": [
+    {
+      "process_id": 19604,
+      "observed_at": "2026-11-07T06:40:40.440881+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/documents.py": "git-blob:d29b8f0fcb040acd810f8c354f0e674c37962beb",
+        "jvagent/action/pageindex/endpoints.py": "git-blob:cb48301db925ca924e053b67c930ecb3ca235f54",
+        "jvagent/action/pageindex/llm_bridge.py": "git-blob:3f928e336a9fb453f3e2d48056d1176407de569d",
+        "jvagent/action/pageindex/llm_override.py": "git-blob:beace742f646fd19814f9af5a720194b7f3640dc",
+        "jvagent/action/pageindex/native_ingest.py": "git-blob:aa89beaa892fdf654bafbe7cb31314cdb9561475",
+        "jvagent/action/pageindex/native_search.py": "git-blob:46803b5eef80255a3d6ae427a68670d772acb96d",
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:55d60a7f74fa92802b4bd28ef11d0a2ba8b5424f",
+        "jvagent/action/pageindex/native_pdf.py": "git-blob:1bf80512d499c18a362b0840b7cec3123f2b50c5",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 19750,
+      "observed_at": "2026-11-07T06:43:02.226940+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/documents.py": "git-blob:ced4257124ec05e37e73a6906783475e4eff5c87",
+        "jvagent/action/pageindex/endpoints.py": "git-blob:cb48301db925ca924e053b67c930ecb3ca235f54",
+        "jvagent/action/pageindex/llm_bridge.py": "git-blob:3f928e336a9fb453f3e2d48056d1176407de569d",
+        "jvagent/action/pageindex/llm_override.py": "git-blob:beace742f646fd19814f9af5a720194b7f3640dc",
+        "jvagent/action/pageindex/native_ingest.py": "git-blob:aa89beaa892fdf654bafbe7cb31314cdb9561475",
+        "jvagent/action/pageindex/native_search.py": "git-blob:46803b5eef80255a3d6ae427a68670d772acb96d",
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:55d60a7f74fa92802b4bd28ef11d0a2ba8b5424f",
+        "jvagent/action/pageindex/native_pdf.py": "git-blob:7cf6699ec8bcfc66ebad79d47cb68339195cd6bb",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 19990,
+      "observed_at": "2026-11-07T06:45:47.705524+00:00",
+      "source_blobs": {
+        "jvagent/action/pageindex/documents.py": "git-blob:ced4257124ec05e37e73a6906783475e4eff5c87",
+        "jvagent/action/pageindex/endpoints.py": "git-blob:7bc376d2797b1e231633206e3268e1d3442327d7",
+        "jvagent/action/pageindex/llm_bridge.py": "git-blob:3f928e336a9fb453f3e2d48056d1176407de569d",
+        "jvagent/action/pageindex/llm_override.py": "git-blob:beace742f646fd19814f9af5a720194b7f3640dc",
+        "jvagent/action/pageindex/native_ingest.py": "git-blob:aa89beaa892fdf654bafbe7cb31314cdb9561475",
+        "jvagent/action/pageindex/native_search.py": "git-blob:46803b5eef80255a3d6ae427a68670d772acb96d",
+        "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:55d60a7f74fa92802b4bd28ef11d0a2ba8b5424f",
+        "jvagent/action/pageindex/native_pdf.py": "git-blob:7cf6699ec8bcfc66ebad79d47cb68339195cd6bb",
+        "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+        "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+        "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "final_source": {
+    "process_id": 19990,
+    "observed_at": "2026-11-07T06:47:15.203903+00:00",
+    "source_blobs": {
+      "jvagent/action/pageindex/documents.py": "git-blob:ced4257124ec05e37e73a6906783475e4eff5c87",
+      "jvagent/action/pageindex/endpoints.py": "git-blob:7bc376d2797b1e231633206e3268e1d3442327d7",
+      "jvagent/action/pageindex/llm_bridge.py": "git-blob:3f928e336a9fb453f3e2d48056d1176407de569d",
+      "jvagent/action/pageindex/llm_override.py": "git-blob:beace742f646fd19814f9af5a720194b7f3640dc",
+      "jvagent/action/pageindex/native_ingest.py": "git-blob:aa89beaa892fdf654bafbe7cb31314cdb9561475",
+      "jvagent/action/pageindex/native_search.py": "git-blob:46803b5eef80255a3d6ae427a68670d772acb96d",
+      "jvagent/action/pageindex/pageindex_action/pageindex_action.py": "git-blob:55d60a7f74fa92802b4bd28ef11d0a2ba8b5424f",
+      "jvagent/action/pageindex/native_pdf.py": "git-blob:7cf6699ec8bcfc66ebad79d47cb68339195cd6bb",
+      "jvagent/harness/run_limits.py": "git-blob:5e50dedb239184ed455c52818b87ba1a16b64ef1",
+      "jvagent/harness/instructions.py": "git-blob:c828f73a3e3650abdc150d82045ef3765be5b7ec",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:395ede963555d07110d2cf2a65e6278788c065cc",
+      "jvagent/cli/harness_migration_channels.py": "git-blob:6becc83aec0d5effa556aaccb812194db9e8a7e7"
+    },
+    "file_interface_loaded": false,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "frontend_sha256": {
+    "assets/ChatInterface-CpKl2eGN.css": "sha256:1ea370447682afc2ab43cf4081772232f21acdf30dc25f400a60588480a5dafe",
+    "assets/ChatInterface-lrdnIXCk.js": "sha256:5ec8757ae9a44c99f0fcd808e6b94a9c80fedb3183e68b49c506bda523b50e77",
+    "assets/ChatRedirect-CYIr8iVr.js": "sha256:656de6e8b5c79f83ffcfd50b5557a3c9dd37473d9f4ec6f58131f2f57c82e6b2",
+    "assets/DebugInteractions-B-4dqr-p.js": "sha256:9b948f885a03215f086bc1bf1a8c5513f60793b0903f79f29604429ca057ce0b",
+    "assets/Login-DleGSgbG.js": "sha256:1d2eaaee5f03dfc91f8cc09544b12a27aa0d005d26fea73bde34c7c0eb555d81",
+    "assets/main-DH_gRVsF.css": "sha256:bab3487136e783d0d622f35a60d56e116d9b339f246eb5f61ea5cac340ef1a87",
+    "assets/main-DeN3J7NC.js": "sha256:dcf5a6b7d624b63c7d45c76cf4b416875a0e7ebc6c3c9447bd24bac38caa612e",
+    "assets/useAgents-DO1FNsk2.js": "sha256:0e73a066a2fc2e42a8b04f94166246cb4061331ac41f2df393daf4fead510efc",
+    "assets/useAuth-rV1-X0d0.js": "sha256:302acccc87d8e4f7039c13bd3381dae598a0c390f11ed183c4a777cfe4af7155",
+    "assets/vendor-cytoscape-CUqq0XTU.js": "sha256:9bb1dbac73bc986536b9d4f3c6509da2c104606dc115b3e03114361719388b7c",
+    "assets/vendor-d3-DznK3MmS.js": "sha256:56633e29226472b3d4affcaf13cca2721065d796d2c25d6e366eaa84dfead42e",
+    "assets/vendor-dagre-bridge-B2IYeVxy.js": "sha256:ba057e6ea4e77c708d44fcf1b1bd1a20d2c487d95ff107a94c25f218a124597d",
+    "assets/vendor-graphviz-C9sQj0WI.js": "sha256:892db92bc653ae6c8457fa1798d56cf055bfe327c96f1cecc2c288394f09c5bb",
+    "assets/vendor-markdown-B9moJQqy.js": "sha256:fd0c3342290dfd51549ef179e3065c58c3c5c08b5759d1a25095b99cc9ffd976",
+    "assets/vendor-react-CEqf_TvG.js": "sha256:8d7514ae05f82ab1e79f2f94261eeead2ee410d37b3ee0a37bd16aa61e4b4e60",
+    "index.html": "sha256:283ded0089eeb68e801e85648244db8d960814114484714ab74b99eed14031dc"
+  },
+  "fixture": {
+    "graph": "disposable PostgreSQL",
+    "index": "isolated PageIndex JSON",
+    "backend_port": 8188,
+    "frontend_port": 3149,
+    "pdf_sha256": "sha256:9f40f122dd654141650610acd81bf53df82443d7728ae26a354f8d2445738dd6"
+  },
+  "browser": [
+    {
+      "scenario": "pdf upload",
+      "status": 200,
+      "elapsed_ms": 19090,
+      "body": {
+        "success": true,
+        "doc_name": "Observatory Orientation PDF",
+        "root_id": "n.DocumentRootNode.f1c45b7cc7e24c86bcdbb7ab",
+        "doc_description": "This document provides arrival procedures and safety instructions for visitors attending a guided tour at an observatory, detailing check-in requirements, orientation logistics, and conduct guidelines during the visit.",
+        "chunks": 2
+      }
+    },
+    {
+      "scenario": "pdf final replay",
+      "status": 200,
+      "elapsed_ms": 18102,
+      "body": {
+        "success": true,
+        "doc_name": "Observatory Final PDF Fixture",
+        "root_id": "n.DocumentRootNode.d782eab825c2451598d3bad3",
+        "doc_description": "This document provides arrival procedures and safety instructions for visitors attending a tour at an observatory, detailing check-in requirements, orientation logistics, and guidelines for safe conduct during the visit.",
+        "chunks": 2
+      }
+    },
+    {
+      "scenario": "admin tightens request limit",
+      "status": 200,
+      "update": {
+        "success": true,
+        "updated": {
+          "max_requests": 1
+        },
+        "skipped": {},
+        "message": "Successfully updated 1 field(s)"
+      }
+    },
+    {
+      "scenario": "initial budget refusal",
+      "browser": "Fetch error, persisted UsageLimitExceeded"
+    },
+    {
+      "scenario": "final budget refusal",
+      "status": 422,
+      "elapsed_ms": 3935,
+      "body": {
+        "error_code": "validation_error",
+        "message": "PDF ingestion reached the configured model budget",
+        "timestamp": "2026-11-07T06:46:15.699193+00:00",
+        "path": "/api/agents/n.Agent.b6d9807dd56e4c69b25dce7f/pageindex/documents"
+      }
+    },
+    {
+      "scenario": "jvchat PDF retrieval",
+      "observed": "load_capability and pageindex__search completed; Quartz Room, ORBIT-42, page 1 and clickable source"
+    }
+  ],
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.03c94780fbbf49efbb39cf27",
+      "channel": "pageindex_pdf_ingestion",
+      "outcome": "completed",
+      "closed": true,
+      "failure_type": null,
+      "request_limit": 40,
+      "elapsed_seconds": 17.684361,
+      "response": "{\"doc_name\": \"Observatory Orientation PDF\", \"_root_id\": \"n.DocumentRootNode.f1c45b7cc7e24c86bcdbb7ab\", \"doc_description\": \"This document provides arrival procedures and safety instructions for visitors attending a guided tour at an observatory, detailing check-in requirements, orientation logistics, and conduct guidelines during the visit.\"}",
+      "usage": {
+        "model_call_count": 10,
+        "total_tokens": 3095,
+        "estimated_cost_usd": 0.009604,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "lineage": [
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": null,
+          "run_id": "5086106685784c3592c0fa4811c7dcb9"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "b7107aea5bf64ae8a44a86d3245c3f36"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "25a210a2132c42f79938dcb57f0f88b6"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "634d67859983451585b383c1abc87d72"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "42b5ae4dba384c62a8e332c234f64a80"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "15617757a3a44875b046635bf9052501"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "14d8f3151f5943abaaa8c19ba217e0b2"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "826ce647a78f48a798953e67ddf63341"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "2f6f6a40d8b64e15a678e117ec1e8ee5"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "5086106685784c3592c0fa4811c7dcb9",
+          "run_id": "89de8d6fc8ae4432b915dbb1b5d56204"
+        }
+      ],
+      "tool_events": [],
+      "provider_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 327,
+            "prompt_tokens": 248,
+            "completion_tokens": 79,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001128,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 301,
+            "prompt_tokens": 239,
+            "completion_tokens": 62,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000974,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 511,
+            "prompt_tokens": 447,
+            "completion_tokens": 64,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001406,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 318,
+            "prompt_tokens": 262,
+            "completion_tokens": 56,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000972,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 307,
+            "prompt_tokens": 253,
+            "completion_tokens": 54,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000938,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 396,
+            "prompt_tokens": 338,
+            "completion_tokens": 58,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.00114,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 386,
+            "prompt_tokens": 329,
+            "completion_tokens": 57,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001114,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 160,
+            "prompt_tokens": 101,
+            "completion_tokens": 59,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000674,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 137,
+            "prompt_tokens": 92,
+            "completion_tokens": 45,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000544,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 252,
+            "prompt_tokens": 217,
+            "completion_tokens": 35,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000714,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.009604",
+        "tokens": 3095,
+        "requests": 10,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.e30e56603ded4b80aaac2255",
+      "channel": "default",
+      "outcome": "delivered",
+      "closed": true,
+      "failure_type": null,
+      "request_limit": 40,
+      "elapsed_seconds": 8.772841,
+      "response": "The Observatory Orientation takes place in the Quartz Room, and the access code you need to check in at the east desk is ORBIT-42. Be sure to bring a photo ID and arrive ten minutes early for your orientation, which starts at 09:20[1].\n\nReferences / Sources\n[1] Observatory Orientation PDF (https://example.com/observatory-orientation) pp. 1",
+      "usage": {
+        "model_call_count": 4,
+        "total_tokens": 4434,
+        "estimated_cost_usd": 0.007776,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "lineage": [
+        {
+          "agent_name": "jvagent-native",
+          "parent_run_id": null,
+          "run_id": "corr-0faf5b010c704819824cfc37a00739be"
+        },
+        {
+          "agent_name": "pageindex__search",
+          "parent_run_id": "corr-0faf5b010c704819824cfc37a00739be",
+          "run_id": "01a1b4be-89f9-711b-8a71-dc0ad1da74a0"
+        }
+      ],
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "load_capability"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "pageindex__search"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "pageindex__search"
+        }
+      ],
+      "provider_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 312,
+            "prompt_tokens": 291,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.00075,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 1755,
+            "prompt_tokens": 1724,
+            "completion_tokens": 31,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.003696,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 373,
+            "prompt_tokens": 273,
+            "completion_tokens": 100,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001346,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 1994,
+            "prompt_tokens": 1912,
+            "completion_tokens": 82,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "cost_record": {
+            "amount": 0.001984,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.007776",
+        "tokens": 4434,
+        "requests": 4,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.6a94069b4f4740a38a1e4b1f",
+      "channel": "pageindex_pdf_ingestion",
+      "outcome": "completed",
+      "closed": true,
+      "failure_type": null,
+      "request_limit": 40,
+      "elapsed_seconds": 16.691568,
+      "response": "{\"doc_name\": \"Observatory Final PDF Fixture\", \"_root_id\": \"n.DocumentRootNode.d782eab825c2451598d3bad3\", \"doc_description\": \"This document provides arrival procedures and safety instructions for visitors attending a tour at an observatory, detailing check-in requirements, orientation logistics, and guidelines for safe conduct during the visit.\"}",
+      "usage": {
+        "model_call_count": 10,
+        "total_tokens": 3096,
+        "estimated_cost_usd": 0.009612,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "lineage": [
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": null,
+          "run_id": "f2bd955b7b5046f89e8ad29033a3ceba"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "cbaff7ca99ed4f67b74c25c80c1c543d"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "71c66655f8a64383890dcfe434bfc630"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "bb98543be8364c2c9accc129da6941fe"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "4a7e98fc2372418aa0fd2e74246f715f"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "21ed13ed1abb485d95c0c132ff8fad2b"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "000b51ef40d944e990e048c245d718ed"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "82539033a1dc4dd0ad59bf6bc4f5d2fc"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "79a57b1a253b48599115f40c90696e87"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "f2bd955b7b5046f89e8ad29033a3ceba",
+          "run_id": "c0833e89a3d54b9fbdaebd9869409b7d"
+        }
+      ],
+      "tool_events": [],
+      "provider_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 327,
+            "prompt_tokens": 248,
+            "completion_tokens": 79,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001128,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 301,
+            "prompt_tokens": 239,
+            "completion_tokens": 62,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000974,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 511,
+            "prompt_tokens": 447,
+            "completion_tokens": 64,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001406,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 318,
+            "prompt_tokens": 262,
+            "completion_tokens": 56,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000972,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 307,
+            "prompt_tokens": 253,
+            "completion_tokens": 54,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000938,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 396,
+            "prompt_tokens": 338,
+            "completion_tokens": 58,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.00114,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 386,
+            "prompt_tokens": 329,
+            "completion_tokens": 57,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001114,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 160,
+            "prompt_tokens": 101,
+            "completion_tokens": 59,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000674,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 137,
+            "prompt_tokens": 92,
+            "completion_tokens": 45,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000544,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 253,
+            "prompt_tokens": 217,
+            "completion_tokens": 36,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.000722,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.009612",
+        "tokens": 3096,
+        "requests": 10,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.46707595d01749359b67a0a7",
+      "channel": "pageindex_pdf_ingestion",
+      "outcome": "failed",
+      "closed": true,
+      "failure_type": "UsageLimitExceeded",
+      "request_limit": 1,
+      "elapsed_seconds": 1.603658,
+      "response": null,
+      "usage": {
+        "model_call_count": 1,
+        "total_tokens": 323,
+        "estimated_cost_usd": 0.001096,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "lineage": [
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": null,
+          "run_id": "8f39f41aa3b042c89db206238e027e94"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "8f39f41aa3b042c89db206238e027e94",
+          "run_id": "443698b215494010922aa9e29f5e8fb5"
+        }
+      ],
+      "tool_events": [],
+      "provider_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 323,
+            "prompt_tokens": 248,
+            "completion_tokens": 75,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001096,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.001096",
+        "tokens": 323,
+        "requests": 1,
+        "unpriced_requests": 0
+      }
+    },
+    {
+      "interaction_id": "n.Interaction.f481666ce3a8454c885b4e51",
+      "channel": "pageindex_pdf_ingestion",
+      "outcome": "failed",
+      "closed": true,
+      "failure_type": "UsageLimitExceeded",
+      "request_limit": 1,
+      "elapsed_seconds": 2.534856,
+      "response": null,
+      "usage": {
+        "model_call_count": 1,
+        "total_tokens": 327,
+        "estimated_cost_usd": 0.001128,
+        "reported_cost_usd": 0.0,
+        "unknown_cost_call_count": 0
+      },
+      "lineage": [
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": null,
+          "run_id": "7ae66ca01bc64eb09790d07e5dc1e7f2"
+        },
+        {
+          "agent_name": "pageindex_pdf_ingestion",
+          "parent_run_id": "7ae66ca01bc64eb09790d07e5dc1e7f2",
+          "run_id": "d8aa725a52134709bc6b96d408a594ad"
+        }
+      ],
+      "tool_events": [],
+      "provider_receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "provider": "openai",
+          "usage_status": "provider_reported",
+          "usage": {
+            "total_tokens": 327,
+            "prompt_tokens": 248,
+            "completion_tokens": 79,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "cost_record": {
+            "amount": 0.001128,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          }
+        }
+      ],
+      "conversation_spend": {
+        "usd": "0.001128",
+        "tokens": 327,
+        "requests": 1,
+        "unpriced_requests": 0
+      }
+    }
+  ],
+  "index_readback": [
+    {
+      "root_id": "n.DocumentRootNode.f1c45b7cc7e24c86bcdbb7ab",
+      "doc_name": "Observatory Orientation PDF",
+      "collection_name": "n.Agent.b6d9807dd56e4c69b25dce7f",
+      "chunks": 2,
+      "doc_url": "https://example.com/observatory-orientation",
+      "sections": [
+        {
+          "title": "Observatory Arrival",
+          "start_index": 1,
+          "end_index": 1
+        },
+        {
+          "title": "Safety Instructions",
+          "start_index": 2,
+          "end_index": 2
+        }
+      ]
+    },
+    {
+      "root_id": "n.DocumentRootNode.d782eab825c2451598d3bad3",
+      "doc_name": "Observatory Final PDF Fixture",
+      "collection_name": "n.Agent.b6d9807dd56e4c69b25dce7f",
+      "chunks": 2,
+      "doc_url": "https://example.com/observatory-orientation",
+      "sections": [
+        {
+          "title": "Observatory Arrival",
+          "start_index": 1,
+          "end_index": 1
+        },
+        {
+          "title": "Safety Instructions",
+          "start_index": 2,
+          "end_index": 2
+        }
+      ]
+    }
+  ],
+  "reload_readback_exact": {
+    "rows": true,
+    "conversations": true,
+    "registrations": true
+  },
+  "limits": [
+    "No scanned PDF, Docling, Office, live jvforge or Drive sync qualification.",
+    "Provider dollars estimated from SDK pricing.",
+    "Publication interruption and duplicate upload semantics remain open."
+  ]
+}

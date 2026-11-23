@@ -125,6 +125,8 @@ class GoogleDriveAction(GoogleAction):
         with_link: bool = False,
         depth: int = 5,
         drive_id: Optional[str] = None,
+        *,
+        include_version: bool = False,
     ) -> List[Dict[str, Any]]:
         """List files and folders recursively up to a specified depth.
 
@@ -146,6 +148,7 @@ class GoogleDriveAction(GoogleAction):
             "files(id, name, mimeType, createdTime, modifiedTime, "
             "shortcutDetails(targetId, targetMimeType)"
             + (", webViewLink" if with_link else "")
+            + (", version" if include_version else "")
             + ")"
         )
 
@@ -175,6 +178,7 @@ class GoogleDriveAction(GoogleAction):
                         with_link=with_link,
                         depth=depth - 1,
                         drive_id=drive_id,
+                        include_version=include_version,
                     )
                 else:
                     # If we hit depth limit, provide an empty list or omit

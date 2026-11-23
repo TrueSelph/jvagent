@@ -54,7 +54,7 @@ interview:
 def test_signup_frontmatter_matches_parse_interview_spec():
     from_skill = load_interview_spec_from_skill(_SIGNUP)
     assert from_skill is not None
-    assert from_skill.name == "signup_interview"
+    assert from_skill.name == "signup-interview"
     assert len(from_skill.fields) == 6
     assert from_skill.confirm == "manual"
 

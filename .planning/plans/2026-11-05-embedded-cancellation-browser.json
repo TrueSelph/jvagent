@@ -1,0 +1,482 @@
+{
+  "observations": {
+    "requests": [
+      {
+        "route": "/api/qualification/embed",
+        "status": 200,
+        "started_at": "2026-11-05T15:25:08.984Z",
+        "headers_ms": 27
+      },
+      {
+        "route": "/api/qualification/embed",
+        "status": 200,
+        "started_at": "2026-11-05T15:25:37.241Z",
+        "headers_ms": 48,
+        "start_event_seen": true,
+        "start_at": "2026-11-05T15:25:37.660Z",
+        "stop_button_found": true,
+        "stop_at": "2026-11-05T15:25:39.662Z"
+      },
+      {
+        "route": "/api/qualification/embed",
+        "status": 200,
+        "started_at": "2026-11-05T15:27:18.453Z",
+        "headers_ms": 41
+      }
+    ],
+    "timings": [
+      {
+        "start_ms": 151536,
+        "duration_ms": 6341
+      },
+      {
+        "start_ms": 179770,
+        "duration_ms": 2473
+      },
+      {
+        "start_ms": 280989,
+        "duration_ms": 349
+      }
+    ]
+  },
+  "embedded_ui": "## Latest page snapshot\nuid=397_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3136/chat/n.Agent.c3d49de049264acbb24b39c0\"\n  uid=399_0 StaticText \"jvchat\"\n  uid=399_1 StaticText \"AGENT TESTING\"\n  uid=399_2 button \"New Conversation\"\n  uid=400_0 StaticText \"1\"\n  uid=400_1 StaticText \" conversation\"\n  uid=400_2 StaticText \"EMBED-FOLLOWUP: Can the cancelled session safely issue another model call? Reply READY only if it can.\"\n  uid=400_3 button \"Delete conversation\"\n  uid=399_4 button \"Logout\"\n  uid=399_5 button \"Collapse sidebar\"\n  uid=399_6 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=399_7 button \"Native Signed Host Qualification AGENT\" expandable haspopup=\"listbox\"\n  uid=399_8 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=399_9 button \"Copy token\" description=\"Copy access token\"\n  uid=399_10 button \"Switch to light mode\"\n  uid=400_4 StaticText \"EMBED-HEALTH-CEDAR: Use the MCP tool to look up REHEARSAL-47 and tell me its room and start time.\"\n  uid=400_5 button \"1 tool call\" expandable expanded\n  uid=400_6 button \"Used tool: mcp_records__lookup_record\" expandable\n  uid=400_7 StaticText \"REHEARSAL-47 is in the Cedar room and starts at 14:30.\"\n  uid=400_8 button \"gpt-4.1-2025-04-14 · 681 tokens\"\n  uid=401_0 StaticText \"EMBED-CANCEL-PINE: Give 100 numbered bicycle maintenance tips, each with two explanatory sentences. Start directly with tip 1 and continue through 100. Do not use tools.\"\n  uid=402_0 StaticText \"EMBED-FOLLOWUP: Can the cancelled session safely issue another model call? Reply READY only if it can.\"\n  uid=402_1 StaticText \"This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.\"\n  uid=402_2 button \"Copy\"\n  uid=402_3 button \"Refresh\"\n  uid=402_4 button \"Debug\"\n  uid=402_5 button \"More\" expandable haspopup=\"menu\"\n  uid=399_13 form\n    uid=399_14 textbox \"Message input\" focusable focused multiline\n    uid=399_15 button \"Add Attachment\"\n    uid=399_16 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=402_6 button \"Send message\" disableable disabled\n",
+  "ordinary_http_ui": "## Latest page snapshot\nuid=403_0 RootWebArea \"jvchat - jvagent Chat Interface\" url=\"http://127.0.0.1:3136/chat/n.Agent.c3d49de049264acbb24b39c0\"\n  uid=403_1 StaticText \"jvchat\"\n  uid=403_2 StaticText \"AGENT TESTING\"\n  uid=403_3 button \"New Conversation\"\n  uid=403_4 StaticText \"2\"\n  uid=403_5 StaticText \" conversation\"\n  uid=404_0 StaticText \"s\"\n  uid=404_1 StaticText \"EMBED-HTTP-AFTER: Reply only HTTP-READY to confirm a fresh ordinary HTTP conversation after the embedded Stop.\"\n  uid=404_2 button \"Delete conversation\"\n  uid=403_6 StaticText \"EMBED-FOLLOWUP: Can the cancelled session safely issue another model call? Reply READY only if it can.\"\n  uid=403_7 button \"Delete conversation\"\n  uid=403_8 button \"Logout\"\n  uid=403_9 button \"Collapse sidebar\"\n  uid=403_10 button \"Copy agent ID\" description=\"Copy agent ID\"\n  uid=403_11 button \"Native Signed Host Qualification AGENT\" expandable haspopup=\"listbox\"\n  uid=403_12 button \"Copy session ID\" description=\"Copy session ID\"\n  uid=403_13 button \"Copy token\" description=\"Copy access token\"\n  uid=403_14 button \"Switch to light mode\"\n  uid=404_3 StaticText \"EMBED-HTTP-AFTER: Reply only HTTP-READY to confirm a fresh ordinary HTTP conversation after the embedded Stop.\"\n  uid=404_4 StaticText \"HTTP-READY\"\n  uid=404_5 button \"gpt-4.1-2025-04-14 · 290 tokens\" focusable focused\n  uid=404_6 button \"Copy\"\n  uid=404_7 button \"Refresh\"\n  uid=404_8 button \"More\" expandable haspopup=\"menu\"\n  uid=403_17 form\n    uid=403_18 textbox \"Message input\" multiline\n    uid=403_19 button \"Add Attachment\"\n    uid=403_20 button \"Composer tools\" description=\"Composer tools — ⌘⇧I Interaction debug, ⌘⇧A Action config, ⌘⇧L Long memory, ⌘⇧G App graph, ⌘⇧M MCPs\" expandable haspopup=\"menu\"\n    uid=404_9 button \"Send message\" disableable disabled\n",
+  "ordinary_http_timing": [
+    {
+      "start_ms": 44690,
+      "duration_ms": 4000
+    }
+  ],
+  "wire": {
+    "embedded_mcp": [
+      {
+        "type": "start",
+        "interaction_id": "n.Interaction.49012f29c2a04fc58f2ac9e1",
+        "session_id": "sess_0731a2a3c97f42fa",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.48a580cd541d4f83ba30133b",
+          "session_id": "sess_0731a2a3c97f42fa",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.49012f29c2a04fc58f2ac9e1",
+          "message_type": "adhoc",
+          "content": "mcp_records__lookup_record",
+          "channel": "default",
+          "category": "thought",
+          "thought_type": "tool_call",
+          "segment_id": "call_gBNnN1P4FqGfbapPG187x702",
+          "metadata": {
+            "tool_name": "mcp_records__lookup_record",
+            "native_run_id": "corr-d43ef7b8ce9e4188835e2e76d03b6e1d",
+            "native_agent_name": "jvagent-native",
+            "tool_args": {
+              "reference": "REHEARSAL-47"
+            }
+          },
+          "timestamp": "2026-11-05T11:25:12.823787"
+        }
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.d8afdeef2a544ec89ae2f2ed",
+          "session_id": "sess_0731a2a3c97f42fa",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.49012f29c2a04fc58f2ac9e1",
+          "message_type": "adhoc",
+          "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}",
+          "channel": "default",
+          "category": "thought",
+          "thought_type": "tool_result",
+          "segment_id": "call_gBNnN1P4FqGfbapPG187x702",
+          "metadata": {
+            "tool_name": "mcp_records__lookup_record",
+            "native_run_id": "corr-d43ef7b8ce9e4188835e2e76d03b6e1d",
+            "native_agent_name": "jvagent-native",
+            "tool_result": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}"
+          },
+          "timestamp": "2026-11-05T11:25:12.888046"
+        }
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-d43ef7b8ce9e4188835e2e76d03b6e1d",
+          "session_id": "sess_0731a2a3c97f42fa",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.49012f29c2a04fc58f2ac9e1",
+          "message_type": "adhoc",
+          "content": "REHEARSAL-47 is in the Cedar room and starts at 14:30.",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {
+            "qualification_host": "native-embed"
+          },
+          "timestamp": "2026-11-05T11:25:15.111149"
+        }
+      },
+      {
+        "type": "final",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+        "session_id": "sess_0731a2a3c97f42fa",
+        "response": "REHEARSAL-47 is in the Cedar room and starts at 14:30.",
+        "interaction": {
+          "id": "n.Interaction.49012f29c2a04fc58f2ac9e1",
+          "utterance": "EMBED-HEALTH-CEDAR: Use the MCP tool to look up REHEARSAL-47 and tell me its room and start time.",
+          "response": "REHEARSAL-47 is in the Cedar room and starts at 14:30.",
+          "actions": [
+            "NativeHarnessAction"
+          ],
+          "directives": [],
+          "tasks": [],
+          "parameters": [],
+          "events": [
+            {
+              "action_name": "harness",
+              "content": "correlation_id=corr-d43ef7b8ce9e4188835e2e76d03b6e1d"
+            }
+          ],
+          "observability_metrics": [
+            {
+              "event_type": "model_call",
+              "data": {
+                "native_receipt_key": "spend:default|run|*|corr-d43ef7b8ce9e4188835e2e76d03b6e1d:1",
+                "native_run_id": "corr-d43ef7b8ce9e4188835e2e76d03b6e1d",
+                "native_step_index": 1,
+                "native_spend_receipt": true,
+                "model": "gpt-4.1-2025-04-14",
+                "provider": "openai",
+                "native_receipt_origin": "spend_snapshot",
+                "usage_status": "provider_reported",
+                "usage": {
+                  "prompt_tokens": 291,
+                  "completion_tokens": 24,
+                  "total_tokens": 315,
+                  "cached_prompt_tokens": 0,
+                  "cache_write_tokens": 0
+                },
+                "cost_record": {
+                  "amount": 0.000774,
+                  "currency": "USD",
+                  "source": "pydantic_ai_pricing",
+                  "estimated": true,
+                  "pricing_version": null
+                }
+              }
+            },
+            {
+              "event_type": "model_call",
+              "data": {
+                "native_receipt_key": "spend:default|run|*|corr-d43ef7b8ce9e4188835e2e76d03b6e1d:2",
+                "native_run_id": "corr-d43ef7b8ce9e4188835e2e76d03b6e1d",
+                "native_step_index": 2,
+                "native_spend_receipt": true,
+                "model": "gpt-4.1-2025-04-14",
+                "provider": "openai",
+                "native_receipt_origin": "spend_snapshot",
+                "usage_status": "provider_reported",
+                "usage": {
+                  "prompt_tokens": 345,
+                  "completion_tokens": 21,
+                  "total_tokens": 366,
+                  "cached_prompt_tokens": 0,
+                  "cache_write_tokens": 0
+                },
+                "cost_record": {
+                  "amount": 0.000858,
+                  "currency": "USD",
+                  "source": "pydantic_ai_pricing",
+                  "estimated": true,
+                  "pricing_version": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 636,
+            "completion_tokens": 45,
+            "total_tokens": 681,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 2,
+            "model_attempt_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0,
+            "estimated_cost_usd": 0.001632,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 0,
+            "total_cost_usd": 0.001632,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T15:25:15.182775+00:00"
+          },
+          "streamed": true
+        },
+        "report": [
+          {
+            "interaction_created": {
+              "interaction_id": "n.Interaction.49012f29c2a04fc58f2ac9e1",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "session_id": "sess_0731a2a3c97f42fa"
+            }
+          },
+          {
+            "interact_actions_found": {
+              "count": 1,
+              "actions": [
+                "native_harness"
+              ]
+            }
+          },
+          {
+            "action_executed": {
+              "action": "native_harness",
+              "weight": 0,
+              "class": "NativeHarnessAction"
+            }
+          }
+        ]
+      }
+    ],
+    "embedded_followup": [
+      {
+        "type": "start",
+        "interaction_id": "n.Interaction.a322c2417ed94d16a2a02f40",
+        "session_id": "sess_0731a2a3c97f42fa",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.3344aa6e2e8748a095342441",
+          "session_id": "sess_0731a2a3c97f42fa",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.a322c2417ed94d16a2a02f40",
+          "message_type": "adhoc",
+          "content": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {
+            "qualification_host": "native-embed"
+          },
+          "timestamp": "2026-11-05T11:27:18.728409"
+        }
+      },
+      {
+        "type": "final",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+        "session_id": "sess_0731a2a3c97f42fa",
+        "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+        "interaction": {
+          "id": "n.Interaction.a322c2417ed94d16a2a02f40",
+          "utterance": "EMBED-FOLLOWUP: Can the cancelled session safely issue another model call? Reply READY only if it can.",
+          "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+          "actions": [
+            "NativeHarnessAction"
+          ],
+          "directives": [],
+          "tasks": [],
+          "parameters": [],
+          "events": [
+            {
+              "action_name": "harness",
+              "content": "correlation_id=corr-c3bf2a3cd7be4dceaf27d698c703f84e"
+            }
+          ],
+          "observability_metrics": [],
+          "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 0,
+            "model_attempt_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0,
+            "estimated_cost_usd": 0,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 0,
+            "total_cost_usd": 0,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T15:27:18.735034+00:00"
+          },
+          "streamed": true
+        },
+        "report": [
+          {
+            "interaction_created": {
+              "interaction_id": "n.Interaction.a322c2417ed94d16a2a02f40",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "session_id": "sess_0731a2a3c97f42fa"
+            }
+          },
+          {
+            "interact_actions_found": {
+              "count": 1,
+              "actions": [
+                "native_harness"
+              ]
+            }
+          },
+          {
+            "action_executed": {
+              "action": "native_harness",
+              "weight": 0,
+              "class": "NativeHarnessAction"
+            }
+          }
+        ]
+      }
+    ],
+    "ordinary_http_after": [
+      {
+        "type": "start",
+        "interaction_id": "n.Interaction.8d66d0c2e9a7494f84e71318",
+        "session_id": "sess_ee74537a78b8489c",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc"
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-eb4b197e00fd4739a223f7db169ee50b",
+          "session_id": "sess_ee74537a78b8489c",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.8d66d0c2e9a7494f84e71318",
+          "message_type": "adhoc",
+          "content": "HTTP-READY",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T11:28:59.855434"
+        }
+      },
+      {
+        "type": "message",
+        "message": {
+          "id": "o.ResponseMessage.corr-eb4b197e00fd4739a223f7db169ee50b",
+          "session_id": "sess_ee74537a78b8489c",
+          "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+          "interaction_id": "n.Interaction.8d66d0c2e9a7494f84e71318",
+          "message_type": "final",
+          "content": "",
+          "channel": "default",
+          "category": "user",
+          "thought_type": null,
+          "segment_id": null,
+          "metadata": {},
+          "timestamp": "2026-11-05T11:28:59.869221"
+        }
+      },
+      {
+        "type": "final",
+        "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+        "session_id": "sess_ee74537a78b8489c",
+        "response": "HTTP-READY",
+        "interaction": {
+          "id": "n.Interaction.8d66d0c2e9a7494f84e71318",
+          "utterance": "EMBED-HTTP-AFTER: Reply only HTTP-READY to confirm a fresh ordinary HTTP conversation after the embedded Stop.",
+          "response": "HTTP-READY",
+          "actions": [
+            "NativeHarnessAction"
+          ],
+          "directives": [],
+          "tasks": [],
+          "parameters": [],
+          "events": [
+            {
+              "action_name": "harness",
+              "content": "correlation_id=corr-eb4b197e00fd4739a223f7db169ee50b"
+            }
+          ],
+          "observability_metrics": [
+            {
+              "event_type": "model_call",
+              "data": {
+                "native_receipt_key": "spend:default|run|*|corr-eb4b197e00fd4739a223f7db169ee50b:1",
+                "native_run_id": "corr-eb4b197e00fd4739a223f7db169ee50b",
+                "native_step_index": 1,
+                "native_spend_receipt": true,
+                "model": "gpt-4.1-2025-04-14",
+                "provider": "openai",
+                "native_receipt_origin": "spend_snapshot",
+                "usage_status": "provider_reported",
+                "usage": {
+                  "prompt_tokens": 285,
+                  "completion_tokens": 5,
+                  "total_tokens": 290,
+                  "cached_prompt_tokens": 0,
+                  "cache_write_tokens": 0
+                },
+                "cost_record": {
+                  "amount": 0.00061,
+                  "currency": "USD",
+                  "source": "pydantic_ai_pricing",
+                  "estimated": true,
+                  "pricing_version": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 285,
+            "completion_tokens": 5,
+            "total_tokens": 290,
+            "cached_prompt_tokens": 0,
+            "cache_write_tokens": 0,
+            "model_call_count": 1,
+            "model_attempt_count": 0,
+            "failed_model_attempt_count": 0,
+            "cancelled_model_attempt_count": 0,
+            "model_attempt_duration_seconds": 0,
+            "estimated_cost_usd": 0.00061,
+            "reported_cost_usd": 0,
+            "litellm_cost_usd": 0,
+            "unknown_cost_call_count": 0,
+            "total_cost_usd": 0.00061,
+            "total_duration_seconds": 0,
+            "last_updated": "2026-11-05T15:28:59.869540+00:00"
+          },
+          "streamed": true
+        },
+        "report": [
+          {
+            "interaction_created": {
+              "interaction_id": "n.Interaction.8d66d0c2e9a7494f84e71318",
+              "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+              "session_id": "sess_ee74537a78b8489c"
+            }
+          },
+          {
+            "interact_actions_found": {
+              "count": 1,
+              "actions": [
+                "native_harness"
+              ]
+            }
+          },
+          {
+            "action_executed": {
+              "action": "native_harness",
+              "weight": 0,
+              "class": "NativeHarnessAction"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "procedure": "Real jvchat UI with an authenticated disposable host route that calls public jvagent.embed.interact_stream; browser redirects only turn fetches to that route. The real Stop button is clicked 2000 ms after start. A separate page in the same isolated login context uses the ordinary interact route afterward. No backend/provider execution function patched; no credentials committed."
+}

@@ -1,0 +1,51 @@
+{
+  "parent_revision": "git-commit:f0ef49a13b13b843a7eeb072cd2c8ed5c0f86bc4",
+  "source_database": "jvagent-bench-legacy disposable prior real-model benchmark",
+  "report": {
+    "schema": "jvagent.retained-state-preflight.v1",
+    "status": "blocked",
+    "cutover_authorized": false,
+    "snapshot_digest": "sha256:db9bd4685fd9911a35a58cbc3254294a27bf4d0d47b74b13e142c9941d7ec130",
+    "retained_interactions": 5,
+    "observed_model_events": 7,
+    "unverified_model_events": 7,
+    "verified_retained_receipts": {
+      "requests_including_embeddings": 0,
+      "tokens": 0,
+      "reported_usd": "0",
+      "estimated_usd": "0"
+    },
+    "legacy_ledger_usd": "0.031304",
+    "legacy_ledger_provenance": "Legacy settlement total; actual/estimated mix not verified",
+    "blockers": [
+      "aggregate_receipts_require_reconciliation",
+      "missing_or_inconsistent_model_receipt",
+      "retained_tool_or_host_state_review",
+      "unmapped_conversation_context",
+      "unqualified_attempt_tool_or_reserve_event"
+    ],
+    "required_before_apply": [
+      "Verify live graph ownership and consistent quiescent capture",
+      "Reconcile lifetime/pruned usage and receipt provenance",
+      "Qualify typed history, shared spend import, idempotent apply and rollback",
+      "Resolve all tasks, effects and delivery uncertainty"
+    ]
+  },
+  "readback_unchanged": true,
+  "cli_exit_code": 2,
+  "candidate_absent": true,
+  "cli_blockers": [
+    "Unmapped execution setting: auto_start_skills_on_new_user",
+    "Model service settings require explicit native migration",
+    "Retained state requires reconciliation before configuration cutover"
+  ],
+  "source_blobs": {
+    "jvagent/cli/harness_migration_state.py": "git-blob:febc1483cee4595fb0d189bfa45cf13870eadb68",
+    "jvagent/cli/harness_migrate.py": "git-blob:4d185e901ce5b8f5564038129db84015ca261346",
+    "jvagent/cli/main.py": "git-blob:e0e4ec8df71a52594d79329431fb846f81af5c09",
+    "tests/cli/test_harness_migration_state.py": "git-blob:ebe7d441c64078c80d7ca9d897d005d769c889e8",
+    "tests/cli/test_harness_migrate.py": "git-blob:6096de8793ce1fbe7b410946bef522a01be53f77"
+  },
+  "raw_snapshot_permissions": "0o600",
+  "raw_snapshot_exported_to_repository": false
+}

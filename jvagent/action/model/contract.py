@@ -26,6 +26,7 @@ adapters still produce the legacy object.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
@@ -181,6 +182,11 @@ class Usage:
     cached_write_tokens: int = 0
     thinking_tokens: int = 0
     estimated: bool = False
+    cost_usd: Optional[float] = None
+    cost_source: Optional[str] = None
+    cost_currency: Optional[str] = None
+    cost_estimated: Optional[bool] = None
+    pricing_version: Optional[str] = None
 
     @classmethod
     def from_metrics(
@@ -209,6 +215,15 @@ class Usage:
             comp_details = m.get("completion_tokens_details")
             if isinstance(comp_details, dict):
                 thinking = _int(comp_details.get("reasoning_tokens"))
+        cost_record = m.get("cost_record")
+        record = cost_record if isinstance(cost_record, dict) else {}
+        cost_amount = record.get("amount", m.get("cost_usd"))
+        valid_cost = (
+            isinstance(cost_amount, (int, float))
+            and not isinstance(cost_amount, bool)
+            and math.isfinite(float(cost_amount))
+            and float(cost_amount) >= 0
+        )
         return cls(
             prompt_tokens=prompt,
             completion_tokens=completion,
@@ -217,6 +232,25 @@ class Usage:
             cached_write_tokens=cached_write,
             thinking_tokens=thinking,
             estimated=bool(estimated),
+            cost_usd=float(cost_amount) if valid_cost else None,
+            cost_source=(
+                str(record.get("source") or m.get("cost_source"))
+                if record.get("source") or m.get("cost_source")
+                else None
+            ),
+            cost_currency=(
+                str(record.get("currency")) if record.get("currency") else None
+            ),
+            cost_estimated=(
+                record.get("estimated")
+                if isinstance(record.get("estimated"), bool)
+                else None
+            ),
+            pricing_version=(
+                str(record.get("pricing_version"))
+                if record.get("pricing_version")
+                else None
+            ),
         )
 
 

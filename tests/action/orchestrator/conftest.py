@@ -261,6 +261,7 @@ def make_visitor():
         visitor.user_id = user_id
         visitor.channel = channel
         visitor.utterance = utterance
+        visitor.data = {}
         visitor.interaction = interaction
         visitor.conversation = conversation
         visitor.add_directives = AsyncMock()

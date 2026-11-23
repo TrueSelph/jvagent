@@ -75,3 +75,21 @@ build`, then staged into `jvagent/webui/dist/`). That directory is a git-ignored
 build artifact, run at release time by the publish workflow. `jvagent chat`
 prints a build hint if the UI isn't bundled (e.g. a source checkout that hasn't
 been built).
+
+## Failed requests and saved usage
+
+The chat client does not automatically resend an interaction after an application
+error, connection failure or interrupted stream. It tries alternate API routes
+only after an explicit HTTP 404. An incomplete stream is shown as a failure;
+check the conversation before retrying an uncertain request
+([request boundary](../jvchat/src/config/api.ts:812)). This does not replace server
+execution ownership or effect/delivery reconciliation.
+
+Newly saved messages retain a small usage receipt: model names, token counts,
+timing and cost totals, and up to 128 model-call/attempt rows. Full SSE debug
+payloads remain excluded from local history. Usage and tool activity remain
+visible after reopening, and costs containing estimates are labelled accordingly
+([receipt](../jvchat/src/lib/messageObservability.ts:31),
+[storage](../jvchat/src/utils/storage.ts:749)). Histories saved before this change
+may lack receipts; no historical usage is fabricated or automatically backfilled.
+The graph's receipts remain authoritative for accounting.

@@ -91,6 +91,62 @@ async def test_record_vault_event_accepts_visitor():
 
 
 @pytest.mark.asyncio
+async def test_private_vault_group_resolution_fails_closed_without_access_control():
+    ctx = SimpleNamespace(
+        interview=SimpleNamespace(get_action=AsyncMock(return_value=None))
+    )
+
+    with pytest.raises(RuntimeError, match="required vault AccessControlAction"):
+        await ct._ensure_access_group(ctx, "user-1", session_id="session-1")
+
+
+@pytest.mark.asyncio
+async def test_private_vault_group_resolution_redacts_access_control_errors():
+    ctx = SimpleNamespace(
+        interview=SimpleNamespace(
+            get_action=AsyncMock(side_effect=RuntimeError("private storage detail"))
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="resolution failed") as raised:
+        await ct._ensure_access_group(ctx, "user-1", session_id="session-1")
+
+    assert "private storage detail" not in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_private_vault_group_enrollment_failure_propagates():
+    access_control = SimpleNamespace(
+        add_user_to_group=AsyncMock(side_effect=RuntimeError("write unavailable"))
+    )
+    ctx = SimpleNamespace(
+        interview=SimpleNamespace(get_action=AsyncMock(return_value=access_control))
+    )
+
+    with pytest.raises(RuntimeError, match="write unavailable"):
+        await ct._ensure_access_group(ctx, "user-1", session_id="session-1")
+
+    access_control.add_user_to_group.assert_awaited_once_with(
+        "private_user-1", "user-1", action_label="PageIndexAction"
+    )
+
+
+@pytest.mark.asyncio
+async def test_interact_vault_group_enrollment_requires_access_control(monkeypatch):
+    monkeypatch.setattr(
+        ArtifactHandlerInteractAction,
+        "get_action",
+        AsyncMock(return_value=None),
+    )
+    action = ArtifactHandlerInteractAction()
+
+    with pytest.raises(RuntimeError, match="required vault AccessControlAction"):
+        await action._ensure_access_group(
+            SimpleNamespace(), "user-1", session_id="session-1"
+        )
+
+
+@pytest.mark.asyncio
 async def test_ingest_document_records_saved_event(monkeypatch):
     monkeypatch.setattr(ct, "_maybe_refresh_pending_jobs", _no_refresh)
     monkeypatch.setattr(ct, "_get_page_index_action", AsyncMock(return_value=object()))

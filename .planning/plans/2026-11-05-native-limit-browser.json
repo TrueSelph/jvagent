@@ -1,0 +1,24 @@
+{
+  "at": "2026-11-06T01:16:56.518Z",
+  "text": "jvchat\nAGENT TESTING\nNew Conversation\n1 conversation\n\nNATIVE-OUTPUT-LIMIT-CHECK: The output allowance has been increased. Please retry the lookup and report the room and start time.\n\nLogout\nNA\nNative Limit Qualification\nAGENT\nsession ID\ntoken\n\nNATIVE-OUTPUT-LIMIT-CHECK: Look up REHEARSAL-47 and tell me its room and start time.\n\nThis turn reached its configured model budget. Increase the run limits in the agent settings or start a narrower request.\n\ngpt-4.1-2025-04-14 · 1 attempt · 346 tokens\n\nNATIVE-OUTPUT-LIMIT-CHECK: The output allowance has been increased. Please retry the lookup and report the room and start time.\n\n1 tool call\nUsed tool: mcp_records__lookup_record\n\nREHEARSAL-47 is scheduled in room Cedar and starts at 14:30.\n\ngpt-4.1-2025-04-14 · 2 attempts · 859 tokens · 2.0s · 22.3 tok/s\nCopy\nRefresh\nDebug\nAdd Attachment\nSend message",
+  "requests": [
+    {
+      "url": "http://127.0.0.1:8139/api/agents/n.Agent.e3afd83582e14df282063462/interact",
+      "status": 200,
+      "duration_ms": 4270.300000011921
+    },
+    {
+      "url": "http://127.0.0.1:8139/api/actions/n.NativeHarnessAction.3ec0e69ffa87450c8a661008",
+      "status": 200,
+      "duration_ms": 23.400000005960464
+    },
+    {
+      "url": "http://127.0.0.1:8139/api/agents/n.Agent.e3afd83582e14df282063462/interact",
+      "status": 200,
+      "duration_ms": 3425
+    }
+  ],
+  "scripts": [
+    "http://127.0.0.1:3136/assets/main-DIJxsOi5.js"
+  ]
+}

@@ -82,6 +82,14 @@ actions:
       # completion tokens (reasoning can count against the budget).
       activation_budget: 40
       model_max_tokens: 8192
+      # Opt-in Pydantic AI capability-pilot ceilings for longer research runs.
+      # Set skill_runtime: capability_pilot to use these instead of the legacy
+      # Orchestrator loop. Provider/model per-call limits still apply.
+      pilot_max_model_requests: 32
+      pilot_max_tool_calls: 48
+      pilot_max_total_tokens: 100000
+      pilot_max_output_tokens: 20000
+      pilot_max_runtime_seconds: 300
       # Prior turns fed into the loop prompt (working context). The rolling
       # memory window is the agent's `interaction_limit` above.
       history_limit: 10
@@ -277,18 +285,16 @@ actions:
       # (fnmatch patterns ok); use "-all" for every discovered skill.
       skills_source: both
       skills:
-        - web_lookup      # app-local JV skill (agents/.../skills/)
+        - web-lookup      # app-local JV skill (agents/.../skills/)
         - research        # library JV skill (jvagent/skills/)
         - answer          # library JV skill — internal-first RAG cascade
         - pdf-generation  # library CLAUDE skill — renders a PDF via code_execution
         - triage          # library CLAUDE skill — sorts findings via code_execution
         - docx            # app-local CLAUDE skill (skills.sh / anthropics) — docx-js + OOXML scripts
-        - signup_interview  # app-local interview skill (InterviewAction + SKILL.md interview:)
-        - whatsapp_templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
-        - whatsapp_flows      # Meta Flow interactive send (WhatsApp text / voice-call)
-        - whatsapp_service_flows  # signup/signin + appointment booking Flow intents
-        - smoke_frontmatter   # regression fixture: its SKILL.md is deliberately
-                              # BOM-prefixed with underscore keys — do not 'fix' it
+        - signup-interview  # app-local interview skill (InterviewAction + SKILL.md interview:)
+        - whatsapp-templates  # Meta HSM send via WhatsAppAction (WhatsApp inbound only)
+        - whatsapp-flows      # Meta Flow interactive send (WhatsApp text / voice-call)
+        - whatsapp-service-flows  # signup/signin + appointment booking Flow intents
 
   # MCP gateway: a sandboxed filesystem server (npx). Its tools surface to the
   # executive (tool_servers above) as mcp_filesystem__<tool>, sandboxed per
@@ -454,11 +460,15 @@ actions:
       model: gpt-4.1-nano
       model_temperature: 0.3
 
-  # Interview tool bundle — skills-v2 signup flow uses signup_interview skill.
+  # Interview tool bundle — skills-v2 signup flow uses signup-interview skill.
   - action: jvagent/interview
     context:
       enabled: true
       description: Interview action — granular interview__* tools for skill-driven flows
+      # Reviewed conversation-only example hooks; source/SOP changes require review.
+      # No booking, email or other external effect is authorized by this approval.
+      native_hook_digests:
+        signup-interview: sha256:044fb0c1cf4413c5644cdda67a1a58ad44d68575f04bd054cc99b2279a4eb914
 
   # ── Proactive task pipeline (TaskMonitor queue + event bridge) ──
   # - action: jvagent/task_trigger_interact_action

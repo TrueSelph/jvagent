@@ -1,0 +1,1039 @@
+{
+  "parent_revision": "git-commit:77eb1ef44e8f99c763d0d811b6f90fd2448cc58c",
+  "fixture": "/private/tmp/jvagent-native-file-write-smoke",
+  "fresh_empty_graph": true,
+  "runtime_before_notice_fix": {
+    "process_id": 70424,
+    "observed_at": "2026-11-06T07:31:20.730564+00:00",
+    "source_blobs": {
+      "jvagent/action/file_interface/_core.py": "git-blob:5283544ae4a018267d2a286293deb559d5a7f02b",
+      "jvagent/action/file_interface/file_interface_action.py": "git-blob:07416c78b84b40803c176e31c438ff99093adf32",
+      "jvagent/harness/conversation_tools.py": "git-blob:bfddf92e02018188e737f38cfb441709876aaf13",
+      "jvagent/harness/mutation_tools.py": "git-blob:ae36a8f3c81604d0b48c5d5482e6c07d47bb0104",
+      "jvagent/harness/native.py": "git-blob:e32938286d29c3d16edb31689c70f98a66214a51",
+      "jvagent/harness/recovery.py": "git-blob:846d4d52497e76152eee6be8eac810d056e8fb18",
+      "jvagent/harness/step_store.py": "git-blob:1b0ca2b8d33d06725b06b63591322030079f9ab0"
+    },
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "runtime_final": {
+    "process_id": 71144,
+    "observed_at": "2026-11-06T07:56:41.464143+00:00",
+    "source_blobs": {
+      "jvagent/action/file_interface/_core.py": "git-blob:5283544ae4a018267d2a286293deb559d5a7f02b",
+      "jvagent/action/file_interface/file_interface_action.py": "git-blob:07416c78b84b40803c176e31c438ff99093adf32",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:c7b82a5df9966fdd8f51a9802474547727fd885b",
+      "jvagent/harness/conversation_tools.py": "git-blob:bfddf92e02018188e737f38cfb441709876aaf13",
+      "jvagent/harness/mutation_tools.py": "git-blob:d6d477fc361a77961648042790d6c0c4d24d554f",
+      "jvagent/harness/native.py": "git-blob:ffc3b3074f32136f545ce0ea91548c09e5724c5d",
+      "jvagent/harness/recovery.py": "git-blob:846d4d52497e76152eee6be8eac810d056e8fb18",
+      "jvagent/harness/step_store.py": "git-blob:1b0ca2b8d33d06725b06b63591322030079f9ab0"
+    },
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.851c96e2837046b687e42fa0",
+      "session_id": "sess_b7ff6f4f081347fa",
+      "utterance": "Write exactly MAPLE-WRITE-47 to note.txt using the file tool, then report the verified acknowledgement.",
+      "response": "Acknowledged: note.txt written (14 bytes, sha256: b93a1d03353d4e17ad87ca8d28ff6f1b16472e4e97902b25180365888b4ade6b).",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1010,
+          "output_tokens": 84
+        },
+        "output": "Acknowledged: note.txt written (14 bytes, sha256: b93a1d03353d4e17ad87ca8d28ff6f1b16472e4e97902b25180365888b4ade6b).",
+        "run_id": "corr-89fe6299990344578056db6b952e8d19",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "interaction_seconds": 4.301469,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 484,
+            "prompt_tokens": 455,
+            "completion_tokens": 29,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001142,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-89fe6299990344578056db6b952e8d19",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-89fe6299990344578056db6b952e8d19:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 610,
+            "prompt_tokens": 555,
+            "completion_tokens": 55,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00155,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-89fe6299990344578056db6b952e8d19",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-89fe6299990344578056db6b952e8d19:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [
+        {
+          "outcome": "completed",
+          "duration": 1.829994,
+          "started_at": "2026-11-06T07:26:32.096454+00:00",
+          "completed_at": "2026-11-06T07:26:33.926448+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-89fe6299990344578056db6b952e8d19",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 1,
+          "native_attempt_origin": "step_events_v1"
+        },
+        {
+          "outcome": "completed",
+          "duration": 1.287762,
+          "started_at": "2026-11-06T07:26:34.113548+00:00",
+          "completed_at": "2026-11-06T07:26:35.401310+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-89fe6299990344578056db6b952e8d19",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 2,
+          "native_attempt_origin": "step_events_v1"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-89fe6299990344578056db6b952e8d19",
+          "status": "completed",
+          "ended_at": "2026-11-06T07:26:34.026625Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T07:26:34.007548Z",
+          "tool_call_id": "call_nbxFIoOBapoOI0WAImadiX92",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-89fe6299990344578056db6b952e8d19/call_nbxFIoOBapoOI0WAImadiX92"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:26:32.060493Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:26:32.096454Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:26:33.926448Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:26:34.011383Z",
+          "tool_call_id": "call_nbxFIoOBapoOI0WAImadiX92",
+          "tool_name": "file_interface__write_file"
+        },
+        {
+          "kind": "tool_call_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:26:34.030945Z",
+          "tool_call_id": "call_nbxFIoOBapoOI0WAImadiX92",
+          "tool_name": "file_interface__write_file"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 2,
+          "timestamp": "2026-11-06T07:26:34.113548Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 2,
+          "timestamp": "2026-11-06T07:26:35.401310Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "run_completed",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:26:35.488972Z",
+          "tool_call_id": null,
+          "tool_name": null
+        }
+      ],
+      "registration_count": 1,
+      "trace": [
+        {
+          "content": "file_interface__write_file",
+          "message_id": "o.ResponseMessage.9b0c4a84fac044fbbfab5c02",
+          "segment_id": "call_nbxFIoOBapoOI0WAImadiX92",
+          "started_at": "2026-11-06T07:26:34.003169+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T07:26:34.003174+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{\"ok\": true, \"path\": \"note.txt\", \"bytes\": 14, \"sha256\": \"b93a1d03353d4e17ad87ca8d28ff6f1b16472e4e97902b25180365888b4ade6b\"}",
+          "message_id": "o.ResponseMessage.1dae708a9a2b479ea22c4f58",
+          "segment_id": "call_nbxFIoOBapoOI0WAImadiX92",
+          "started_at": "2026-11-06T07:26:34.034960+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T07:26:34.034965+00:00",
+          "thought_type": "tool_result"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.4ed23c1380d14f70aaec2ffe",
+      "session_id": "sess_b7ff6f4f081347fa",
+      "utterance": "Write exactly DENIED-WRITE-47 to denied.txt using the file tool. If access is denied, report failure and do not retry.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "run_id": "corr-2428b17c9d24408e84054065faccc4ad",
+        "status": "failed",
+        "failure_type": "PermissionError",
+        "failure_origin": "native.py:100:invoke",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-89fe6299990344578056db6b952e8d19"
+        },
+        "usage_complete": false
+      },
+      "interaction_seconds": 2.387902,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 675,
+            "prompt_tokens": 645,
+            "completion_tokens": 30,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00153,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-2428b17c9d24408e84054065faccc4ad",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-2428b17c9d24408e84054065faccc4ad:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [
+        {
+          "outcome": "completed",
+          "duration": 1.494209,
+          "started_at": "2026-11-06T07:28:27.362954+00:00",
+          "completed_at": "2026-11-06T07:28:28.857163+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-2428b17c9d24408e84054065faccc4ad",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 1,
+          "native_attempt_origin": "step_events_v1"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-2428b17c9d24408e84054065faccc4ad",
+          "status": "failed",
+          "ended_at": "2026-11-06T07:28:28.976378Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T07:28:28.955469Z",
+          "tool_call_id": "call_faBUYZBRnJFk30vkwntlP705",
+          "effect_summary": "PermissionError('Mutation access denied')",
+          "idempotency_key": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:28:27.323749Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:28:27.362954Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:28:28.857163Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:28:28.965026Z",
+          "tool_call_id": "call_faBUYZBRnJFk30vkwntlP705",
+          "tool_name": "file_interface__write_file"
+        },
+        {
+          "kind": "tool_call_failed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:28:28.986045Z",
+          "tool_call_id": "call_faBUYZBRnJFk30vkwntlP705",
+          "tool_name": "file_interface__write_file"
+        },
+        {
+          "kind": "run_failed",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:28:29.029736Z",
+          "tool_call_id": null,
+          "tool_name": null
+        }
+      ],
+      "registration_count": 1,
+      "trace": [
+        {
+          "content": "file_interface__write_file",
+          "message_id": "o.ResponseMessage.109edde0137940719a8abd66",
+          "segment_id": "call_faBUYZBRnJFk30vkwntlP705",
+          "started_at": "2026-11-06T07:28:28.947467+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T07:28:28.947476+00:00",
+          "thought_type": "tool_call"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.06b2da1ef7e24e24bb728299",
+      "session_id": "sess_5d8b5a2b1de4494c",
+      "utterance": "Write exactly DENIED-FINAL-47 to denied-final.txt using the file tool.",
+      "response": "Your current permissions do not allow that write operation.",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "reason": "mutation_access_denied",
+        "run_id": "corr-f640cf3bff8747a4a8f7493841691539",
+        "status": "failed",
+        "failure_type": "MutationAccessDenied",
+        "failure_origin": "native.py:104:invoke",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "interaction_seconds": 2.115196,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 479,
+            "prompt_tokens": 449,
+            "completion_tokens": 30,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001138,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-f640cf3bff8747a4a8f7493841691539",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-f640cf3bff8747a4a8f7493841691539:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [
+        {
+          "outcome": "completed",
+          "duration": 1.253824,
+          "started_at": "2026-11-06T07:32:28.833338+00:00",
+          "completed_at": "2026-11-06T07:32:30.087162+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-f640cf3bff8747a4a8f7493841691539",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 1,
+          "native_attempt_origin": "step_events_v1"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-f640cf3bff8747a4a8f7493841691539",
+          "status": "failed",
+          "ended_at": "2026-11-06T07:32:30.174739Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T07:32:30.163341Z",
+          "tool_call_id": "call_0GCeSg3fyJmYdp9TFHeIOVjY",
+          "effect_summary": "MutationAccessDenied('Mutation access denied')",
+          "idempotency_key": null
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:32:28.794774Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:32:28.833338Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:32:30.087162Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:32:30.166952Z",
+          "tool_call_id": "call_0GCeSg3fyJmYdp9TFHeIOVjY",
+          "tool_name": "file_interface__write_file"
+        },
+        {
+          "kind": "tool_call_failed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:32:30.178252Z",
+          "tool_call_id": "call_0GCeSg3fyJmYdp9TFHeIOVjY",
+          "tool_name": "file_interface__write_file"
+        },
+        {
+          "kind": "run_failed",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:32:30.216364Z",
+          "tool_call_id": null,
+          "tool_name": null
+        }
+      ],
+      "registration_count": 1,
+      "trace": [
+        {
+          "content": "file_interface__write_file",
+          "message_id": "o.ResponseMessage.b06447ef6822410da3d1711c",
+          "segment_id": "call_0GCeSg3fyJmYdp9TFHeIOVjY",
+          "started_at": "2026-11-06T07:32:30.160363+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T07:32:30.160367+00:00",
+          "thought_type": "tool_call"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.ea6286e919ca48e3b507d9c9",
+      "session_id": "sess_2638841be4c549a0",
+      "utterance": "Write exactly INTERRUPTED-WRITE-47 to interrupted.txt using the file tool, then report the verified acknowledgement.",
+      "response": null,
+      "closed": false,
+      "emitted": false,
+      "native_run": {
+        "run_id": "corr-b819ed4b0b5c4a86a23ad82095a7c2fc",
+        "status": "running",
+        "history_source": {}
+      },
+      "interaction_seconds": null,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 486,
+            "prompt_tokens": 455,
+            "completion_tokens": 31,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001158,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-b819ed4b0b5c4a86a23ad82095a7c2fc",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-b819ed4b0b5c4a86a23ad82095a7c2fc:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [],
+      "effects": [
+        {
+          "run_id": "corr-b819ed4b0b5c4a86a23ad82095a7c2fc",
+          "status": "started",
+          "ended_at": null,
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T07:33:48.183327Z",
+          "tool_call_id": "call_dtFKghDrUIE1KiCiIsxUkrkE",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-b819ed4b0b5c4a86a23ad82095a7c2fc/call_dtFKghDrUIE1KiCiIsxUkrkE"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:33:45.151080Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:33:45.198088Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:33:48.103100Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:33:48.187325Z",
+          "tool_call_id": "call_dtFKghDrUIE1KiCiIsxUkrkE",
+          "tool_name": "file_interface__write_file"
+        }
+      ],
+      "registration_count": 1,
+      "trace": [
+        {
+          "content": "file_interface__write_file",
+          "message_id": "o.ResponseMessage.c1a13c005a414864bfc0f64a",
+          "segment_id": "call_dtFKghDrUIE1KiCiIsxUkrkE",
+          "started_at": "2026-11-06T07:33:48.178978+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T07:33:48.178985+00:00",
+          "thought_type": "tool_call"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.c4756ac79c674aada6c890c2",
+      "session_id": "sess_2638841be4c549a0",
+      "utterance": "Please complete the interrupted file write and tell me whether it succeeded.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.ea6286e919ca48e3b507d9c9"
+      },
+      "interaction_seconds": 0.783127,
+      "calls": [],
+      "attempts": [],
+      "effects": [],
+      "events": [],
+      "registration_count": 0,
+      "trace": []
+    },
+    {
+      "id": "n.Interaction.35cc750eb53c4d5892e4e335",
+      "session_id": "sess_8fe8a54d4c3d440e",
+      "utterance": "Write exactly FRESH-AFTER-RESTART-47 to fresh.txt using the file tool, then report the verified acknowledgement.",
+      "response": "Acknowledged: fresh.txt written (22 bytes, sha256: 879b0266791ff52e51af4c4598c27572444dd0863e4584adecef70997cae7d7b).",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1014,
+          "output_tokens": 83
+        },
+        "output": "Acknowledged: fresh.txt written (22 bytes, sha256: 879b0266791ff52e51af4c4598c27572444dd0863e4584adecef70997cae7d7b).",
+        "run_id": "corr-de4bf604576249d88ab4b85ee2b2b2a5",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "interaction_seconds": 4.012086,
+      "calls": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 490,
+            "prompt_tokens": 458,
+            "completion_tokens": 32,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001172,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-de4bf604576249d88ab4b85ee2b2b2a5",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-de4bf604576249d88ab4b85ee2b2b2a5:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 607,
+            "prompt_tokens": 556,
+            "completion_tokens": 51,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00152,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-de4bf604576249d88ab4b85ee2b2b2a5",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-de4bf604576249d88ab4b85ee2b2b2a5:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "attempts": [
+        {
+          "outcome": "completed",
+          "duration": 1.492616,
+          "started_at": "2026-11-06T07:37:13.205300+00:00",
+          "completed_at": "2026-11-06T07:37:14.697916+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-de4bf604576249d88ab4b85ee2b2b2a5",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 1,
+          "native_attempt_origin": "step_events_v1"
+        },
+        {
+          "outcome": "completed",
+          "duration": 1.720254,
+          "started_at": "2026-11-06T07:37:14.909379+00:00",
+          "completed_at": "2026-11-06T07:37:16.629633+00:00",
+          "usage_status": "receipt_recorded",
+          "native_run_id": "corr-de4bf604576249d88ab4b85ee2b2b2a5",
+          "duration_scope": "sdk_model_request",
+          "native_step_index": 2,
+          "native_attempt_origin": "step_events_v1"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-de4bf604576249d88ab4b85ee2b2b2a5",
+          "status": "completed",
+          "ended_at": "2026-11-06T07:37:14.819392Z",
+          "tool_name": "file_interface__write_file",
+          "started_at": "2026-11-06T07:37:14.801222Z",
+          "tool_call_id": "call_1qysRphOacThtmfS1XVhBnpX",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "idempotency_key": "sdk-effect-key:corr-de4bf604576249d88ab4b85ee2b2b2a5/call_1qysRphOacThtmfS1XVhBnpX"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:37:13.064164Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:37:13.205300Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:37:14.697916Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "tool_call_started",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:37:14.805545Z",
+          "tool_call_id": "call_1qysRphOacThtmfS1XVhBnpX",
+          "tool_name": "file_interface__write_file"
+        },
+        {
+          "kind": "tool_call_completed",
+          "step_index": 1,
+          "timestamp": "2026-11-06T07:37:14.824021Z",
+          "tool_call_id": "call_1qysRphOacThtmfS1XVhBnpX",
+          "tool_name": "file_interface__write_file"
+        },
+        {
+          "kind": "model_request_started",
+          "step_index": 2,
+          "timestamp": "2026-11-06T07:37:14.909379Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "model_request_completed",
+          "step_index": 2,
+          "timestamp": "2026-11-06T07:37:16.629633Z",
+          "tool_call_id": null,
+          "tool_name": null
+        },
+        {
+          "kind": "run_completed",
+          "step_index": 0,
+          "timestamp": "2026-11-06T07:37:16.746153Z",
+          "tool_call_id": null,
+          "tool_name": null
+        }
+      ],
+      "registration_count": 1,
+      "trace": [
+        {
+          "content": "file_interface__write_file",
+          "message_id": "o.ResponseMessage.9cff1b8b28bb448f99bc0075",
+          "segment_id": "call_1qysRphOacThtmfS1XVhBnpX",
+          "started_at": "2026-11-06T07:37:14.798430+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T07:37:14.798434+00:00",
+          "thought_type": "tool_call"
+        },
+        {
+          "content": "{\"ok\": true, \"path\": \"fresh.txt\", \"bytes\": 22, \"sha256\": \"879b0266791ff52e51af4c4598c27572444dd0863e4584adecef70997cae7d7b\"}",
+          "message_id": "o.ResponseMessage.def75a12f8e24af9b0312051",
+          "segment_id": "call_1qysRphOacThtmfS1XVhBnpX",
+          "started_at": "2026-11-06T07:37:14.828987+00:00",
+          "action_name": "",
+          "completed_at": "2026-11-06T07:37:14.828991+00:00",
+          "thought_type": "tool_result"
+        }
+      ]
+    }
+  ],
+  "files": {
+    "note.txt": {
+      "bytes": 14,
+      "sha256": "sha256:b93a1d03353d4e17ad87ca8d28ff6f1b16472e4e97902b25180365888b4ade6b",
+      "mtime_ns": 1793949994023727317,
+      "inode": 868706847
+    },
+    "fresh.txt": {
+      "bytes": 22,
+      "sha256": "sha256:879b0266791ff52e51af4c4598c27572444dd0863e4584adecef70997cae7d7b",
+      "mtime_ns": 1793950634816021777,
+      "inode": 868754250
+    },
+    "interrupted.txt": {
+      "bytes": 20,
+      "sha256": "sha256:216cc000e667e3a094baadfb16463c5e04e5f0504f943a20a770a5ae91325c85",
+      "mtime_ns": 1793950428200717603,
+      "inode": 868747910
+    }
+  },
+  "denied_files_absent": true,
+  "crash_trigger": {
+    "pid": 71014,
+    "command_verified": true,
+    "file": "/private/tmp/jvagent-native-file-write-smoke/files/n.Agent.f53ac9c733a34545bf5edd7f/o.User.cbf5309a781e417c9d312e2e/interrupted.txt",
+    "bytes": 20,
+    "sha256": "sha256:216cc000e667e3a094baadfb16463c5e04e5f0504f943a20a770a5ae91325c85",
+    "mtime_ns": 1793950428200717603,
+    "inode": 868747910,
+    "observed_at": "2026-11-06T07:33:48.201403+00:00",
+    "signal": "SIGKILL",
+    "runtime_functions_patched": false
+  },
+  "crash_sql": {
+    "id": "n.Interaction.ea6286e919ca48e3b507d9c9",
+    "session_id": "sess_2638841be4c549a0",
+    "native_run": {
+      "run_id": "corr-b819ed4b0b5c4a86a23ad82095a7c2fc",
+      "status": "running",
+      "history_source": {}
+    },
+    "closed": false,
+    "emitted": false,
+    "effects": [
+      {
+        "run_id": "corr-b819ed4b0b5c4a86a23ad82095a7c2fc",
+        "status": "started",
+        "ended_at": null,
+        "tool_name": "file_interface__write_file",
+        "started_at": "2026-11-06T07:33:48.183327Z",
+        "tool_call_id": "call_dtFKghDrUIE1KiCiIsxUkrkE",
+        "effect_summary": "jv:mutation:file-write:v1",
+        "idempotency_key": "sdk-effect-key:corr-b819ed4b0b5c4a86a23ad82095a7c2fc/call_dtFKghDrUIE1KiCiIsxUkrkE"
+      }
+    ],
+    "event_kinds": [
+      "run_started",
+      "model_request_started",
+      "model_request_completed",
+      "tool_call_started"
+    ],
+    "model_receipts": [
+      {
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "total_tokens": 486,
+          "prompt_tokens": 455,
+          "completion_tokens": 31,
+          "cache_write_tokens": 0,
+          "cached_prompt_tokens": 0
+        },
+        "provider": "openai",
+        "cost_record": {
+          "amount": 0.001158,
+          "source": "pydantic_ai_pricing",
+          "currency": "USD",
+          "estimated": true,
+          "pricing_version": null
+        },
+        "usage_status": "provider_reported",
+        "native_run_id": "corr-b819ed4b0b5c4a86a23ad82095a7c2fc",
+        "native_step_index": 1,
+        "native_receipt_key": "spend:default|run|*|corr-b819ed4b0b5c4a86a23ad82095a7c2fc:1",
+        "native_spend_receipt": true,
+        "native_receipt_origin": "spend_snapshot"
+      }
+    ]
+  },
+  "blocked_after_crash": {
+    "blocked_interaction_id": "n.Interaction.c4756ac79c674aada6c890c2",
+    "native_run": {
+      "reason": "predecessor_requires_reconciliation",
+      "status": "blocked",
+      "predecessor_interaction_id": "n.Interaction.ea6286e919ca48e3b507d9c9"
+    },
+    "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+    "zero_model_and_sdk_records": true,
+    "crashed_run_and_effect_unchanged": true,
+    "file_mtime_and_inode_unchanged": true,
+    "model_receipt_count": 5
+  },
+  "restoration_unchanged": true,
+  "totals": {
+    "observed_provider_reported_calls": 7,
+    "provider_reported_tokens": 3831,
+    "estimated_cost_usd": "0.009210",
+    "crashed_run_finalization": "incomplete; do not infer final settlement or successful write acknowledgement",
+    "crash_started_and_completed_model_requests": 1
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.3c2b5de294ca4f8bb2e319c2",
+      "session_id": "sess_8fe8a54d4c3d440e",
+      "tasks": [],
+      "native_spend": {
+        "default|conversation|*|sess_8fe8a54d4c3d440e": {
+          "spent": {
+            "usd": "0.002692",
+            "tokens": 1097,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-12-06T07:37:16.639429+00:00"
+        },
+        "default|run|*|corr-de4bf604576249d88ab4b85ee2b2b2a5": {
+          "spent": {
+            "usd": "0.002692",
+            "tokens": 1097,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T07:37:16.639429+00:00"
+        }
+      }
+    },
+    {
+      "id": "n.Conversation.74735eff7c824bbea4186e80",
+      "session_id": "sess_b7ff6f4f081347fa",
+      "tasks": [],
+      "native_spend": {
+        "default|conversation|*|sess_b7ff6f4f081347fa": {
+          "spent": {
+            "usd": "0.004222",
+            "tokens": 1769,
+            "requests": 3,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-12-06T07:28:28.871836+00:00"
+        },
+        "default|run|*|corr-2428b17c9d24408e84054065faccc4ad": {
+          "spent": {
+            "usd": "0.00153",
+            "tokens": 675,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T07:28:28.871836+00:00"
+        },
+        "default|run|*|corr-89fe6299990344578056db6b952e8d19": {
+          "spent": {
+            "usd": "0.002692",
+            "tokens": 1094,
+            "requests": 2,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T07:26:35.409184+00:00"
+        }
+      }
+    },
+    {
+      "id": "n.Conversation.64098fedb4f0483faf267322",
+      "session_id": "sess_5d8b5a2b1de4494c",
+      "tasks": [],
+      "native_spend": {
+        "default|conversation|*|sess_5d8b5a2b1de4494c": {
+          "spent": {
+            "usd": "0.001138",
+            "tokens": 479,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-12-06T07:32:30.115496+00:00"
+        },
+        "default|run|*|corr-f640cf3bff8747a4a8f7493841691539": {
+          "spent": {
+            "usd": "0.001138",
+            "tokens": 479,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T07:32:30.115496+00:00"
+        }
+      }
+    },
+    {
+      "id": "n.Conversation.418c34a0dd684d32892ceaad",
+      "session_id": "sess_2638841be4c549a0",
+      "tasks": [],
+      "native_spend": {
+        "default|conversation|*|sess_2638841be4c549a0": {
+          "spent": {
+            "usd": "0.001158",
+            "tokens": 486,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-12-06T07:33:48.114699+00:00"
+        },
+        "default|run|*|corr-b819ed4b0b5c4a86a23ad82095a7c2fc": {
+          "spent": {
+            "usd": "0.001158",
+            "tokens": 486,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "expires_at": "2026-11-07T07:33:48.114699+00:00"
+        }
+      }
+    }
+  ],
+  "regression": {
+    "initial_store_identity_cases": {
+      "failed": 4,
+      "passed": 1
+    },
+    "old_parent_store_isolated_mutation": {
+      "parent_revision": "git-commit:77eb1ef44e8f99c763d0d811b6f90fd2448cc58c",
+      "store_sha256": "sha256:c52c5cf7b142000218bcad59dee8ef6cd762916b4e0fdb4e571a5647b807f00a",
+      "cross_response_duplicate_call_id_repeated_physical_write": true,
+      "protective_case_failed": true
+    },
+    "current_effect_and_write_boundary_suite": {
+      "passed": 33
+    },
+    "current_expanded_notice_write_suite": {
+      "passed": 52
+    }
+  },
+  "tests": {
+    "native_real_pg_311": {
+      "passed": 478,
+      "seconds": 85.76
+    },
+    "native_real_pg_312": {
+      "passed": 478,
+      "seconds": 85.41
+    }
+  },
+  "limits": [
+    "Single-worker local text writes only",
+    "No S3 or generic external-effect qualification",
+    "No automatic exactly-once storage semantics; SDK key is a correlation fact, not a remote conditional write",
+    "Interrupted writes require operator reconciliation; no automatic resume or rollback",
+    "No hostile OS-level symlink race protection or hard blocked-I/O deadline",
+    "No browser end-to-end or invoice cost measurements",
+    "Initial generic denial notice is retained; final mapped notice is proven separately"
+  ],
+  "artifact_encoding": {
+    "idempotency_key": "sdk-effect-key:sdk-effect-key: prefix marks opaque correlation identifiers; remove prefix for exact original value. Raw private SQL and equality assertions precede rendering."
+  }
+}

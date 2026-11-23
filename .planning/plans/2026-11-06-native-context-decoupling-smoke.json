@@ -1,0 +1,206 @@
+{
+  "parent_revision": "git:7438259d4a1e18a522fa8e00d3b82390c7201939",
+  "fixture": "/private/tmp/jvagent-native-context-decoupling-smoke",
+  "fresh_empty_graph": true,
+  "runtime": {
+    "process_id": 62695,
+    "observed_at": "2026-11-06T06:01:16.871630+00:00",
+    "source_blobs": {
+      "jvagent/action/artifact_handler_interact_action/artifact_handler_interact_action.py": "git-blob:0f167194e19499fb46add4c3b86492ceae17afdb",
+      "jvagent/action/code_execution/code_execution_action.py": "git-blob:f5c790696029059ea7cec2205c2c55f18364f159",
+      "jvagent/action/file_interface/file_interface_action.py": "git-blob:d2326dd1fb6c46c5d8efb82e1dc061aa03c15c0a",
+      "jvagent/action/handoff_action/handoff_action.py": "git-blob:8d267ee0537bbb10095d5751ca91f590a1afed84",
+      "jvagent/action/skill_hub/skill_hub_action.py": "git-blob:2e3d1cbfc38ab3ed6d26a3948f154b01113f2971",
+      "jvagent/action/ui/ui_action.py": "git-blob:494ab1a69d87f15a71cdd9c894cda15cb6a1dfed",
+      "jvagent/action/vision/vision_action.py": "git-blob:d348a9093a6036b994c7580a7c93ae7ef96a3335",
+      "jvagent/action/whatsapp/whatsapp_action.py": "git-blob:0a2eff4461a68d0a687958981d7bd525e7ee4865",
+      "jvagent/tooling/context.py": "git-blob:e5fd936b3028a751e10b1442624fc1b615f28ae3"
+    },
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "interaction": {
+    "id": "n.Interaction.17a5ab58410843e59ea3be4a",
+    "utterance": "Use the record integration to look up REHEARSAL-47 and tell me its room and start time.",
+    "response": "REHEARSAL-47 is in the Cedar room and starts at 14:30.",
+    "closed": true,
+    "emitted": true,
+    "interaction_seconds": 5.535339,
+    "native_run": {
+      "usage": {
+        "requests": 2,
+        "input_tokens": 646,
+        "output_tokens": 45
+      },
+      "run_id": "corr-4bee5b72c9e04e6f8e701329d9d1ba3d",
+      "status": "delivered",
+      "history_source": {},
+      "usage_complete": true
+    },
+    "calls": [
+      {
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "total_tokens": 320,
+          "prompt_tokens": 296,
+          "completion_tokens": 24,
+          "cache_write_tokens": 0,
+          "cached_prompt_tokens": 0
+        },
+        "provider": "openai",
+        "cost_record": {
+          "amount": 0.000784,
+          "source": "pydantic_ai_pricing",
+          "currency": "USD",
+          "estimated": true,
+          "pricing_version": null
+        },
+        "usage_status": "provider_reported"
+      },
+      {
+        "model": "gpt-4.1-2025-04-14",
+        "usage": {
+          "total_tokens": 371,
+          "prompt_tokens": 350,
+          "completion_tokens": 21,
+          "cache_write_tokens": 0,
+          "cached_prompt_tokens": 0
+        },
+        "provider": "openai",
+        "cost_record": {
+          "amount": 0.000868,
+          "source": "pydantic_ai_pricing",
+          "currency": "USD",
+          "estimated": true,
+          "pricing_version": null
+        },
+        "usage_status": "provider_reported"
+      }
+    ],
+    "attempts": [
+      {
+        "outcome": "completed",
+        "duration": 2.142763,
+        "started_at": "2026-11-06T05:57:47.535305+00:00",
+        "completed_at": "2026-11-06T05:57:49.678068+00:00",
+        "duration_scope": "sdk_model_request"
+      },
+      {
+        "outcome": "completed",
+        "duration": 1.154314,
+        "started_at": "2026-11-06T05:57:49.878859+00:00",
+        "completed_at": "2026-11-06T05:57:51.033173+00:00",
+        "duration_scope": "sdk_model_request"
+      }
+    ],
+    "trace": [
+      {
+        "phase": "tool_call",
+        "content": "mcp_records__lookup_record"
+      },
+      {
+        "phase": "tool_result",
+        "content": "{'reference': 'REHEARSAL-47', 'room': 'Cedar', 'start': '14:30'}"
+      }
+    ],
+    "registrations": 1
+  },
+  "conversation": {
+    "id": "n.Conversation.111a4580e9094d439686097c",
+    "tasks": [],
+    "native_spend": {
+      "default|conversation|*|sess_62f5c36636684dd1": {
+        "spent": {
+          "usd": "0.001652",
+          "tokens": 691,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-12-06T05:57:51.043310+00:00"
+      },
+      "default|run|*|corr-4bee5b72c9e04e6f8e701329d9d1ba3d": {
+        "spent": {
+          "usd": "0.001652",
+          "tokens": 691,
+          "requests": 2,
+          "unpriced_requests": 0
+        },
+        "expires_at": "2026-11-07T05:57:51.043310+00:00"
+      }
+    }
+  },
+  "action_nodes": [
+    {
+      "entity": "NativeHarnessAction",
+      "id": "n.NativeHarnessAction.3273093082004a8bb696e2a2",
+      "enabled": true
+    },
+    {
+      "entity": "MCPAction",
+      "id": "n.MCPAction.84f46455960d447abf5630ae",
+      "enabled": true
+    },
+    {
+      "entity": "FileInterfaceAction",
+      "id": "n.FileInterfaceAction.362af5a0d66a42b382917694",
+      "enabled": true
+    },
+    {
+      "entity": "ReplyAction",
+      "id": "n.ReplyAction.b32c3eee50e743b4b11bdaec",
+      "enabled": true
+    }
+  ],
+  "mcp_calls": [
+    "REHEARSAL-47"
+  ],
+  "storage_dependency": {
+    "pypi": "https://pypi.org/project/jvspatial/0.1.1/",
+    "filename": "jvspatial-0.1.1-py3-none-any.whl",
+    "sha256": "sha256:7f1e5b3ac5f50963d2c301a9db8ba20787c448fae13ed460649e95d3d6f22edc",
+    "size": 641213,
+    "download_tls_and_digest_verified": true,
+    "findings": {
+      "jvspatial/storage/interfaces/local.py": {
+        "buffers_stream_with_to_thread_list": true,
+        "source_sha256": "sha256:b579318fc12a65baa9600ae81eedcd71cea71f3afd519a6c46972498b1d037c1"
+      },
+      "jvspatial/storage/interfaces/s3.py": {
+        "buffers_stream_with_to_thread_list": true,
+        "source_sha256": "sha256:4073d0a943c51bd25d480e60934d710dda3711cf0b26b4e155f425bdee2da20a"
+      }
+    },
+    "upstream_pr": "https://github.com/TrueSelph/jvspatial/pull/55",
+    "upstream_pr_verified_state": "MERGED",
+    "pin_changed": false
+  },
+  "tests": {
+    "native311": {
+      "passed": 458,
+      "seconds": 76.86
+    },
+    "native312": {
+      "passed": 458,
+      "seconds": 83.92
+    },
+    "actions311": {
+      "passed": 386,
+      "skipped": 1,
+      "seconds": 2.82,
+      "additional_ui_action_passed": 17
+    },
+    "actions312": {
+      "passed": 403,
+      "skipped": 1,
+      "seconds": 3.03
+    },
+    "parent_import_regression": "failed; direct parent FileInterface import also confirms legacy executor loaded"
+  },
+  "boundary": "File Interface is hosted and its task-local context service is unit-qualified. The actual tool call is the existing reviewed MCP read. No native file I/O, script, external write or channel compatibility claim.",
+  "mcp_last_server": {
+    "pid": 62885,
+    "process_present": false,
+    "fixture_server_still_running": false
+  }
+}

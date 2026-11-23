@@ -1,0 +1,70 @@
+{
+  "scope": "npm audit --omit=dev; current lockfile; advisory presence is not proof of exploitation",
+  "counts": {
+    "info": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 5,
+    "critical": 0,
+    "total": 5
+  },
+  "packages": {
+    "axios": {
+      "severity": "high",
+      "direct": true,
+      "range": "1.0.0 - 1.19.0",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-vh66-26gq-q6x8",
+        "https://github.com/advisories/GHSA-9fr6-4gfg-395g",
+        "https://github.com/advisories/GHSA-c29m-xwm3-cm6r",
+        "https://github.com/advisories/GHSA-mghh-pgcx-3jjj",
+        "https://github.com/advisories/GHSA-x97p-jq2g-jp4f",
+        "https://github.com/advisories/GHSA-3pq3-5fj3-cg6v",
+        "https://github.com/advisories/GHSA-542g-h47m-68v8",
+        "https://github.com/advisories/GHSA-j8rh-479h-cp32",
+        "https://github.com/advisories/GHSA-4hqw-qxg8-jxx2",
+        "https://github.com/advisories/GHSA-m8m8-qj5v-23w3",
+        "https://github.com/advisories/GHSA-44g4-m2mj-wpvx",
+        "https://github.com/advisories/GHSA-r4gj-5m52-g5wh"
+      ]
+    },
+    "follow-redirects": {
+      "severity": "high",
+      "direct": false,
+      "range": "1.16.0 - 1.16.1",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-q3jh-wrc6-jgq8",
+        "https://github.com/advisories/GHSA-8r9p-f939-6h3c",
+        "https://github.com/advisories/GHSA-mrwp-f3q8-3g9p"
+      ]
+    },
+    "react-router": {
+      "severity": "high",
+      "direct": false,
+      "range": "7.12.0 - 7.18.1",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-qwww-vcr4-c8h2"
+      ]
+    },
+    "react-router-dom": {
+      "severity": "high",
+      "direct": true,
+      "range": "7.12.0-pre.0 - 7.18.1",
+      "fixAvailable": true,
+      "advisory_urls": []
+    },
+    "zod": {
+      "severity": "high",
+      "direct": false,
+      "range": "<4.6.6",
+      "fixAvailable": true,
+      "advisory_urls": [
+        "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+      ]
+    }
+  },
+  "disposition": "Open release security gate. No dependency was changed in the idle-subscription increment."
+}

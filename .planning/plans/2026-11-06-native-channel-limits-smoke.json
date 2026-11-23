@@ -1,0 +1,641 @@
+{
+  "parent_revision": "git-commit:8048fcf5dfa656d3ca7844adceb492bd3029527f",
+  "scope": "Actual OpenAI GPT-4.1/jvchat with disposable PostgreSQL/backend8178. Resource policy qualification; no actual WhatsApp/jvvoice delivery or legacy channel migration.",
+  "source_blobs": {
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:e0930f438004870c5e0448fda26e476487476da7",
+    "jvagent/harness/run_limits.py": "git-blob:81ceca6695a3418cd788f0fb3abba10de3fe6abf"
+  },
+  "acceptance": {
+    "required": [
+      "one-request channel ceiling stops the SDK before a second model request, with visible budget notice",
+      "failed request persists limits and measured usage",
+      "after terminal restart with reviewed three-request profile, a fresh conversation loads skill and answers correctly",
+      "cold readback preserves old records; same-session follow-up delivers using stored skill history",
+      "reload restores results/tools/usage without execution or spend"
+    ],
+    "not_claimed": [
+      "Actual WhatsApp/jvvoice channel transport",
+      "Per-tool timeout or arbitrary legacy channel prompt migration",
+      "Whole reference app cutover or optimization"
+    ]
+  },
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.9ee713fd57b540daae9e4ee5",
+      "conversation_id": "n.Conversation.ab187e88153548729e52a1e6",
+      "session_id": "sess_37ff7f17f17b47ce",
+      "channel": "default",
+      "utterance": "Load the general skill before answering. Then calculate 19 times 7.",
+      "response": "This turn reached its configured model budget. Increase the run limits in the agent settings or start a narrower request.",
+      "started_at": "2026-11-06T23:02:46.409271",
+      "completed_at": "2026-11-06T23:02:50.944061",
+      "elapsed_seconds": 4.53479,
+      "native_run": {
+        "limits": {
+          "max_tokens": 10000,
+          "max_requests": 1,
+          "max_tool_calls": 40,
+          "timeout_seconds": 30,
+          "max_run_cost_usd": "0.25",
+          "max_output_tokens": 500
+        },
+        "run_id": "corr-e647bbfe21904b1596b8511ab8bff75f",
+        "status": "failed",
+        "failure_type": "UsageLimitExceeded",
+        "failure_origin": "usage.py:637:check_before_request",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:08:45.999771+00:00",
+        "total_tokens": 231,
+        "prompt_tokens": 215,
+        "total_cost_usd": 0.000558,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 16,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000558,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.746,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.746,
+        "unmeasured_model_attempt_count": 0
+      },
+      "calls": [
+        {
+          "name": "load_capability",
+          "args": {
+            "id": "general"
+          }
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-e647bbfe21904b1596b8511ab8bff75f",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:02:50.276592Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T03:02:50.259671Z",
+          "tool_call_id": "sha256:d893e2f32a69bf164bb2474994fad2c8c47154b4b223436813618435082f77bf",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 1,
+        "model_request_completed": 1,
+        "tool_call_started": 1,
+        "tool_call_completed": 1,
+        "run_failed": 1
+      },
+      "worker_pid": "98318",
+      "worker_epoch": "worker-epoch:547817cbf16e4d91aa3ae4b632bd4210"
+    },
+    {
+      "interaction_id": "n.Interaction.767adb7bb8394692a767ac1d",
+      "conversation_id": "n.Conversation.67b70234dba1435eac39e85b",
+      "session_id": "sess_df5c24c50d9847bc",
+      "channel": "default",
+      "utterance": "Load the general skill before answering. Then calculate 19 times 7.",
+      "response": "Calculation: 19 times 7 is 133.",
+      "started_at": "2026-11-06T23:04:37.253208",
+      "completed_at": "2026-11-06T23:04:43.097281",
+      "elapsed_seconds": 5.844073,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 508,
+          "output_tokens": 29
+        },
+        "limits": {
+          "max_tokens": 10000,
+          "max_requests": 3,
+          "max_tool_calls": 40,
+          "timeout_seconds": 30,
+          "max_run_cost_usd": "0.25",
+          "max_output_tokens": 500
+        },
+        "output": "Calculation: 19 times 7 is 133.",
+        "run_id": "corr-4ea054c1f23a4c348a82b0f17b9e9fa7",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T03:04:43.073859+00:00",
+                "total_tokens": 537,
+                "prompt_tokens": 508,
+                "total_cost_usd": 0.001248,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 29,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001248,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.472,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.472,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-4ea054c1f23a4c348a82b0f17b9e9fa7"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:04:43.097406+00:00",
+        "total_tokens": 537,
+        "prompt_tokens": 508,
+        "total_cost_usd": 0.001248,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 29,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001248,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.472,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.472,
+        "unmeasured_model_attempt_count": 0
+      },
+      "calls": [
+        {
+          "name": "load_capability",
+          "args": {
+            "id": "general"
+          }
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-4ea054c1f23a4c348a82b0f17b9e9fa7",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:04:40.872989Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T03:04:40.855112Z",
+          "tool_call_id": "sha256:4640618592d605ed66f458b774b6253062551307f5cd948ac2e8baec9f51460a",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 2,
+        "model_request_completed": 2,
+        "tool_call_started": 1,
+        "tool_call_completed": 1,
+        "run_completed": 1
+      },
+      "worker_pid": "98502",
+      "worker_epoch": "worker-epoch:a2e3e40a549f4c84acac6cd30cff1f63"
+    },
+    {
+      "interaction_id": "n.Interaction.eb31d69321b8414e90f22de2",
+      "conversation_id": "n.Conversation.67b70234dba1435eac39e85b",
+      "session_id": "sess_df5c24c50d9847bc",
+      "channel": "default",
+      "utterance": "Now calculate 17 times 8 using the already loaded general skill.",
+      "response": "Calculation: 17 times 8 is 136.",
+      "started_at": "2026-11-06T23:07:18.971196",
+      "completed_at": "2026-11-06T23:07:23.979679",
+      "elapsed_seconds": 5.008483,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 326,
+          "output_tokens": 13
+        },
+        "limits": {
+          "max_tokens": 10000,
+          "max_requests": 3,
+          "max_tool_calls": 40,
+          "timeout_seconds": 30,
+          "max_run_cost_usd": "0.25",
+          "max_output_tokens": 500
+        },
+        "output": "Calculation: 17 times 8 is 136.",
+        "run_id": "corr-037afee2d4b649c283e5e376f7063a1b",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T03:07:23.951165+00:00",
+                "total_tokens": 339,
+                "prompt_tokens": 326,
+                "total_cost_usd": 0.000756,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 1,
+                "completion_tokens": 13,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.000756,
+                "model_attempt_count": 1,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 1.717,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.717,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-037afee2d4b649c283e5e376f7063a1b"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-4ea054c1f23a4c348a82b0f17b9e9fa7"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:07:23.979786+00:00",
+        "total_tokens": 339,
+        "prompt_tokens": 326,
+        "total_cost_usd": 0.000756,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 13,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000756,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 1.717,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.717,
+        "unmeasured_model_attempt_count": 0
+      },
+      "calls": [],
+      "effects": [],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 1,
+        "model_request_completed": 1,
+        "run_completed": 1
+      },
+      "worker_pid": "98699",
+      "worker_epoch": "worker-epoch:ae999f3f274941aab3515bab212cc4f6"
+    },
+    {
+      "interaction_id": "n.Interaction.64475dcad43b4216bd77ed48",
+      "conversation_id": "n.Conversation.ab187e88153548729e52a1e6",
+      "session_id": "sess_37ff7f17f17b47ce",
+      "channel": "default",
+      "utterance": "Try again now. Use the general skill to calculate 19 times 7.",
+      "response": "Calculation: 19 times 7 is 133.",
+      "started_at": "2026-11-06T23:08:45.082713",
+      "completed_at": "2026-11-06T23:08:50.013171",
+      "elapsed_seconds": 4.930458,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 600,
+          "output_tokens": 29
+        },
+        "limits": {
+          "max_tokens": 10000,
+          "max_requests": 3,
+          "max_tool_calls": 40,
+          "timeout_seconds": 30,
+          "max_run_cost_usd": "0.25",
+          "max_output_tokens": 500
+        },
+        "output": "Calculation: 19 times 7 is 133.",
+        "run_id": "corr-3d9f2f85a7ee4b89bbf0c6ceede438b0",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-07T03:08:49.978286+00:00",
+                "total_tokens": 629,
+                "prompt_tokens": 600,
+                "total_cost_usd": 0.001432,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 29,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.001432,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.295,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.295,
+                "unmeasured_model_attempt_count": 0
+              }
+            },
+            "native_local_only": true
+          },
+          "message_id": "o.ResponseMessage.corr-3d9f2f85a7ee4b89bbf0c6ceede438b0"
+        },
+        "history_source": {
+          "frontier": "accepted_input",
+          "source_run_id": "corr-e647bbfe21904b1596b8511ab8bff75f"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-07T03:08:50.013301+00:00",
+        "total_tokens": 629,
+        "prompt_tokens": 600,
+        "total_cost_usd": 0.001432,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 29,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001432,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.295,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.295,
+        "unmeasured_model_attempt_count": 0
+      },
+      "calls": [
+        {
+          "name": "load_capability",
+          "args": {
+            "id": "general"
+          }
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-3d9f2f85a7ee4b89bbf0c6ceede438b0",
+          "status": "completed",
+          "ended_at": "2026-11-07T03:08:47.780061Z",
+          "tool_name": "load_capability",
+          "started_at": "2026-11-07T03:08:47.759555Z",
+          "tool_call_id": "sha256:ff7565fde1f04a19804d2ba5cbe10ee9ffd8ffdc7dc9da0cab630976dc93d325",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "event_counts": {
+        "run_started": 1,
+        "model_request_started": 2,
+        "model_request_completed": 2,
+        "tool_call_started": 1,
+        "tool_call_completed": 1,
+        "run_completed": 1
+      },
+      "worker_pid": "98699",
+      "worker_epoch": "worker-epoch:ae999f3f274941aab3515bab212cc4f6"
+    }
+  ],
+  "totals": {
+    "model_requests": 6,
+    "provider_reported_tokens": 1736,
+    "estimated_cost_usd": "0.003994",
+    "provider_reported_cost_usd": 0.0,
+    "unknown_cost_call_count": 0,
+    "model_attempt_seconds": 8.23
+  },
+  "graph_comparisons": {
+    "after-policy-restart.json": {
+      "interactions": 1,
+      "conversations": 1,
+      "exact": true,
+      "digest": "sha256:1924be43b71c8eb212f41d1dbe34e8dd21536c376f5bebf9d76a662f94cc01db"
+    },
+    "after-cold-restart.json": {
+      "interactions": 2,
+      "conversations": 2,
+      "exact": true,
+      "digest": "sha256:1ae20f0ea915a454828b4f867c94c9e2dfaf736e108b7e0c8b49ffc3d2d54d8f"
+    },
+    "after-first-reload.json": {
+      "interactions": 3,
+      "conversations": 2,
+      "exact": true,
+      "digest": "sha256:397c181f5ae3ba458b56c1fef405948d6720db1617773ad9f5184f43b0738c85"
+    },
+    "after-final-reload.json": {
+      "interactions": 4,
+      "conversations": 2,
+      "exact": true,
+      "digest": "sha256:57ecc9763e2acab689fc6b2136cf983c79f18e61107284269ffc9c3bce0fae1c"
+    }
+  },
+  "retry_accounting_refresh": {
+    "only_prior_row_change": "context.usage.last_updated",
+    "timestamps": {
+      "before": "2026-11-07T03:02:50.944170+00:00",
+      "after": "2026-11-07T03:08:45.999771+00:00"
+    },
+    "prior_tokens_cost_sdk_history_effects_exact": true
+  },
+  "shared_conversation_spend": [
+    {
+      "conversation_id": "n.Conversation.67b70234dba1435eac39e85b",
+      "spent": {
+        "usd": "0.002004",
+        "tokens": 876,
+        "requests": 3,
+        "unpriced_requests": 0
+      },
+      "tasks": []
+    },
+    {
+      "conversation_id": "n.Conversation.ab187e88153548729e52a1e6",
+      "spent": {
+        "usd": "0.001990",
+        "tokens": 860,
+        "requests": 3,
+        "unpriced_requests": 0
+      },
+      "tasks": []
+    }
+  ],
+  "persisted_base_limits": {
+    "max_requests": 6,
+    "max_run_cost_usd": "2.00",
+    "max_conversation_cost_usd": "20.00",
+    "timeout_seconds": 60.0,
+    "channel_limits": {
+      "default": {
+        "max_tokens": 10000,
+        "max_requests": 3,
+        "timeout_seconds": 30,
+        "max_run_cost_usd": "0.25",
+        "max_output_tokens": 500
+      }
+    }
+  },
+  "module_observations": [
+    {
+      "process_id": 98318,
+      "observed_at": "2026-11-07T03:02:04.031085+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:e0930f438004870c5e0448fda26e476487476da7",
+        "jvagent/harness/run_limits.py": "git-blob:81ceca6695a3418cd788f0fb3abba10de3fe6abf"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 98502,
+      "observed_at": "2026-11-07T03:04:07.009072+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:e0930f438004870c5e0448fda26e476487476da7",
+        "jvagent/harness/run_limits.py": "git-blob:81ceca6695a3418cd788f0fb3abba10de3fe6abf"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    },
+    {
+      "process_id": 98699,
+      "observed_at": "2026-11-07T03:06:11.343525+00:00",
+      "source_blobs": {
+        "jvagent/action/native_harness/native_harness_action.py": "git-blob:e0930f438004870c5e0448fda26e476487476da7",
+        "jvagent/harness/run_limits.py": "git-blob:81ceca6695a3418cd788f0fb3abba10de3fe6abf"
+      },
+      "file_interface_loaded": false,
+      "legacy_execution_modules": [],
+      "runtime_functions_patched": false
+    }
+  ],
+  "projected_skill_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4",
+  "projection_observations": [
+    {
+      "pid": 98318,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98318,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98318,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98502,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98502,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98502,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98699,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98699,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98699,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98699,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98699,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    },
+    {
+      "pid": 98699,
+      "directory": "/private/tmp/jvagent-native-channel-limits-smoke/agents/demo/assistant/skills/general",
+      "document_sha256": "sha256:d101f732af462e91555dda439f75081d63540eec1c61ed6321f7c9207d6544d4"
+    }
+  ],
+  "reference_blockers": [
+    "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+    "Setting requires qualified native policy migration: channel_overrides",
+    "Model service has unqualified callers or provider declarations; review before removal"
+  ],
+  "teardown": {
+    "owned_worker_sessions": [
+      43866,
+      8191,
+      9652
+    ],
+    "terminal_exit_codes": [
+      143,
+      143,
+      143
+    ],
+    "browser_page_closed": 83
+  },
+  "tests": {
+    "affected_311": "126 passed,44 warnings",
+    "affected_312": "126 passed,44 warnings",
+    "complete_native_host_postgres_311": "853 passed,430 warnings,no skips in107.84s",
+    "complete_native_host_postgres_312": "853 passed,430 warnings,no skips in110.18s",
+    "full_transitional": "5114 passed,72 skipped,31 warnings in113.36s",
+    "selection_removed": "2 regressions failed",
+    "widening_guard_removed": "5 regressions failed",
+    "all_file_pre_commit": "passed"
+  },
+  "limits": [
+    "Per-tool timeout, voice transport and arbitrary channel prompt migration remain unqualified",
+    "Unmatched labels use base ceilings, not a wildcard default profile",
+    "No distributed reservation or interrupted-external-effect recovery claim",
+    "No optimization or enterprise-release claim",
+    "Nested-delegation/profile interactions are not separately qualified"
+  ]
+}

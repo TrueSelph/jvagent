@@ -1,245 +1,47 @@
-# WhatsApp Action - Security and Standards Update
+# WhatsApp Action
 
-This document outlines the security improvements and coding standards compliance implemented for the WhatsApp action.
+WhatsApp provider configuration, authenticated inbound processing and response-bus
+transport live in this Action. The provider and deployment notes below include
+transitional integrations; they do not establish native or enterprise qualification.
 
-## Security Fixes Implemented
+## Native execution profile
 
-### 1. Path Traversal Vulnerability (CWE-22) - FIXED ✅
+Native tools retain the names `whatsapp__list_templates`,
+`whatsapp__send_template`, `whatsapp__list_flows` and `whatsapp__send_flow`, with
+existing argument schemas. Catalogs and sends require verified inbound sender
+scope and an explicit named host tool grant. Broad Action access alone is
+insufficient. Source: [`whatsapp_action.py:78`](whatsapp_action.py#L78),
+[`native_tools.py:39`](native_tools.py#L39).
 
-**Issue**: Unsanitized user input in file path construction
-**Location**: Media manager and file handling
-**Fix**:
+Use the existing signed webhook for text ingress. Setting `channel=whatsapp` or
+putting sender facts/raw messages into request `data` grants no authority. Native
+public HTTP replies remain local; native reply metadata comes from explicit
+server policy. Transport checks host facts in the SDK run registration. See
+[ADR-0058](../../../.planning/adr/0058-native-channel-authority-and-send-effects.md)
+and [qualification/evidence](../../../.planning/plans/2026-11-06-native-whatsapp-tools.md).
 
-- Implemented `PathSanitizer.sanitize_path()` for all user-provided paths
-- Added validation to prevent directory traversal attacks
-- Used `pathlib.Path.resolve()` for safe path resolution
+The three example skills are `whatsapp-templates`, `whatsapp-flows` and
+`whatsapp-service-flows`. Update authored selectors explicitly. Existing stored
+configuration/task owners are not auto-renamed. Service-flow activation uses
+normal SDK discovery/loading rather than `always-active` pinning. See
+[the native catalog guide](../../../.planning/runbooks/native-skill-catalog.md).
 
-### 2. Inadequate Error Handling - FIXED ✅
+A template/Flow tool send is complete only after a bounded provider message ID acknowledges
+acceptance. This does not prove recipient delivery or business completion.
+Exactly one Flow selector is accepted. Duplicate normalized requests in one
+Interaction fail closed before another send; changing ignored options cannot
+create another operation. Missing receipts, failures and cancellation require
+reconciliation rather than blind retry. Sources:
+[`utils/message_receipts.py:6`](utils/message_receipts.py#L6),
+[`native_tools.py:59`](native_tools.py#L59).
 
-**Issue**: Missing HTTP response validation and JSON parsing error handling
-**Location**: API calls and webhook processing
-**Fix**:
-
-- Added comprehensive try-catch blocks with specific exception types
-- Implemented proper HTTP status code validation
-- Added timeout and connection error handling
-- Used jvspatial exception types (`ValidationError`, `DatabaseError`)
-
-### 3. Hardcoded Paths - FIXED ✅
-
-**Issue**: Non-portable hardcoded absolute paths
-**Location**: Configuration and media storage
-**Fix**:
-
-- Replaced hardcoded paths with configurable attributes
-- Used environment variables and configuration overrides
-- Implemented dynamic path generation based on agent context
-
-### 4. Variable Shadowing - FIXED ✅
-
-**Issue**: Inner loop variable shadows outer variable in chunking algorithm
-**Location**: Message chunking logic
-**Fix**:
-
-- Renamed variables to avoid shadowing (`item` → `chunk`, `text_chunk`)
-- Improved variable naming for clarity
-- Added proper scope management
-
-### 5. Performance Issues - FIXED ✅
-
-**Issue**: Inconsistent space counting in chunking algorithm
-**Location**: Message chunking calculation
-**Fix**:
-
-- Standardized space calculation logic
-- Fixed off-by-one errors in length calculations
-- Improved algorithm efficiency and consistency
-
-## Coding Standards Compliance
-
-### jvspatial Standards Applied
-
-1. **Type-Safe Properties**:
-
-   ```python
-   provider: str = attribute(
-       default="wppconnect",
-       description="WhatsApp provider",
-       pattern=r"^(wppconnect|ultramsg|ts-whatsapp)$"
-   )
-   ```
-
-2. **Proper Error Handling**:
-
-   ```python
-   try:
-       result = await self.api().register_session(...)
-   except DatabaseError as e:
-       logger.error(f"Database error: {e}", exc_info=True)
-       raise
-   except ValidationError as e:
-       logger.error(f"Validation error: {e}")
-       raise ValidationError(f"Session registration failed: {e}")
-   ```
-
-3. **Input Validation**:
-
-   ```python
-   async def healthcheck(self) -> Union[bool, Dict[str, Any]]:
-       errors = []
-       if not self.api_url:
-           errors.append("api_url is required")
-       if errors:
-           return {"healthy": False, "errors": errors}
-       return {"healthy": True, "provider": self.provider}
-   ```
-
-4. **Async/Await Architecture**:
-   - All methods properly use async/await
-   - No blocking operations in async context
-   - Proper exception propagation
-
-### jvagent Standards Applied
-
-1. **Action Lifecycle Hooks**:
-
-   ```python
-   async def on_register(self) -> None:
-       """Called when action is first registered."""
-       try:
-           health_result = await self.healthcheck()
-           if isinstance(health_result, dict) and not health_result.get("healthy", True):
-               raise ValidationError(f"Configuration errors: {'; '.join(health_result.get('errors', []))}")
-           # ... initialization logic
-       except Exception as e:
-           raise ValidationError(f"Registration failed: {e}")
-
-   async def on_startup(self) -> None:
-       """Called when app starts and action is loaded from database.
-
-       Initializes filter, attempts session registration (with long HTTP timeout),
-       then initializes adapter. If registration fails, use manual session/register endpoint.
-       """
-       if not self.enabled or not self.is_configured():
-           return
-       filter = WhatsAppFilter(channels=["whatsapp"], priority=100)
-       await filter.initialize()
-       # Session registration attempted here (see whatsapp_action.py)
-       adapter = WhatsAppAdapter(action=self)
-       await adapter.initialize()
-
-   def is_session_registered(self) -> bool:
-       """Return whether session was registered (at startup or via manual endpoint)."""
-       return self._session_registered
-   ```
-
-2. **Standard Package Structure**:
-
-   ```
-   whatsapp/
-   ├── __init__.py              # Package exports
-   ├── whatsapp_action.py       # Main action class
-   ├── endpoints.py             # API endpoints
-   ├── info.yaml               # Action metadata
-   ├── modules/                # Provider implementations
-   └── utils/                  # Utility functions
-   ```
-
-3. **Endpoint Security**:
-   ```python
-   @endpoint(
-       "/whatsapp/interact/webhook/{agent_id}",
-       webhook=True,
-       auth=False,
-   )
-   async def whatsapp_interact(request: Request, agent_id: str):
-       # meta: X-Hub-Signature-256 in handler; bridge: ?api_key= in handler
-   ```
-
-## Architecture Improvements
-
-### 1. Lambda and Deployment Compatibility
-
-**Session Registration Strategy** (Startup + Manual Only):
-
-1. **Registration at startup** (with long HTTP timeout):
-   - Session registration is attempted during `on_startup()` with a long configurable HTTP timeout (default 120 seconds)
-   - Timeout is set via `WHATSAPP_SESSION_REGISTER_TIMEOUT_SECONDS` environment variable (minimum 5 seconds)
-   - Uses the underlying HTTP client timeout (not `asyncio.wait_for()`) for Lambda compatibility
-   - On success: Session is registered and webhooks can start immediately
-   - On timeout/failure: Logs warning and continues with filter/adapter initialization; use manual endpoint to register
-
-2. **Manual registration endpoint**:
-   - `POST /api/actions/{action_id}/session/register` endpoint for explicit registration
-   - Requires authentication (same as other action endpoints)
-   - **Browser link (no auth)**: `GET {JVAGENT_PUBLIC_BASE_URL}/api/whatsapp/{action_id}` shows a QR code or a “connected” page (public URL; `action_id` should be unguessable, like Google OAuth’s `/api/google/{action_id}`).
-   - Returns registration result with status, ok flag, and message
-   - **Use cases**:
-     - Startup registration timed out or failed
-     - Retry registration without restarting the app
-     - Force re-registration after configuration changes
-   - **Example**: `curl -X POST https://your-api.com/api/actions/{action_id}/session/register -H "Authorization: Bearer YOUR_TOKEN"`
-
-**Benefits**:
-- **Long timeout**: 120s default allows for slow WhatsApp API responses
-- **Lambda compatible**: Uses HTTP client timeout for proper Lambda support
-- **Simple model**: No lazy registration; session is registered at startup or via manual endpoint
-- **Visibility**: Health check exposes `session_registered` status
-
-**Deployment Flow**:
-
-For **long-running servers**:
-1. Deploy and start app → `on_startup` runs → session registers (if API is up)
-2. Webhooks start flowing automatically
-3. If registration fails: Call `POST /api/actions/{action_id}/session/register` to register manually
-
-For **Lambda**:
-1. Deploy → First invocation runs bootstrap → `on_startup` attempts registration with 120s HTTP timeout
-2. If registration succeeds: Done, webhooks will flow
-3. If registration times out or fails: Call `POST /api/actions/{action_id}/session/register` after deploy to register
-
-**Note**: The timeout is implemented at the HTTP client level (not using `asyncio.wait_for()`) for Lambda compatibility.
-
-### 2. Enhanced Error Handling
-
-- Specific exception types for different error conditions
-- Proper logging with structured error information
-- Graceful degradation for non-critical failures
-
-### 2. Security Enhancements
-
-- Path sanitization for all file operations
-- Input validation with type checking
-- Secure webhook URL generation with API keys
-- XSS prevention in message sanitization
-
-### 3. Performance Optimizations
-
-- Fixed chunking algorithm efficiency
-- Reduced redundant calculations
-- Improved async operation handling
-
-### 4. Code Quality
-
-- Eliminated variable shadowing
-- Improved naming conventions
-- Added comprehensive type hints
-- Enhanced documentation
-
-## Testing
-
-### Security Tests
-
-- Path traversal prevention tests
-- Input validation tests
-- Error handling verification
-- Message sanitization tests
-
-### Performance Tests
-
-- Chunking algorithm correctness
-- Memory usage optimization
-- Async operation efficiency
+Local qualification uses real GPT-4.1 calls and an owned provider stub. Actual
+Meta/jvconnect, voice caller proof, serverless delivery, distributed ownership,
+provider-wide idempotency and uncertain-send operator recovery remain open.
+Native `whatsapp_call` tools refuse unqualified caller proof; do not migrate a
+voice deployment by copying a channel string. Existing legacy transport is
+transitional. Follow the [migration runbook](../../../.planning/runbooks/native-harness-migration.md)
+for configuration planning; a candidate is not release qualification.
 
 ## Configuration
 
@@ -717,68 +519,3 @@ Authorization: Bearer YOUR_TOKEN
   "session": "your_session_name"
 }
 ```
-
-## Best Practices
-
-1. **Always validate user input**:
-
-   ```python
-   if not sender:
-       logger.debug("No sender information in WhatsApp message")
-       return {"status": "ignored", "response": "No sender information"}
-   ```
-
-2. **Use proper error handling**:
-
-   ```python
-   try:
-       result = await risky_operation()
-   except SpecificError as e:
-       logger.error(f"Specific error: {e}")
-       # Handle specifically
-   except Exception as e:
-       logger.error(f"Unexpected error: {e}", exc_info=True)
-       # Handle generically
-   ```
-
-3. **Sanitize all paths**:
-
-   ```python
-   safe_path = PathSanitizer.sanitize_path(user_input)
-   ```
-
-4. **Validate configuration**:
-   ```python
-   health_result = await self.healthcheck()
-   if isinstance(health_result, dict) and not health_result.get("healthy", True):
-       raise ValidationError(f"Configuration errors: {'; '.join(health_result.get('errors', []))}")
-   ```
-
-5. **Monitor registration status**:
-   ```python
-   health = await whatsapp_action.healthcheck()
-   if not health.get("session_registered"):
-       logger.warning("WhatsApp session not registered; use manual session/register endpoint.")
-   ```
-
-## Security Checklist
-
-- ✅ Path traversal prevention implemented
-- ✅ Input validation for all user inputs
-- ✅ Proper error handling with specific exceptions
-- ✅ Secure file handling with validation
-- ✅ XSS prevention in message processing
-- ✅ API key security for webhooks
-- ✅ Timeout handling for external requests
-- ✅ Logging without sensitive data exposure
-
-## Performance Checklist
-
-- ✅ Efficient chunking algorithm
-- ✅ Proper async/await usage
-- ✅ Minimal blocking operations
-- ✅ Optimized database queries
-- ✅ Reduced memory allocations
-- ✅ Connection pooling for HTTP requests
-
-This update brings the WhatsApp action into full compliance with jvspatial and jvagent coding standards while addressing all identified security vulnerabilities.

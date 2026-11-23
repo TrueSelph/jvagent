@@ -1,0 +1,2576 @@
+{
+  "tested_revision": "git-commit:e1455848c507cd1d5833c9ca17f1de11c53e9e0e",
+  "observed_at": "2026-11-06T13:26:47.594692+00:00",
+  "fixture": {
+    "backend": 8156,
+    "messenger_host": 3141,
+    "graph": "isolated PostgreSQL",
+    "root": "/private/tmp/jvagent-native-user-scope-smoke",
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    },
+    "host_wrapper": "Loopback-only disposable host inserts a bearer-fetch prelude before the unchanged Messenger module loads; role cookies select private test tokens. This is not a shipped login feature.",
+    "host_script_digest": "sha256:b06671c33eca5831e34ea3098e27f85ba0f32c9bfd403f5e9e92c212d82a5453"
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.a881e6f0100748cdacc8da01",
+      "scenario": "incidental_anonymous_write",
+      "user_id": "user_fc0e5d2feafb4e36afdc173df645d698",
+      "session_id": "sess_d2bbb265959d41b5",
+      "utterance": "Use only code_execution__bash to write exactly ADMIN-SEED-87 to admin-private.txt using Python. Print the actual saved file content. Do not use FileInterface.",
+      "response": "ADMIN-SEED-87\n\nThe content ADMIN-SEED-87 was written to admin-private.txt and verified by reading the file.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1794,
+          "output_tokens": 77
+        },
+        "output": "ADMIN-SEED-87\n\nThe content ADMIN-SEED-87 was written to admin-private.txt and verified by reading the file.",
+        "run_id": "corr-ac31196c0d8f41b5a3bcb30034bfe4a9",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:17:10.673233+00:00",
+                "total_tokens": 1871,
+                "prompt_tokens": 1794,
+                "total_cost_usd": 0.004204,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 77,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.004204,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.96,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.96,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-ac31196c0d8f41b5a3bcb30034bfe4a9"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:17:05.160092",
+      "completed_at": "2026-11-06T09:17:10.696584",
+      "duration_seconds": 5.536492,
+      "usage": {
+        "last_updated": "2026-11-06T13:17:10.696632+00:00",
+        "total_tokens": 1871,
+        "prompt_tokens": 1794,
+        "total_cost_usd": 0.004204,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 77,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004204,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.96,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.96,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 914,
+            "prompt_tokens": 865,
+            "completion_tokens": 49,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002122,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ac31196c0d8f41b5a3bcb30034bfe4a9",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-ac31196c0d8f41b5a3bcb30034bfe4a9:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 957,
+            "prompt_tokens": 929,
+            "completion_tokens": 28,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002082,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ac31196c0d8f41b5a3bcb30034bfe4a9",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-ac31196c0d8f41b5a3bcb30034bfe4a9:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_lgZa30XiEyPakEYa74Gqe1kd",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_07a4f4a7a002e0cd006aedd3533c1087d29be542dc0da1fc85",
+          "args": "{\"command\":\"python3 -c \\\"with open('admin-private.txt', 'w') as f: f.write('ADMIN-SEED-87')\\\"\\ncat admin-private.txt\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_lgZa30XiEyPakEYa74Gqe1kd",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nADMIN-SEED-87",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:17:08.928453Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_lgZa30XiEyPakEYa74Gqe1kd"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-f746d0d9df94",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:15ac1ab828bd66def931faf100b19573f20d623f6762f16816a461cfb2d54f07"
+    },
+    {
+      "id": "n.Interaction.d0c597de01934ae293415190",
+      "scenario": "incidental_second_anonymous_isolation",
+      "user_id": "user_30a03021f50441c6af510bcd23e93671",
+      "session_id": "sess_7dd46aa7e15f4e79",
+      "utterance": "Use only code_execution__bash. Check whether admin-private.txt exists in your workspace; report the actual existence result without inventing contents. Then write exactly MEMBER-SEED-87 to member-private.txt using Python and read it back.",
+      "response": "- admin-private.txt does not exist in the workspace.\n- Wrote exactly MEMBER-SEED-87 to member-private.txt and verified its contents.",
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 3864,
+          "output_tokens": 154
+        },
+        "output": "- admin-private.txt does not exist in the workspace.\n- Wrote exactly MEMBER-SEED-87 to member-private.txt and verified its contents.",
+        "run_id": "corr-8dd65ed96af2434c8413ba51dddc390b",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:17:56.543508+00:00",
+                "total_tokens": 4018,
+                "prompt_tokens": 3864,
+                "total_cost_usd": 0.00896,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 4,
+                "completion_tokens": 154,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.00896,
+                "model_attempt_count": 4,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 4.288,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 4.288,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-8dd65ed96af2434c8413ba51dddc390b"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:17:49.563553",
+      "completed_at": "2026-11-06T09:17:56.570473",
+      "duration_seconds": 7.00692,
+      "usage": {
+        "last_updated": "2026-11-06T13:17:56.570523+00:00",
+        "total_tokens": 4018,
+        "prompt_tokens": 3864,
+        "total_cost_usd": 0.00896,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 154,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00896,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 4.288,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 4.288,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 925,
+            "prompt_tokens": 877,
+            "completion_tokens": 48,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002138,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-8dd65ed96af2434c8413ba51dddc390b",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-8dd65ed96af2434c8413ba51dddc390b:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 992,
+            "prompt_tokens": 942,
+            "completion_tokens": 50,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002284,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-8dd65ed96af2434c8413ba51dddc390b",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-8dd65ed96af2434c8413ba51dddc390b:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1027,
+            "prompt_tokens": 1002,
+            "completion_tokens": 25,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002204,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-8dd65ed96af2434c8413ba51dddc390b",
+          "native_step_index": 3,
+          "native_receipt_key": "spend:default|run|*|corr-8dd65ed96af2434c8413ba51dddc390b:3",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1074,
+            "prompt_tokens": 1043,
+            "completion_tokens": 31,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002334,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-8dd65ed96af2434c8413ba51dddc390b",
+          "native_step_index": 4,
+          "native_receipt_key": "spend:default|run|*|corr-8dd65ed96af2434c8413ba51dddc390b:4",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_p7lovFTpMQsfGlxHOQSOtXEM",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        },
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_j0xJjLgFVhw5MjOu7LEXBK8i",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        },
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_43PFShdv6ObPEYNSCGohII5U",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_07a6f5d2d7c3c09d006aedd37e4ff087d2b360e257bdc769e8",
+          "args": "{\"command\":\"if [ -f admin-private.txt ]; then echo 'admin-private.txt exists'; else echo 'admin-private.txt does not exist'; fi\",\"timeout_seconds\":10}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_p7lovFTpMQsfGlxHOQSOtXEM",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nadmin-private.txt does not exist\n",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:17:52.051569Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_p7lovFTpMQsfGlxHOQSOtXEM"
+        },
+        {
+          "id": "fc_0f6569ca4e25fb1e006aedd3809ca887d2bc421b3a79a54c55",
+          "args": "{\"command\":\"python3 -c \\\"with open('member-private.txt', 'w') as f: f.write('MEMBER-SEED-87')\\\"\",\"timeout_seconds\":10}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_j0xJjLgFVhw5MjOu7LEXBK8i",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "(no output)",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:17:53.173711Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_j0xJjLgFVhw5MjOu7LEXBK8i"
+        },
+        {
+          "id": "fc_046a12476b3483de006aedd38242c487d299a8c5d48dbcb2b6",
+          "args": "{\"command\":\"cat member-private.txt\",\"timeout_seconds\":10}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_43PFShdv6ObPEYNSCGohII5U",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nMEMBER-SEED-87",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:17:54.880376Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_43PFShdv6ObPEYNSCGohII5U"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-2f34f2ef350d",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:22b3552af30be4a815f9be97203e8fca570ed6e56e8e4f581e8bcf34415f5c64"
+    },
+    {
+      "id": "n.Interaction.92fb395372604b90b5e708c9",
+      "scenario": "authenticated_admin_write",
+      "user_id": "o.User.633c67dd2768446ea015b00b",
+      "session_id": "sess_ef6d83980f2540a0",
+      "utterance": "Use only code_execution__bash to write exactly AUTH-ADMIN-88 to admin-private.txt using Python, then print its actual content.",
+      "response": "AUTH-ADMIN-88",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1780,
+          "output_tokens": 56
+        },
+        "output": "AUTH-ADMIN-88",
+        "run_id": "corr-2d32f7de22ab46c58df79d71b3ea4176",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:20:31.244013+00:00",
+                "total_tokens": 1836,
+                "prompt_tokens": 1780,
+                "total_cost_usd": 0.004008,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 56,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.004008,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.662,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.662,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-2d32f7de22ab46c58df79d71b3ea4176"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:20:26.730610",
+      "completed_at": "2026-11-06T09:20:31.262909",
+      "duration_seconds": 4.532299,
+      "usage": {
+        "last_updated": "2026-11-06T13:20:31.262953+00:00",
+        "total_tokens": 1836,
+        "prompt_tokens": 1780,
+        "total_cost_usd": 0.004008,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 56,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004008,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.662,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.662,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 907,
+            "prompt_tokens": 858,
+            "completion_tokens": 49,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002108,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-2d32f7de22ab46c58df79d71b3ea4176",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-2d32f7de22ab46c58df79d71b3ea4176:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 929,
+            "prompt_tokens": 922,
+            "completion_tokens": 7,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.0019,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-2d32f7de22ab46c58df79d71b3ea4176",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-2d32f7de22ab46c58df79d71b3ea4176:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_sbQdUBJNQHRb3VFoWAxlbEuc",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0b9678e29a35c864006aedd41bf1f887d2ad3c98b46bafa029",
+          "args": "{\"command\":\"python3 -c \\\"with open('admin-private.txt', 'w') as f: f.write('AUTH-ADMIN-88')\\\" && cat admin-private.txt\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_sbQdUBJNQHRb3VFoWAxlbEuc",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nAUTH-ADMIN-88",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:20:29.664399Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_sbQdUBJNQHRb3VFoWAxlbEuc"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-462bab084aa9",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:a843c4112c9b7558d9ba9112cb880bb472f6ca74f273fdab0d581cf8eecbec2f"
+    },
+    {
+      "id": "n.Interaction.2ce67c02d3e94bcd941d2ff6",
+      "scenario": "authenticated_member_write_and_isolation",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "session_id": "sess_f41a16422aab408d",
+      "utterance": "Use only code_execution__bash. Check whether admin-private.txt exists in your workspace and report the actual result without guessing its contents. Then write exactly AUTH-MEMBER-88 to member-private.txt using Python and read it back.",
+      "response": "- admin-private.txt does not exist in the workspace.\n- Wrote exactly AUTH-MEMBER-88 to member-private.txt and confirmed its contents as AUTH-MEMBER-88.",
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 3857,
+          "output_tokens": 159
+        },
+        "output": "- admin-private.txt does not exist in the workspace.\n- Wrote exactly AUTH-MEMBER-88 to member-private.txt and confirmed its contents as AUTH-MEMBER-88.",
+        "run_id": "corr-5e0f5dd048ac4e91a18820f946344d8d",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:20:53.530058+00:00",
+                "total_tokens": 4016,
+                "prompt_tokens": 3857,
+                "total_cost_usd": 0.008986,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 4,
+                "completion_tokens": 159,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.008986,
+                "model_attempt_count": 4,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 3.925,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.925,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-5e0f5dd048ac4e91a18820f946344d8d"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:20:46.923308",
+      "completed_at": "2026-11-06T09:20:53.562459",
+      "duration_seconds": 6.639151,
+      "usage": {
+        "last_updated": "2026-11-06T13:20:53.562525+00:00",
+        "total_tokens": 4016,
+        "prompt_tokens": 3857,
+        "total_cost_usd": 0.008986,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 159,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.008986,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.925,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.925,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 924,
+            "prompt_tokens": 876,
+            "completion_tokens": 48,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002136,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5e0f5dd048ac4e91a18820f946344d8d",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-5e0f5dd048ac4e91a18820f946344d8d:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 990,
+            "prompt_tokens": 941,
+            "completion_tokens": 49,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002274,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5e0f5dd048ac4e91a18820f946344d8d",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-5e0f5dd048ac4e91a18820f946344d8d:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1025,
+            "prompt_tokens": 1000,
+            "completion_tokens": 25,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.0022,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5e0f5dd048ac4e91a18820f946344d8d",
+          "native_step_index": 3,
+          "native_receipt_key": "spend:default|run|*|corr-5e0f5dd048ac4e91a18820f946344d8d:3",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1077,
+            "prompt_tokens": 1040,
+            "completion_tokens": 37,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002376,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-5e0f5dd048ac4e91a18820f946344d8d",
+          "native_step_index": 4,
+          "native_receipt_key": "spend:default|run|*|corr-5e0f5dd048ac4e91a18820f946344d8d:4",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_z952BsGNhdiX26MP5uimd8QC",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        },
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_65ruth5cifbhJg46MoK049cs",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        },
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_qKuBRw3emmrZp1F4ejMvR5qR",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_073f0e482e007bd2006aedd42f982c87d296bc7a2e399078d7",
+          "args": "{\"command\":\"if [ -f admin-private.txt ]; then echo 'admin-private.txt exists'; else echo 'admin-private.txt does not exist'; fi\",\"timeout_seconds\":10}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_z952BsGNhdiX26MP5uimd8QC",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nadmin-private.txt does not exist\n",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:20:49.202285Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_z952BsGNhdiX26MP5uimd8QC"
+        },
+        {
+          "id": "fc_05d2006399ab6079006aedd431f57c87d2ba76ecf322c1c475",
+          "args": "{\"command\":\"python3 -c \\\"with open('member-private.txt', 'w') as f: f.write('AUTH-MEMBER-88')\\\"\",\"timeout_seconds\":10}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_65ruth5cifbhJg46MoK049cs",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "(no output)",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:20:50.518836Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_65ruth5cifbhJg46MoK049cs"
+        },
+        {
+          "id": "fc_02793c06f90dfe93006aedd433436487d2b12031f507ae1e60",
+          "args": "{\"command\":\"cat member-private.txt\",\"timeout_seconds\":10}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_qKuBRw3emmrZp1F4ejMvR5qR",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nAUTH-MEMBER-88",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:20:51.764199Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_qKuBRw3emmrZp1F4ejMvR5qR"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-84663f56fecd",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:ed33cb64df2a4b58a5fbbd64e291dbd00f2647deb5f20e874e2661cacb0c7557"
+    },
+    {
+      "id": "n.Interaction.05cf46bf9ebd42ffb6dc34b9",
+      "scenario": "authenticated_admin_read_and_isolation",
+      "user_id": "o.User.633c67dd2768446ea015b00b",
+      "session_id": "sess_ef6d83980f2540a0",
+      "utterance": "Use only code_execution__bash to read admin-private.txt and check whether member-private.txt exists. Do not create or modify files. Report the actual results.",
+      "response": "admin-private.txt contains: AUTH-ADMIN-88\nmember-private.txt does not exist.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 2002,
+          "output_tokens": 68
+        },
+        "output": "admin-private.txt contains: AUTH-ADMIN-88\nmember-private.txt does not exist.",
+        "run_id": "corr-743ee590b09748c5b370f4a96d88b32e",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:21:26.069423+00:00",
+                "total_tokens": 2070,
+                "prompt_tokens": 2002,
+                "total_cost_usd": 0.004548,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 68,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.004548,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.573,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.573,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-743ee590b09748c5b370f4a96d88b32e"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-2d32f7de22ab46c58df79d71b3ea4176"
+        },
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:21:21.512063",
+      "completed_at": "2026-11-06T09:21:26.095332",
+      "duration_seconds": 4.583269,
+      "usage": {
+        "last_updated": "2026-11-06T13:21:26.095400+00:00",
+        "total_tokens": 2070,
+        "prompt_tokens": 2002,
+        "total_cost_usd": 0.004548,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 68,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004548,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.573,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.573,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1014,
+            "prompt_tokens": 966,
+            "completion_tokens": 48,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002316,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-743ee590b09748c5b370f4a96d88b32e",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-743ee590b09748c5b370f4a96d88b32e:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1056,
+            "prompt_tokens": 1036,
+            "completion_tokens": 20,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002232,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-743ee590b09748c5b370f4a96d88b32e",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-743ee590b09748c5b370f4a96d88b32e:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_lCrZxY41KfDyZ49fdfDEh2jE",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0829cb27c120a1a2006aedd452e76087d2973b762702182091",
+          "args": "{\"command\":\"cat admin-private.txt; if [ -e member-private.txt ]; then echo 'member-private.txt exists'; else echo 'member-private.txt does not exist'; fi\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_lCrZxY41KfDyZ49fdfDEh2jE",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nAUTH-ADMIN-88member-private.txt does not exist\n",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:21:24.643958Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_lCrZxY41KfDyZ49fdfDEh2jE"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-462bab084aa9",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:d6d9774cabf4b1cc6d85723e0024ce38d1542610421bf4baf4ce5c83943c2dfa"
+    },
+    {
+      "id": "n.Interaction.684684819f0b4583899c82a5",
+      "scenario": "member_symlink_to_admin_host_path",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "session_id": "sess_f41a16422aab408d",
+      "utterance": "Use only code_execution__bash for this isolation test. Create a symlink named link-to-admin.txt pointing at /private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.633c67dd2768446ea015b00b/admin-private.txt. Report whether that target path is readable from your container. Do not modify any existing file.",
+      "response": "The target path /private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.633c67dd2768446ea015b00b/admin-private.txt is NOT readable from this container.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 2509,
+          "output_tokens": 209
+        },
+        "output": "The target path /private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.633c67dd2768446ea015b00b/admin-private.txt is NOT readable from this container.",
+        "run_id": "corr-d9c283a557c2471887934566225f1101",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:21:28.795651+00:00",
+                "total_tokens": 2718,
+                "prompt_tokens": 2509,
+                "total_cost_usd": 0.005154,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 209,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005154,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 1024,
+                "total_duration_seconds": 3.495,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.495,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-d9c283a557c2471887934566225f1101"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-5e0f5dd048ac4e91a18820f946344d8d"
+        },
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:21:22.889848",
+      "completed_at": "2026-11-06T09:21:28.822476",
+      "duration_seconds": 5.932628,
+      "usage": {
+        "last_updated": "2026-11-06T13:21:28.822518+00:00",
+        "total_tokens": 2718,
+        "prompt_tokens": 2509,
+        "total_cost_usd": 0.005154,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 209,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005154,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 1024,
+        "total_duration_seconds": 3.495,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.495,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1321,
+            "prompt_tokens": 1173,
+            "completion_tokens": 148,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00353,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d9c283a557c2471887934566225f1101",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-d9c283a557c2471887934566225f1101:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1397,
+            "prompt_tokens": 1336,
+            "completion_tokens": 61,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1024
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001624,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-d9c283a557c2471887934566225f1101",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-d9c283a557c2471887934566225f1101:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_oPcWNfO6JRFKtv4qvUBqzUDB",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_00a091325e2fed13006aedd454848c87d293668fca04f8387d",
+          "args": "{\"command\":\"ln -s /private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.633c67dd2768446ea015b00b/admin-private.txt link-to-admin.txt && if [ -r /private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.633c67dd2768446ea015b00b/admin-private.txt ]; then echo 'Target is readable'; else echo 'Target is NOT readable'; fi\",\"timeout_seconds\":10}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_oPcWNfO6JRFKtv4qvUBqzUDB",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nTarget is NOT readable\n",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:21:26.659557Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_oPcWNfO6JRFKtv4qvUBqzUDB"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-84663f56fecd",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:c3f09ce48b58d67955656fc90caf958b854e74d708351d10e67fbb02e0d41cc6"
+    },
+    {
+      "id": "n.Interaction.7b865949c10e40bba3fef1dd",
+      "scenario": "file_service_symlink_refusal",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "session_id": "sess_f41a16422aab408d",
+      "utterance": "Use only file_interface__read_file to read link-to-admin.txt. If access is refused, report that refusal. Do not use code execution or change the link.",
+      "response": "Access to link-to-admin.txt was refused: \"File unavailable, unsafe path, invalid line limits, or read byte limit exceeded.\"",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 2934,
+          "output_tokens": 49
+        },
+        "output": "Access to link-to-admin.txt was refused: \"File unavailable, unsafe path, invalid line limits, or read byte limit exceeded.\"",
+        "run_id": "corr-b97b552743c54e9ea16adc42e3bfe748",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:21:50.067733+00:00",
+                "total_tokens": 2983,
+                "prompt_tokens": 2934,
+                "total_cost_usd": 0.00242,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 49,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.00242,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 2560,
+                "total_duration_seconds": 1.718,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.718,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-b97b552743c54e9ea16adc42e3bfe748"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-d9c283a557c2471887934566225f1101"
+        },
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:21:47.178695",
+      "completed_at": "2026-11-06T09:21:50.095799",
+      "duration_seconds": 2.917104,
+      "usage": {
+        "last_updated": "2026-11-06T13:21:50.095839+00:00",
+        "total_tokens": 2983,
+        "prompt_tokens": 2934,
+        "total_cost_usd": 0.00242,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 49,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00242,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 2560,
+        "total_duration_seconds": 1.718,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.718,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1457,
+            "prompt_tokens": 1436,
+            "completion_tokens": 21,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1280
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00112,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-b97b552743c54e9ea16adc42e3bfe748",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-b97b552743c54e9ea16adc42e3bfe748:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1526,
+            "prompt_tokens": 1498,
+            "completion_tokens": 28,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1280
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.0013,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-b97b552743c54e9ea16adc42e3bfe748",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-b97b552743c54e9ea16adc42e3bfe748:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_Sfv4e4nicQQad9FHLwFASFVv",
+          "status": "completed",
+          "effect_summary": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_067b48f0044c6ce3006aedd46c68d887d280c95a94572ae9d6",
+          "args": "{\"path\":\"link-to-admin.txt\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_Sfv4e4nicQQad9FHLwFASFVv",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": false, \"error\": \"File unavailable, unsafe path, invalid line limits, or read byte limit exceeded\", \"max_bytes\": 8192}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:21:48.793317Z",
+          "tool_kind": null,
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_Sfv4e4nicQQad9FHLwFASFVv"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-84663f56fecd",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:9cd9d5ad79dfeb00c2ae14022ecb1f289783f9998d7ff0a2b3d77a2e137350d1"
+    },
+    {
+      "id": "n.Interaction.716d326112ee4b30ac343fce",
+      "scenario": "member_live_ten_second_script",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "session_id": "sess_f41a16422aab408d",
+      "utterance": "Use only code_execution__bash to run Python that waits 10 seconds and then reads member-private.txt and prints its exact content. Do not write or remove files.",
+      "response": "After waiting 10 seconds, the exact content of member-private.txt is: AUTH-MEMBER-88",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 3190,
+          "output_tokens": 66
+        },
+        "output": "After waiting 10 seconds, the exact content of member-private.txt is: AUTH-MEMBER-88",
+        "run_id": "corr-ad0bffcdb8e3410391c40002e77d8dbd",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:22:27.041464+00:00",
+                "total_tokens": 3256,
+                "prompt_tokens": 3190,
+                "total_cost_usd": 0.002684,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 66,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.002684,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 2816,
+                "total_duration_seconds": 2.669,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.669,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-ad0bffcdb8e3410391c40002e77d8dbd"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-b97b552743c54e9ea16adc42e3bfe748"
+        },
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:22:12.488794",
+      "completed_at": "2026-11-06T09:22:27.079471",
+      "duration_seconds": 14.590677,
+      "usage": {
+        "last_updated": "2026-11-06T13:22:27.079514+00:00",
+        "total_tokens": 3256,
+        "prompt_tokens": 3190,
+        "total_cost_usd": 0.002684,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 66,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002684,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 2816,
+        "total_duration_seconds": 2.669,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.669,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1609,
+            "prompt_tokens": 1565,
+            "completion_tokens": 44,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1408
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00137,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ad0bffcdb8e3410391c40002e77d8dbd",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-ad0bffcdb8e3410391c40002e77d8dbd:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1647,
+            "prompt_tokens": 1625,
+            "completion_tokens": 22,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1408
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001314,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-ad0bffcdb8e3410391c40002e77d8dbd",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-ad0bffcdb8e3410391c40002e77d8dbd:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_OGK5cG33de9l1HK5Y3sfwwji",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_03eba48f11132eeb006aedd485e18887d293ec3d10fa7681d0",
+          "args": "{\"command\":\"python3 -c \\\"import time; time.sleep(10); print(open('member-private.txt').read())\\\"\",\"timeout_seconds\":20}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_OGK5cG33de9l1HK5Y3sfwwji",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\nAUTH-MEMBER-88\n",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:22:25.208829Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_OGK5cG33de9l1HK5Y3sfwwji"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-84663f56fecd",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:88be0530de425a0f6023586494660d7ce50a56516b0433f42b8143b7845d48bd"
+    },
+    {
+      "id": "n.Interaction.7af1acfbd1274625891adbaf",
+      "scenario": "member_admin_basename_unavailable",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "session_id": "sess_f41a16422aab408d",
+      "utterance": "Use code_execution__bash to read admin-private.txt.",
+      "response": "admin-private.txt does not exist in the workspace.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 3404,
+          "output_tokens": 37
+        },
+        "output": "admin-private.txt does not exist in the workspace.",
+        "run_id": "corr-98c2a455ac784577a8fd32fc77e418b6",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:22:52.587228+00:00",
+                "total_tokens": 3441,
+                "prompt_tokens": 3404,
+                "total_cost_usd": 0.003264,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 37,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003264,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 2560,
+                "total_duration_seconds": 1.878,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 1.878,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-98c2a455ac784577a8fd32fc77e418b6"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-ad0bffcdb8e3410391c40002e77d8dbd"
+        },
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:22:48.742805",
+      "completed_at": "2026-11-06T09:22:52.628368",
+      "duration_seconds": 3.885563,
+      "usage": {
+        "last_updated": "2026-11-06T13:22:52.628419+00:00",
+        "total_tokens": 3441,
+        "prompt_tokens": 3404,
+        "total_cost_usd": 0.003264,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 37,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.003264,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 2560,
+        "total_duration_seconds": 1.878,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 1.878,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1689,
+            "prompt_tokens": 1664,
+            "completion_tokens": 25,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1024
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001992,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-98c2a455ac784577a8fd32fc77e418b6",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-98c2a455ac784577a8fd32fc77e418b6:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1752,
+            "prompt_tokens": 1740,
+            "completion_tokens": 12,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1536
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001272,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-98c2a455ac784577a8fd32fc77e418b6",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-98c2a455ac784577a8fd32fc77e418b6:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_hzkV1pIGngD4QjUn02L9pfE4",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0a9a8dab6c5ff59a006aedd4aa0d7087d280e28f84b0c4b755",
+          "args": "{\"command\":\"cat admin-private.txt\",\"timeout_seconds\":10}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_hzkV1pIGngD4QjUn02L9pfE4",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stderr]\ncat: admin-private.txt: No such file or directory\n\n[exit code: 1]\n[Command failed with max_file_bytes=8000000; file writes may have reached the per-file limit.]",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:22:51.156092Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_hzkV1pIGngD4QjUn02L9pfE4"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-84663f56fecd",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:49b55e2d7319a6502cb9e41e477ac139eb7e58ee28e8e171c40df3b3d643631e"
+    },
+    {
+      "id": "n.Interaction.bf9665f1815a4a9fa4f6ce10",
+      "scenario": "member_file_service_read",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "session_id": "sess_f41a16422aab408d",
+      "utterance": "Use only file_interface__read_file to read member-private.txt and return its exact content. Do not use the script tool.",
+      "response": "The exact content of member-private.txt is: AUTH-MEMBER-88",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 3617,
+          "output_tokens": 36
+        },
+        "output": "The exact content of member-private.txt is: AUTH-MEMBER-88",
+        "run_id": "corr-98116b12ba394d11b8d960fba99a5f57",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:23:17.188382+00:00",
+                "total_tokens": 3653,
+                "prompt_tokens": 3617,
+                "total_cost_usd": 0.005218,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 36,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005218,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 1536,
+                "total_duration_seconds": 2.002,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.002,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-98116b12ba394d11b8d960fba99a5f57"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-98c2a455ac784577a8fd32fc77e418b6"
+        },
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:23:14.071262",
+      "completed_at": "2026-11-06T09:23:17.232994",
+      "duration_seconds": 3.161732,
+      "usage": {
+        "last_updated": "2026-11-06T13:23:17.233028+00:00",
+        "total_tokens": 3653,
+        "prompt_tokens": 3617,
+        "total_cost_usd": 0.005218,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 36,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005218,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 1536,
+        "total_duration_seconds": 2.002,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.002,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1803,
+            "prompt_tokens": 1783,
+            "completion_tokens": 20,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.003726,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-98116b12ba394d11b8d960fba99a5f57",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-98116b12ba394d11b8d960fba99a5f57:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1850,
+            "prompt_tokens": 1834,
+            "completion_tokens": 16,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1536
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001492,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-98116b12ba394d11b8d960fba99a5f57",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-98116b12ba394d11b8d960fba99a5f57:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_p53hESZpEVNHHmK1AAAMVjSn",
+          "status": "completed",
+          "effect_summary": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_09624a91401e3288006aedd4c3579087d2b194b42d888c1b6f",
+          "args": "{\"path\":\"member-private.txt\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_p53hESZpEVNHHmK1AAAMVjSn",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"path\": \"member-private.txt\", \"content\": \"AUTH-MEMBER-88\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:23:15.685165Z",
+          "tool_kind": null,
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_p53hESZpEVNHHmK1AAAMVjSn"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-84663f56fecd",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:48fa62cfc67389c5310174e9b40ace80e02795defc2cf01ec3bee8f07c1d9366"
+    },
+    {
+      "id": "n.Interaction.bef5e04281594b82a8bba856",
+      "scenario": "observed_foreign_user_claim_stays_member",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "session_id": "sess_f41a16422aab408d",
+      "utterance": "Use only file_interface__read_file to read admin-private.txt. Report only the actual tool result.",
+      "response": "File unavailable, unsafe path, invalid line limits, or read byte limit exceeded.",
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 3813,
+          "output_tokens": 38
+        },
+        "output": "File unavailable, unsafe path, invalid line limits, or read byte limit exceeded.",
+        "run_id": "corr-7635df0f63c943c4a4ededea312307cb",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:24:01.970531+00:00",
+                "total_tokens": 3851,
+                "prompt_tokens": 3813,
+                "total_cost_usd": 0.002746,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 38,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.002746,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 3456,
+                "total_duration_seconds": 2.636,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.636,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-7635df0f63c943c4a4ededea312307cb"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-98116b12ba394d11b8d960fba99a5f57"
+        },
+        "usage_complete": true
+      },
+      "started_at": "2026-11-06T09:23:58.093133",
+      "completed_at": "2026-11-06T09:24:02.011157",
+      "duration_seconds": 3.918024,
+      "usage": {
+        "last_updated": "2026-11-06T13:24:02.011239+00:00",
+        "total_tokens": 3851,
+        "prompt_tokens": 3813,
+        "total_cost_usd": 0.002746,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 38,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002746,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 3456,
+        "total_duration_seconds": 2.636,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.636,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1896,
+            "prompt_tokens": 1876,
+            "completion_tokens": 20,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001416,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-7635df0f63c943c4a4ededea312307cb",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-7635df0f63c943c4a4ededea312307cb:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1955,
+            "prompt_tokens": 1937,
+            "completion_tokens": 18,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1792
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00133,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-7635df0f63c943c4a4ededea312307cb",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-7635df0f63c943c4a4ededea312307cb:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_Pj2HPeX2yqb0xfnJWwLqX98j",
+          "status": "completed",
+          "effect_summary": null
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_0daae6b358ca1b5e006aedd4f01a7087d282cf314d018d8dbe",
+          "args": "{\"path\":\"admin-private.txt\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_Pj2HPeX2yqb0xfnJWwLqX98j",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": false, \"error\": \"File unavailable, unsafe path, invalid line limits, or read byte limit exceeded\", \"max_bytes\": 8192}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T13:24:00.530449Z",
+          "tool_kind": null,
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_Pj2HPeX2yqb0xfnJWwLqX98j"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-84663f56fecd",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:1fe83bad2a54b36c55744f40265f3ead1605ce73b2a421a4ee24b39d840f5a28"
+    }
+  ],
+  "idle_conversations": [
+    {
+      "id": "n.Conversation.ff279c5ee42c4e2db6872a37",
+      "user_id": "user_141f92fdc76240feb3fab9f867c9b1c3",
+      "native_spend": {}
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.d8a01df255fb48f7bd924b74",
+      "session_id": "sess_d2bbb265959d41b5",
+      "user_id": "user_fc0e5d2feafb4e36afdc173df645d698",
+      "policy": {
+        "assets": {
+          "staged_skills/triage/scripts/prioritize.py": "sha256:2ec678d2efb699e590f74374ba3358ad0145bed57d563a50ea7472157c8fe2b3"
+        },
+        "storage": {
+          "gid": 20,
+          "uid": 501,
+          "kind": "local-user-bind-v1",
+          "root": "/private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/user_fc0e5d2feafb4e36afdc173df645d698",
+          "inode": 19,
+          "device": 16777254,
+          "filesystem_bytes": 67067904
+        },
+        "user_id": "user_fc0e5d2feafb4e36afdc173df645d698",
+        "version": "sdk-docker-user-files-v2",
+        "agent_id": "n.Agent.066a35db9e104a048e9b5a85",
+        "session_id": "sess_d2bbb265959d41b5",
+        "configuration": {
+          "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+          "timeout": 60.0,
+          "max_output_chars": 64000
+        }
+      },
+      "spend": {
+        "usd": "0.004204",
+        "tokens": 1871,
+        "requests": 2,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.8c339d5e43f4437cb8c0bb63",
+      "session_id": "sess_7dd46aa7e15f4e79",
+      "user_id": "user_30a03021f50441c6af510bcd23e93671",
+      "policy": {
+        "assets": {
+          "staged_skills/triage/scripts/prioritize.py": "sha256:2ec678d2efb699e590f74374ba3358ad0145bed57d563a50ea7472157c8fe2b3"
+        },
+        "storage": {
+          "gid": 20,
+          "uid": 501,
+          "kind": "local-user-bind-v1",
+          "root": "/private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/user_30a03021f50441c6af510bcd23e93671",
+          "inode": 27,
+          "device": 16777254,
+          "filesystem_bytes": 67067904
+        },
+        "user_id": "user_30a03021f50441c6af510bcd23e93671",
+        "version": "sdk-docker-user-files-v2",
+        "agent_id": "n.Agent.066a35db9e104a048e9b5a85",
+        "session_id": "sess_7dd46aa7e15f4e79",
+        "configuration": {
+          "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+          "timeout": 60.0,
+          "max_output_chars": 64000
+        }
+      },
+      "spend": {
+        "usd": "0.008960",
+        "tokens": 4018,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.c35aa6e211e04a6eb915ed69",
+      "session_id": "sess_f41a16422aab408d",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "policy": {
+        "assets": {
+          "staged_skills/triage/scripts/prioritize.py": "sha256:2ec678d2efb699e590f74374ba3358ad0145bed57d563a50ea7472157c8fe2b3"
+        },
+        "storage": {
+          "gid": 20,
+          "uid": 501,
+          "kind": "local-user-bind-v1",
+          "root": "/private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.aca14df182e74dd6851121a4",
+          "inode": 43,
+          "device": 16777254,
+          "filesystem_bytes": 67067904
+        },
+        "user_id": "o.User.aca14df182e74dd6851121a4",
+        "version": "sdk-docker-user-files-v2",
+        "agent_id": "n.Agent.066a35db9e104a048e9b5a85",
+        "session_id": "sess_f41a16422aab408d",
+        "configuration": {
+          "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+          "timeout": 60.0,
+          "max_output_chars": 64000
+        }
+      },
+      "spend": {
+        "usd": "0.030472",
+        "tokens": 23918,
+        "requests": 16,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.2447ffd41a8045a8bea478c3",
+      "session_id": "sess_ef6d83980f2540a0",
+      "user_id": "o.User.633c67dd2768446ea015b00b",
+      "policy": {
+        "assets": {
+          "staged_skills/triage/scripts/prioritize.py": "sha256:2ec678d2efb699e590f74374ba3358ad0145bed57d563a50ea7472157c8fe2b3"
+        },
+        "storage": {
+          "gid": 20,
+          "uid": 501,
+          "kind": "local-user-bind-v1",
+          "root": "/private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.633c67dd2768446ea015b00b",
+          "inode": 35,
+          "device": 16777254,
+          "filesystem_bytes": 67067904
+        },
+        "user_id": "o.User.633c67dd2768446ea015b00b",
+        "version": "sdk-docker-user-files-v2",
+        "agent_id": "n.Agent.066a35db9e104a048e9b5a85",
+        "session_id": "sess_ef6d83980f2540a0",
+        "configuration": {
+          "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+          "timeout": 60.0,
+          "max_output_chars": 64000
+        }
+      },
+      "spend": {
+        "usd": "0.008556",
+        "tokens": 3906,
+        "requests": 4,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    }
+  ],
+  "resources": [
+    {
+      "ref": "pydantic-ai-f746d0d9df94",
+      "user_id": "user_fc0e5d2feafb4e36afdc173df645d698",
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "mounts": [
+        {
+          "Type": "tmpfs",
+          "Source": "",
+          "Destination": "/run/pydantic-ai",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        },
+        {
+          "Type": "bind",
+          "Source": "/host_mnt/private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/user_fc0e5d2feafb4e36afdc173df645d698",
+          "Destination": "/workspace",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        }
+      ],
+      "user": "501:20",
+      "host_config": {
+        "ReadonlyRootfs": true,
+        "NetworkMode": "none",
+        "Memory": 536870912,
+        "NanoCpus": 1000000000,
+        "PidsLimit": 128,
+        "CapDrop": [
+          "ALL"
+        ],
+        "SecurityOpt": [
+          "no-new-privileges"
+        ]
+      }
+    },
+    {
+      "ref": "pydantic-ai-2f34f2ef350d",
+      "user_id": "user_30a03021f50441c6af510bcd23e93671",
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "mounts": [
+        {
+          "Type": "tmpfs",
+          "Source": "",
+          "Destination": "/run/pydantic-ai",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        },
+        {
+          "Type": "bind",
+          "Source": "/host_mnt/private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/user_30a03021f50441c6af510bcd23e93671",
+          "Destination": "/workspace",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        }
+      ],
+      "user": "501:20",
+      "host_config": {
+        "ReadonlyRootfs": true,
+        "NetworkMode": "none",
+        "Memory": 536870912,
+        "NanoCpus": 1000000000,
+        "PidsLimit": 128,
+        "CapDrop": [
+          "ALL"
+        ],
+        "SecurityOpt": [
+          "no-new-privileges"
+        ]
+      }
+    },
+    {
+      "ref": "pydantic-ai-462bab084aa9",
+      "user_id": "o.User.633c67dd2768446ea015b00b",
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "mounts": [
+        {
+          "Type": "tmpfs",
+          "Source": "",
+          "Destination": "/run/pydantic-ai",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        },
+        {
+          "Type": "bind",
+          "Source": "/host_mnt/private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.633c67dd2768446ea015b00b",
+          "Destination": "/workspace",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        }
+      ],
+      "user": "501:20",
+      "host_config": {
+        "ReadonlyRootfs": true,
+        "NetworkMode": "none",
+        "Memory": 536870912,
+        "NanoCpus": 1000000000,
+        "PidsLimit": 128,
+        "CapDrop": [
+          "ALL"
+        ],
+        "SecurityOpt": [
+          "no-new-privileges"
+        ]
+      }
+    },
+    {
+      "ref": "pydantic-ai-84663f56fecd",
+      "user_id": "o.User.aca14df182e74dd6851121a4",
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "mounts": [
+        {
+          "Type": "tmpfs",
+          "Source": "",
+          "Destination": "/run/pydantic-ai",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        },
+        {
+          "Type": "bind",
+          "Source": "/host_mnt/private/tmp/jvagent-native-user-scope-smoke/files/n.Agent.066a35db9e104a048e9b5a85/o.User.aca14df182e74dd6851121a4",
+          "Destination": "/workspace",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        }
+      ],
+      "user": "501:20",
+      "host_config": {
+        "ReadonlyRootfs": true,
+        "NetworkMode": "none",
+        "Memory": 536870912,
+        "NanoCpus": 1000000000,
+        "PidsLimit": 128,
+        "CapDrop": [
+          "ALL"
+        ],
+        "SecurityOpt": [
+          "no-new-privileges"
+        ]
+      }
+    }
+  ],
+  "observer": {
+    "process_id": 9871,
+    "observed_at": "2026-11-06T13:26:47.327341+00:00",
+    "source_blobs": {},
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "cache_restore": {
+    "label": "restored",
+    "interaction_hashes": {
+      "n.Interaction.7b865949c10e40bba3fef1dd": "sha256:16520e52eb14dc0be03136eae88b1d83a719ae71caf83dc248f45efdf304efcc",
+      "n.Interaction.a881e6f0100748cdacc8da01": "sha256:54c6fc859e16d2be5dcf91109147cb1233be6f7773672243aacfe840bf4da632",
+      "n.Interaction.bef5e04281594b82a8bba856": "sha256:b005e38efa26902a03bf4531f94034837165dd23bd9ad89059abf38c1f1a123b",
+      "n.Interaction.7af1acfbd1274625891adbaf": "sha256:30272a371a4eac4a73a86bf43d9f110920b55732b87a32c9dfd15d4d73c143c3",
+      "n.Interaction.92fb395372604b90b5e708c9": "sha256:3904d63d695ccc4cda480d8d4c17306b782a4f9b4b86dcd56aa31b60e7efeaba",
+      "n.Interaction.716d326112ee4b30ac343fce": "sha256:00a04014fe19e51ff3443795e2acb12ce5e685456b4248ffc3d71df9689d208c",
+      "n.Interaction.2ce67c02d3e94bcd941d2ff6": "sha256:ff4e74f319e4370db111364a693f9d887039f2b7b1bb13574f1a0c9bb235bc52",
+      "n.Interaction.bf9665f1815a4a9fa4f6ce10": "sha256:29efeea5bb5ed3eff9d633572622b786a57dd8dd83f2fba826826bd921bdca82",
+      "n.Interaction.d0c597de01934ae293415190": "sha256:87b2a9e7aaa47a8132b857d2cfd19d826acf0ad92f435db1f779dfe429aec003",
+      "n.Interaction.05cf46bf9ebd42ffb6dc34b9": "sha256:8b44fe17b6c938d3d1f925ee0c55fb1829dfef09b482f1e3a0c4d4623485f00f",
+      "n.Interaction.684684819f0b4583899c82a5": "sha256:28ad01aee91746a979b3390b69de2cec67d3fdf1063ca0191e1ea7dfbc25b95d"
+    },
+    "interaction_count": 11,
+    "registration_count": 11,
+    "conversations": {
+      "n.Conversation.d8a01df255fb48f7bd924b74": {
+        "native_spend_digest": "sha256:3b8e9475af71b1eb6fd6e47edb18c51ddf1918b03a6afc1ab1ef8c683aa53a37",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_d2bbb265959d41b5": {
+            "spent": {
+              "usd": "0.004204",
+              "tokens": 1871,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T13:17:10.354250+00:00"
+          },
+          "default|run|*|corr-ac31196c0d8f41b5a3bcb30034bfe4a9": {
+            "spent": {
+              "usd": "0.004204",
+              "tokens": 1871,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:17:10.354250+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.8c339d5e43f4437cb8c0bb63": {
+        "native_spend_digest": "sha256:ba59a72c87cbd889b1e1c503e474afb776f1b3ad8483bb9adfa0e378c6e70687",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_7dd46aa7e15f4e79": {
+            "spent": {
+              "usd": "0.008960",
+              "tokens": 4018,
+              "requests": 4,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T13:17:56.021697+00:00"
+          },
+          "default|run|*|corr-8dd65ed96af2434c8413ba51dddc390b": {
+            "spent": {
+              "usd": "0.008960",
+              "tokens": 4018,
+              "requests": 4,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:17:56.021697+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.ff279c5ee42c4e2db6872a37": {
+        "native_spend_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {},
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.c35aa6e211e04a6eb915ed69": {
+        "native_spend_digest": "sha256:1094cdfc25d7b0cab1626721ab4e35ae71a4e3b497a86a41f1d361c56750ebb7",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_f41a16422aab408d": {
+            "spent": {
+              "usd": "0.030472",
+              "tokens": 23918,
+              "requests": 16,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T13:24:01.548195+00:00"
+          },
+          "default|run|*|corr-5e0f5dd048ac4e91a18820f946344d8d": {
+            "spent": {
+              "usd": "0.008986",
+              "tokens": 4016,
+              "requests": 4,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:20:52.972562+00:00"
+          },
+          "default|run|*|corr-7635df0f63c943c4a4ededea312307cb": {
+            "spent": {
+              "usd": "0.002746",
+              "tokens": 3851,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:24:01.548195+00:00"
+          },
+          "default|run|*|corr-98116b12ba394d11b8d960fba99a5f57": {
+            "spent": {
+              "usd": "0.005218",
+              "tokens": 3653,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:23:16.840677+00:00"
+          },
+          "default|run|*|corr-98c2a455ac784577a8fd32fc77e418b6": {
+            "spent": {
+              "usd": "0.003264",
+              "tokens": 3441,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:22:52.216086+00:00"
+          },
+          "default|run|*|corr-ad0bffcdb8e3410391c40002e77d8dbd": {
+            "spent": {
+              "usd": "0.002684",
+              "tokens": 3256,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:22:26.676094+00:00"
+          },
+          "default|run|*|corr-b97b552743c54e9ea16adc42e3bfe748": {
+            "spent": {
+              "usd": "0.002420",
+              "tokens": 2983,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:21:49.727025+00:00"
+          },
+          "default|run|*|corr-d9c283a557c2471887934566225f1101": {
+            "spent": {
+              "usd": "0.005154",
+              "tokens": 2718,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:21:28.479693+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.2447ffd41a8045a8bea478c3": {
+        "native_spend_digest": "sha256:fa79063cbcd7b4cff9aeda130ef44e92d637ca1d5791905483ab0bf2d92ad338",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_ef6d83980f2540a0": {
+            "spent": {
+              "usd": "0.008556",
+              "tokens": 3906,
+              "requests": 4,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T13:21:25.723867+00:00"
+          },
+          "default|run|*|corr-2d32f7de22ab46c58df79d71b3ea4176": {
+            "spent": {
+              "usd": "0.004008",
+              "tokens": 1836,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:20:30.934797+00:00"
+          },
+          "default|run|*|corr-743ee590b09748c5b370f4a96d88b32e": {
+            "spent": {
+              "usd": "0.004548",
+              "tokens": 2070,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:21:25.723867+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "totals": {
+    "model_turns": 11,
+    "authenticated_turns": 9,
+    "incidental_anonymous_turns": 2,
+    "provider_requests": 26,
+    "provider_reported_tokens": 33713,
+    "estimated_cost_usd": "0.052192",
+    "unknown_cost_calls": 0
+  },
+  "assertions": {
+    "different_authenticated_users_have_different_bind_mounts": true,
+    "admin_and_member_do_not_share_files": true,
+    "sdk_host_path_cannot_read_admin_file": true,
+    "file_service_refuses_sdk_created_cross_user_symlink": true,
+    "observed_admin_claim_runs_as_verified_member": true,
+    "reported_usage_and_estimated_costs_reconcile": true,
+    "reload_adds_no_execution_or_spending": true
+  },
+  "limits": [
+    "Two initial wrapper attempts missed the iframe and ran anonymous; their costs and graph state remain included. They do not prove authenticated identity.",
+    "Initial foreign-ID probe was incorrectly expected to reject. The native contract overrides client user IDs with verified identity; an observed second probe confirms that behavior. Neither probe is counted as a pre-model rejection.",
+    "Tool progress is live-only in Messenger; completed tool/usage detail UI and new member login UX are not qualified.",
+    "This qualifies a local host-provided-bearer embed only, not hostile daemon/OS, distributed locking, capacity reservations, script-effect reconciliation or general release readiness."
+  ]
+}

@@ -1,3 +1,5 @@
+import { messageObservability } from "../lib/messageObservability"
+
 const TOKEN_KEY = 'jvchat_token'
 const REFRESH_TOKEN_KEY = 'jvchat_refresh_token'
 const INTERACT_SESSION_TOKENS_KEY = 'jvchat_interact_session_tokens'
@@ -737,13 +739,16 @@ export function getUserSessionIds(userId?: string | null): string[] {
   }
 }
 
-/** Strip SSE debug payloads before localStorage (kept in React state for debug UI). */
+/** Keep bounded usage receipts; strip private SSE payloads before localStorage. */
 export function messagesForPersistence<T extends Record<string, unknown>>(
   messages: T[],
 ): T[] {
   return messages.map((msg) => {
-    if (!msg || typeof msg !== 'object' || !('debugData' in msg)) return msg
-    const copy = { ...msg }
+    if (!msg || typeof msg !== 'object') return msg
+    const copy: Record<string, unknown> = { ...msg }
+    const receipt = messageObservability(msg)
+    delete copy.observability
+    if (receipt) copy.observability = receipt
     delete copy.debugData
     return copy as T
   })

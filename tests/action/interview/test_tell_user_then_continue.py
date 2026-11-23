@@ -32,7 +32,7 @@ async def _continue_directive(session, spec, sidebar):
 
 @pytest.mark.asyncio
 async def test_work_email_next_question_is_employer(signup_spec):
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "jane@mail.com")
@@ -48,7 +48,7 @@ async def test_work_email_next_question_is_employer(signup_spec):
 
 @pytest.mark.asyncio
 async def test_no_next_question_chains_review(signup_spec):
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "jane@gmail.com")
@@ -62,7 +62,7 @@ async def test_no_next_question_chains_review(signup_spec):
 
 @pytest.mark.asyncio
 async def test_personal_email_next_question_is_phone(signup_spec):
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     session.set_value("user_name", "Jane Doe")
     session.set_value("available_times", "Monday 9:00 AM - 11:00 AM")
     session.set_value("user_email", "jane@gmail.com")

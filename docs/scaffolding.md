@@ -4,6 +4,36 @@ jvagent ships commands to generate a **git-ready application directory** (`app.y
 
 **Runtime note:** The server reads **`app.yaml`** and **`agents/<namespace>/<agent_id>/agent.yaml`**. The `profiles/` tree is for **authoring** when you run the CLI; it is not loaded automatically at runtime unless you add that behavior in your own tooling.
 
+## Native defaults
+
+New `app create` and `agent create` calls without an explicit profile use
+`native`: NativeHarnessAction plus ReplyAction, the native OpenAI provider and
+an app-relative `skills/conversation/SKILL.md` starter. They do not add an
+Orchestrator or a model-service Action. Existing app/agent files and explicitly
+selected profiles are not converted by this default change.
+Source: `jvagent/scaffold/builtin_profiles/native.yaml:2`,
+`jvagent/scaffold/operations.py:462`, `jvagent/cli/app_commands.py:122`.
+
+Use Python 3.11 or newer and install `jvagent[native-harness]`. Generated README
+and native Docker stubs include the extra. Set the JWT secret, admin password
+and OpenAI key in the private `.env`; scaffolding does not create credentials.
+`--force` regeneration preserves an existing native conversation SKILL.md and
+refuses starter paths that escape through symlinks. See
+`jvagent/scaffold/operations.py` and the
+[native catalog guide](../.planning/runbooks/native-skill-catalog.md) to expose
+additional skills. The default starter is one explicitly loaded primary skill.
+
+Public first contact retains the existing anonymous session-capability contract:
+login is not required to create a new public conversation, while resuming an
+owned conversation requires the matching bearer or session capability. An invalid
+bearer cannot downgrade to anonymous access. Native execution always enforces
+these identity checks (`jvagent/action/interact/session_token.py:464`, `:520`).
+This is not a private-only ingress policy.
+
+This is a new-app cutover, not stored graph/state migration or release
+qualification. Legacy profiles remain explicit transition surfaces until their
+compatibility and removal gates pass.
+
 ## Commands overview
 
 | Command | Purpose |
@@ -45,7 +75,7 @@ Creates the output directory and writes:
 | `--version`, `--license`, `--homepage` | App metadata defaults |
 | `--jvagent-version SPEC` | `jvagent:` semver in YAML (default `~<installed version>`) |
 | `--deployment` | `local` (default), `aws-lambda`, or `azure-functions` |
-| `--profile NAME` | Default action profile when an agent spec has no `@profile` (default `minimal`) |
+| `--profile NAME` | Default action profile when an agent spec has no `@profile` (default `native`) |
 | `--agent SPEC` | Repeatable. See **Agent spec** below |
 | `--action ID` | Repeatable. Extra stock action id (e.g. `jvagent/foo`); merged into every scaffolded agent in that run |
 | `--no-copy-builtin-profiles` | Skip copying built-in profile YAML into `profiles/builtin/` |
@@ -66,8 +96,7 @@ jvagent app create --yes \
   --title "My App" \
   --description "Production deployment" \
   --author "My Org" \
-  --agent jvagent/bot@minimal \
-  --profile minimal
+  --agent jvagent/bot
 ```
 
 AWS-oriented defaults:
@@ -76,7 +105,7 @@ AWS-oriented defaults:
 jvagent app create --yes --dir ./my_app --app-id my_app --title "My App" \
   --description "Lambda deployment" --author "My Org" \
   --deployment aws-lambda \
-  --agent jvagent/bot@minimal
+  --agent jvagent/bot
 ```
 
 Interactive (omit `--yes`):
@@ -100,7 +129,7 @@ Used with `jvagent app create --agent ...` and as the positional argument to `jv
 
 1. `profiles/<key>.yaml` (or `profiles/<key>` as a file)
 2. `profiles/builtin/<key>.yaml`
-3. Built-in packaged profiles: `orchestrator` (default for new agents), `minimal`, `conversational`, `whatsapp_voice`, `research`
+3. Built-in packaged profiles: `native` (default for new agents); transitional explicit profiles `orchestrator`, `minimal`, `conversational`, `whatsapp_voice`, `research`
 
 Built-in profiles can **extend** other profiles (`extends:`) and pull in more YAML via `include:` (see **Profile YAML** below).
 
@@ -120,7 +149,7 @@ Use **`jvagent app profile new`** to create a starter file:
 
 ```bash
 cd /path/to/my_app
-jvagent app profile new my_stack --extends minimal
+jvagent app profile new my_stack --extends native
 ```
 
 Then create an agent with `@my_stack` (after editing `profiles/my_stack.yaml`).
@@ -146,7 +175,7 @@ Adds a new agent under `agents/<namespace>/<agent_id>/`, writes `agent.yaml` and
 | Flag | Description |
 |------|-------------|
 | `SPEC` | Positional (optional if TTY prompts): `namespace/agent` or `namespace/agent@profile` |
-| `--profile NAME` | Used when `SPEC` has no `@...` (default `minimal`) |
+| `--profile NAME` | Used when `SPEC` has no `@...` (default `native`) |
 | `--action ID` | Repeatable; extra actions merged into the resolved profile |
 | `--force` | Overwrite existing `agent.yaml` / refresh files; see CLI messages for duplicate `app.yaml` registration |
 | `--version`, `--author`, `--jvagent-version` | Override defaults written into `agent.yaml` |
@@ -159,7 +188,7 @@ jvagent agent create acme/support@conversational
 ```
 
 ```bash
-jvagent /path/to/my_app agent create acme/bot --profile minimal
+jvagent /path/to/my_app agent create acme/bot
 ```
 
 After adding an agent, reload the graph:
@@ -240,7 +269,7 @@ jvagent /path/to/app skill show research --agent acme/bot --builtin
 | Preset | Effect |
 |--------|--------|
 | `local` | JSON DB defaults in `app.yaml`; standard `.env.example` |
-| `aws-lambda` | DynamoDB-oriented `database` block in `app.yaml`; extra serverless env comments in `.env.example`; `deploy.example.yaml` and `Dockerfile` stubs |
+| `aws-lambda` | Extra serverless env comments in `.env.example`; `deploy.example.yaml` and `Dockerfile` stubs |
 | `azure-functions` | Notes in `.env.example`; jvspatial may detect serverless mode, but deferred task scheduling on non-AWS providers may require a custom setup—see jvspatial docs |
 
 For Lambda, LWA, and deferred HTTP behavior, see [jvspatial serverless-mode](https://github.com/trueselph/jvspatial/blob/main/docs/md/serverless-mode.md) (or your checkout of `docs/md/serverless-mode.md`).

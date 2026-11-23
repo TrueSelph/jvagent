@@ -33,7 +33,7 @@ async def test_note_on_final_field_chains_to_review_not_reply():
 
     # All required fields except the note-bearing user_email are already stored;
     # phone (optional) is skipped — so storing user_email leaves nothing to ask.
-    session = InterviewSession(interview_type="signup_interview")
+    session = InterviewSession(interview_type="signup-interview")
     for key, val in [
         ("user_name", "Eldon Marks"),
         ("available_times", "Monday 9am"),

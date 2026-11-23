@@ -1,0 +1,10 @@
+{
+  "blockers": [
+    "Enabled code execution requires a reviewed native image and resource policy; legacy subprocess execution cannot migrate",
+    "Setting requires qualified native policy migration: channel_overrides",
+    "Model service has unqualified callers or provider declarations; review before removal"
+  ],
+  "selected_skill_count": 10,
+  "source_digest": "sha256:e70e627bc5fd6ddbcbbc38644dc39952692e5dac416b0fe8f2e206814dd57162",
+  "scope": "Offline proposals only; reference graph cutover and legacy removal remain unqualified."
+}

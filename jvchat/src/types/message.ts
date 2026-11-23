@@ -1,3 +1,5 @@
+import type { MessageObservability } from "../lib/messageObservability";
+
 /** Local outgoing attachments: blob previews are session-only; data URLs persist in localStorage. */
 export interface UserMessageAttachmentPreview {
   name: string
@@ -15,6 +17,7 @@ export interface Message {
   timestamp: string
   streaming?: boolean
   debugData?: any // Store final message JSON for debug view
+  observability?: MessageObservability // Bounded usage receipt, safe for local history
   interactionId?: string // Used to prevent cross-interaction overwrites
   /** Echo of server ResponseMessage.metadata (e.g. media_url, media_type) */
   metadata?: Record<string, unknown>

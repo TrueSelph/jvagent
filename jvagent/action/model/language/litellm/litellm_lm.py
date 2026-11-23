@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+import math
+from typing import Any, AsyncGenerator, ClassVar, Dict, List, Optional
 
 from jvspatial.core.annotations import attribute
 
@@ -37,6 +38,19 @@ _MISSING = (
 
 class LiteLLMLanguageModelAction(LanguageModelAction):
     """Universal adapter over ``litellm.acompletion``."""
+
+    pydantic_ai_supported_settings: ClassVar[frozenset[str]] = frozenset(
+        {
+            "seed",
+            "stop_sequences",
+            "top_k",
+            "presence_penalty",
+            "frequency_penalty",
+            "logit_bias",
+            "service_tier",
+            "thinking",
+        }
+    )
 
     provider: str = attribute(default="litellm", description="Provider label")
     model: str = attribute(
@@ -261,6 +275,21 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
         message = getattr(choice, "message", None)
         content = getattr(message, "content", None) if message is not None else None
         usage = self._usage_from(getattr(response, "usage", None))
+        hidden = getattr(response, "_hidden_params", None)
+        if not isinstance(hidden, dict):
+            hidden = {}
+        response_cost = hidden.get("response_cost")
+        try:
+            response_cost = float(response_cost)
+        except (TypeError, ValueError):
+            response_cost = None
+        if (
+            response_cost is not None
+            and math.isfinite(response_cost)
+            and response_cost >= 0
+        ):
+            usage["cost_usd"] = response_cost
+            usage["cost_source"] = "litellm_response_cost"
         # ``model`` is the provider-resolved id (e.g. gpt-4.1-2025-04-14).
         # LanguageModelAction.query_messages sets ``request_model`` to what we
         # asked for (e.g. openai/gpt-4.1) for observability / Debug retest.
@@ -274,6 +303,30 @@ class LiteLLMLanguageModelAction(LanguageModelAction):
             thinking_content=self._thinking_from(message),
             thinking_tokens=usage.get("thinking_tokens"),
         )
+
+    async def track_usage(self, usage, duration=None, result=None) -> None:
+        """Preserve LiteLLM cost or attach a clearly marked local estimate."""
+        metrics = getattr(result, "metrics", None)
+        if isinstance(metrics, dict):
+            cost = metrics.get("cost_usd")
+            try:
+                cost = float(cost) if cost is not None else None
+            except (TypeError, ValueError):
+                cost = None
+            from jvagent.action.model.cost_estimator import is_valid_cost_usd
+
+            if not is_valid_cost_usd(cost):
+                from jvagent.action.model.cost_estimator import estimate_cost
+
+                cost = estimate_cost(
+                    str(getattr(result, "model", "") or self.model),
+                    "litellm",
+                    metrics,
+                )
+                metrics["cost_usd"] = cost
+                metrics["cost_source"] = "jv_cost_estimator"
+            self.total_cost += cost
+        await super().track_usage(usage, duration, result=result)
 
     # -- LanguageModelAction implementation -----------------------------------------
 

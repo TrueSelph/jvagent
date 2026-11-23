@@ -24,6 +24,8 @@ from jvspatial.core.context import (
 )
 from jvspatial.db import get_database_manager
 
+from jvagent.harness.completion_tool import CompleteText
+
 from .adapter import _count_structure_nodes, strip_redundant_md_suffix, tree_to_graph
 from .config import (
     PAGEINDEX_DB_NAME,
@@ -44,7 +46,9 @@ from .docling_convert import (
 )
 from .llm_bridge import (
     PageIndexCancelled,
+    attach_native_pdf_bridge,
     attach_pageindex_cancel_event,
+    check_pageindex_cancelled,
     set_pageindex_model_action,
     signal_pageindex_cancel,
 )
@@ -58,6 +62,8 @@ from .md_tree_enriched import (
     md_to_tree,
 )
 from .models import DocumentContentEdge, DocumentNode, DocumentRootNode, node_enabled
+from .native_pdf import NativePDFBridge, extract_native_pdf_pages
+from .native_search import Complete
 
 logger = logging.getLogger(__name__)
 
@@ -306,6 +312,7 @@ def _pdf_page_index_worker(
     if_add_node_text: bool,
     if_add_node_summary: bool,
     if_add_doc_description: bool,
+    native_bridge: NativePDFBridge | None = None,
 ) -> Dict[str, Any]:
     """Run sync page_index_main in a thread with optional cooperative cancel.
 
@@ -314,6 +321,7 @@ def _pdf_page_index_worker(
     ``{log_base}/logs/`` without changing process cwd.
     """
     attach_pageindex_cancel_event(cancel_event)
+    attach_native_pdf_bridge(native_bridge)
     try:
         user_opt = {
             "model": model,
@@ -333,8 +341,21 @@ def _pdf_page_index_worker(
         if log_base:
             log_dir = os.path.join(log_base, "logs")
             logger = _PageIndexDirLogger(doc, log_dir)
-        return page_index_main(doc, opt, logger=logger)
+        if native_bridge is None:
+            return page_index_main(doc, opt, logger=logger)
+        pages = extract_native_pdf_pages(doc)
+        try:
+            result = page_index_main(doc, opt, logger=logger, page_list=pages)
+        except Exception:
+            if native_bridge.failure is not None:
+                raise native_bridge.failure from None
+            raise
+        if native_bridge.failure is not None:
+            raise native_bridge.failure from None
+        check_pageindex_cancelled()
+        return result
     finally:
+        attach_native_pdf_bridge(None)
         attach_pageindex_cancel_event(None)
 
 
@@ -464,6 +485,11 @@ async def assimilate_document(
     convert_to_markdown: bool = False,
     ocr: bool = False,
     docling_ocr_engine: Optional[str] = None,
+    complete: Optional[CompleteText] = None,
+    pdf_complete: Complete | None = None,
+    drive_source_key: Optional[str] = None,
+    drive_revision_key: Optional[str] = None,
+    drive_operation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assimilate a PDF, Markdown/text, or office document via PageIndex and optionally persist.
 
@@ -497,6 +523,8 @@ async def assimilate_document(
     Returns:
         Dict with doc_name, structure, doc_description (if requested), _root_id (if persist)
     """
+    if sum(owner is not None for owner in (complete, pdf_complete, model_action)) > 1:
+        raise ValueError("Use one PageIndex model execution owner")
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
 
     model = model or "gpt-4o-mini"
@@ -640,6 +668,8 @@ async def assimilate_document(
             is_pdf = False
 
         use_pdf_page_index = is_pdf and not convert_to_markdown
+        if pdf_complete is not None and not use_pdf_page_index:
+            raise ValueError("Native PDF completion requires the classic PDF parser")
         ingest_kind = "pdf_pageindex" if use_pdf_page_index else "markdown_enriched"
 
         if not use_pdf_page_index and isinstance(doc, BytesIO):
@@ -658,6 +688,8 @@ async def assimilate_document(
             doc = t_txt.name
 
         if use_pdf_page_index:
+            if complete is not None:
+                raise ValueError("Native PDF tree ingestion is not enabled")
             # page_index() uses asyncio.run() internally; run in executor to avoid
             # "asyncio.run() cannot be called from a running event loop"
             from jvagent.core.app import App
@@ -667,6 +699,9 @@ async def assimilate_document(
             log_base = resolve_pageindex_json_log_dir(merged)
 
             loop = asyncio.get_running_loop()
+            native_bridge = (
+                NativePDFBridge(pdf_complete) if pdf_complete is not None else None
+            )
             fut = loop.run_in_executor(
                 None,
                 functools.partial(
@@ -682,6 +717,7 @@ async def assimilate_document(
                     if_add_node_text=if_add_node_text,
                     if_add_node_summary=if_add_node_summary,
                     if_add_doc_description=if_add_doc_description,
+                    **({"native_bridge": native_bridge} if native_bridge else {}),
                 ),
             )
             fut.add_done_callback(_discard_pageindex_future)
@@ -690,6 +726,9 @@ async def assimilate_document(
             except asyncio.CancelledError:
                 signal_pageindex_cancel(cancel_event)
                 raise
+            finally:
+                if native_bridge is not None:
+                    await native_bridge.stop()
         else:
             md_path = Path(doc)
             raw_text = md_path.read_text(encoding="utf-8")
@@ -718,6 +757,7 @@ async def assimilate_document(
                 if_add_doc_description=if_add_doc_description,
                 model=model,
                 summary_token_threshold=summary_token_threshold or 200,
+                **({"complete": complete} if complete is not None else {}),
             )
             heading_line_offset = int(result.pop("_heading_line_offset", 0) or 0)
             if line_map and result.get("structure"):
@@ -763,6 +803,10 @@ async def assimilate_document(
         if persist and result.get("structure"):
             result["collection_name"] = collection_name
             result["metadata"] = metadata
+            if drive_source_key is not None:
+                result["drive_source_key"] = drive_source_key
+                result["drive_revision_key"] = drive_revision_key
+                result["drive_operation_id"] = drive_operation_id
             if doc_description is not None:
                 result["doc_description"] = doc_description
             if doc_url is not None:
@@ -786,12 +830,16 @@ async def assimilate_document(
 async def get_document_roots(
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
+    *,
+    doc_names: Optional[set[str]] = None,
 ) -> List[DocumentRootNode]:
     """Get DocumentRootNodes filtered by collection and optional metadata."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     async with _scoped_pageindex_context(context):
         query: Dict[str, Any] = {"context.collection_name": collection_name}
+        if doc_names is not None:
+            query["context.doc_name"] = {"$in": sorted(doc_names)}
         query.update(_build_metadata_query(metadata_filter or {}))
         logger.debug(
             "PageIndex get_document_roots: collection=%s query=%s",
@@ -831,20 +879,24 @@ async def _document_node_counts_by_doc_name(collection_name: str) -> Dict[str, i
 
 async def count_document_chunks(doc_name: str, collection_name: str) -> int:
     """Number of DocumentNode chunks for a single document."""
-    nodes = await DocumentNode.find(
-        {
-            "context.doc_name": doc_name,
-            "context.collection_name": collection_name,
-        }
-    )
-    return len(nodes)
+    initialize_pageindex_database(app_id=await _get_app_id_from_node())
+    async with _scoped_pageindex_context(_get_pageindex_context()):
+        nodes = await DocumentNode.find(
+            {
+                "context.doc_name": doc_name,
+                "context.collection_name": collection_name,
+            }
+        )
+        return len(nodes)
 
 
 async def list_documents(
     collection_name: str = "default",
     metadata_filter: Optional[Dict[str, Any]] = None,
+    *,
+    complete_only: bool = False,
 ) -> List[Dict[str, Any]]:
-    """List documents in the PageIndex graph, optionally filtered by collection and metadata."""
+    """List indexed documents, optionally requiring a completed root publication."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
     context = _get_pageindex_context()
     async with _scoped_pageindex_context(context):
@@ -863,34 +915,55 @@ async def list_documents(
                 "chunks": counts.get(r.doc_name, 0),
             }
             for r in roots
+            if not complete_only
+            or ((r.chunks or 0) > 0 and counts.get(r.doc_name, 0) > 0)
         ]
 
 
 async def delete_document(
     doc_name: str,
     collection_name: str = "default",
+    *,
+    root_id: Optional[str] = None,
 ) -> bool:
     """Delete a document and all its nodes from the PageIndex graph."""
     initialize_pageindex_database(app_id=await _get_app_id_from_node())
-    root = await get_document_root(doc_name, collection_name=collection_name)
-    if not root:
-        return False
-
     context = _get_pageindex_context()
     async with _scoped_pageindex_context(context):
-        # Clean up lexical index before cascade-deleting graph nodes
+        if root_id is None:
+            root = await get_document_root(doc_name, collection_name=collection_name)
+        else:
+            root = await DocumentRootNode.get(root_id)
+        if (
+            not isinstance(root, DocumentRootNode)
+            or root.collection_name != collection_name
+            or root.doc_name != doc_name
+        ):
+            return False
+
+        pending = list(await root.outgoing(node=DocumentNode, edge=DocumentContentEdge))
+        chunk_ids: set[str] = set()
+        while pending:
+            chunk = pending.pop()
+            if chunk.id in chunk_ids or chunk.collection_name != collection_name:
+                continue
+            chunk_ids.add(chunk.id)
+            pending.extend(
+                await chunk.outgoing(node=DocumentNode, edge=DocumentContentEdge)
+            )
+
+        await root.delete()
         try:
             from .lexical_index import remove_document_nodes
-            from .models import DocumentNode
 
-            nodes = await DocumentNode.find(
-                {
-                    "context.doc_name": doc_name,
-                    "context.collection_name": collection_name,
-                }
-            )
-            if nodes:
-                await remove_document_nodes([n.id for n in nodes], collection_name)
+            # Graph cascade preserves chunks shared with surviving roots.
+            removed_ids = [
+                chunk_id
+                for chunk_id in sorted(chunk_ids)
+                if await DocumentNode.get(chunk_id) is None
+            ]
+            if removed_ids:
+                await remove_document_nodes(removed_ids, collection_name)
         except Exception:
             # Promote to warning: orphan postings linger forever and surface as
             # phantom candidates in subsequent BM25 retrieval. A periodic
@@ -904,7 +977,6 @@ async def delete_document(
                 exc_info=True,
             )
 
-        await root.delete()
         logger.info(f"Deleted document '{doc_name}'")
         return True
 
@@ -993,7 +1065,18 @@ async def import_documents(
             for root in roots:
                 await root.delete()
         for root_data in data.get("roots", []):
-            await DocumentRootNode(**root_data).save()
+            await DocumentRootNode(
+                **{
+                    key: value
+                    for key, value in root_data.items()
+                    if key
+                    not in {
+                        "drive_source_key",
+                        "drive_operation_id",
+                        "drive_revision_key",
+                    }
+                }
+            ).save()
         imported_nodes: list = []
         for node_data in data.get("nodes", []):
             node = DocumentNode(**node_data)

@@ -473,7 +473,37 @@ class HarnessRuntime:
                 expires_at=str(snap_raw.get("expires_at") or ""),
                 revoked=bool(snap_raw.get("revoked")),
             )
+        envelopes = [EventEnvelope(**raw) for raw in (payload.get("outbox") or [])]
+        if any(env.session_id != caller.session_id for env in envelopes):
+            raise HarnessContractError(
+                "checkpoint outbox contains an event for another session"
+            )
+        imported_by_sequence: Dict[int, EventEnvelope] = {}
+        for env in envelopes:
+            prior = imported_by_sequence.get(env.sequence)
+            if prior is not None and prior != env:
+                raise HarnessContractError(
+                    "checkpoint outbox contains conflicting event sequences"
+                )
+            imported_by_sequence[env.sequence] = env
         with self.store.lock:
+            merged_outbox: Optional[List[EventEnvelope]] = None
+            if imported_by_sequence:
+                current_by_sequence = {
+                    event.sequence: event
+                    for event in self.store.outbox.get(caller.session_id, [])
+                }
+                for sequence, event in imported_by_sequence.items():
+                    existing = current_by_sequence.get(sequence)
+                    if existing is not None and existing != event:
+                        raise HarnessContractError(
+                            "checkpoint conflicts with a newer session event"
+                        )
+                    current_by_sequence.setdefault(sequence, event)
+                merged_outbox = [
+                    current_by_sequence[sequence]
+                    for sequence in sorted(current_by_sequence)
+                ][-MAX_EVENTS_PER_SESSION:]
             self.store.runs[journal.correlation_id] = journal
             if journal.interaction_id:
                 self.store.runs_by_interaction[journal.interaction_id] = (
@@ -501,9 +531,8 @@ class HarnessRuntime:
                 result = item.get("result")
                 if result is not None:
                     self.store.invocation_results[rec.invocation_id] = str(result)
-            envelopes = [EventEnvelope(**raw) for raw in (payload.get("outbox") or [])]
-            if envelopes:
-                self.store.outbox[caller.session_id] = envelopes
+            if merged_outbox is not None:
+                self.store.outbox[caller.session_id] = merged_outbox
         return journal
 
     def persist_to_interaction(self, interaction: Any, correlation_id: str) -> None:

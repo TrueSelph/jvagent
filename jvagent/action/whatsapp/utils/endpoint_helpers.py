@@ -22,6 +22,7 @@ from jvagent.action.interact.webhook_pipeline import (
     get_conversation_with_lock,
 )
 from jvagent.core.public_url import get_public_base_url
+from jvagent.tooling.channel_identity import bind_verified_channel_sender
 
 from ..whatsapp_action import WhatsAppAction
 from .conversation_lock_manager import ConversationLockManager
@@ -152,17 +153,18 @@ async def create_whatsapp_walker(
         convo_obj = await get_conversation_with_lock(sender, agent_id=agent_id)
 
         if convo_obj and getattr(convo_obj, "session_id", None):
-            return InteractWalker(
+            walker = InteractWalker(
                 agent_id=agent_id,
                 utterance=utterance,
                 channel="whatsapp",
                 data=data_dict,
                 session_id=convo_obj.session_id,
+                user_id=sender,
                 user_name=sender_name,
                 stream=False,  # WhatsApp uses non-streaming mode
             )
         else:
-            return InteractWalker(
+            walker = InteractWalker(
                 agent_id=agent_id,
                 utterance=utterance,
                 channel="whatsapp",
@@ -171,6 +173,12 @@ async def create_whatsapp_walker(
                 user_name=sender_name,
                 stream=False,  # WhatsApp uses non-streaming mode
             )
+        # Only authenticated webhook/deferred adapter processing calls this
+        # helper. Keep sender authority out of the untrusted data dictionary.
+        bind_verified_channel_sender(
+            walker, agent_id=agent_id, sender=sender, channel="whatsapp"
+        )
+        return walker
     except ValidationError as e:
         logger.error(f"Validation error creating walker for user {sender}: {e}")
         return None

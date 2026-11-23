@@ -6,6 +6,19 @@ This page documents the canonical programmatic API for **canned** proactive deli
 
 For **agentic** follow-ups (the model must reason, use tools/skills, and compose a reply from conversation state), queue a `PROACTIVE` task and let **`TaskMonitor`** dispatch it through the full Orchestrator — see [task-tracking.md](task-tracking.md).
 
+The native development profile dispatches the same queue through the declared
+`NativeHarnessAction`, using public Pydantic AI/Harness execution. Its server-only
+claim binding preserves an empty user utterance; the scheduled objective is typed
+model input. A task may select an installed sibling skill; pinned tools cannot
+expand that skill's policy. Native task webhooks require separate external-effect
+qualification. A failed, blocked or uncertain native run fails its queue task
+without automatic model retry. Completion requires a delivered result and durable
+Interaction closure (`jvagent/core/task_dispatch.py:34`,
+`jvagent/action/task_monitor/task_monitor.py:506`,
+`jvagent/action/task_monitor/finalize.py:99`). See the bounded
+[native qualification record](../.planning/plans/2026-11-05-native-proactive.md);
+this does not qualify all triggers, channels or distributed scheduling.
+
 | Need | API / action |
 |------|----------------|
 | Pre-formed text, deliver now | `Agent.send_proactive_message(...)` (this page) |

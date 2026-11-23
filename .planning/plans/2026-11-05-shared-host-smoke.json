@@ -1,0 +1,316 @@
+{
+  "parent_revision": "git-commit:d4f67b99fab32c68181a3558ec20717e66714f6c",
+  "tested_source": "parent plus recorded working-tree blobs; final browser success after the runtime restart; final changes to embed replay validated by regression",
+  "source_blobs": {
+    "jvagent/action/actions.py": "git-blob:afa6d6b42d0331732465c1fabef97971ab8e4ad8",
+    "jvagent/action/interact/endpoints.py": "git-blob:ce46c544ecfbb559b6ba0ac47c1eea9d0d312186",
+    "jvagent/action/interact/interact_walker.py": "git-blob:d8111f05e66df0e3019c28cc6dbfab28a8e310e6",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:cade35ed9d6f1002e5d79ee5cd659608b6a785b1",
+    "jvagent/action/orchestrator/host_context.py": "git-blob:d583d7e1493bf10c3b36c3a650aec8af585ac678",
+    "jvagent/action/response/response_bus.py": "git-blob:0a85521ed1c6cd32bb6af8f3c13f7ac03cbc1320",
+    "jvagent/action/response/streaming.py": "git-blob:06e4b93c335a08fc17fd20e73e8626461baa6934",
+    "jvagent/core/agent.py": "git-blob:54d2fb32c83999a5f9b462a5809dc56048f816e6",
+    "jvagent/core/execution_owner.py": "git-blob:7800c213c9a9223b5fcd29716ffc8907b2d162bf",
+    "jvagent/core/host_context.py": "git-blob:4f04cbff9731166c3f0476affc8e2d942e18838b",
+    "jvagent/embed/interact.py": "git-blob:7492e1af997a8ba97a7b9302066175d09b726761",
+    "tests/action/interact/test_interact_init.py": "git-blob:65fcb8b949fe2b4a70ca79e2c037a658dad378a2",
+    "tests/action/response/test_bus_registry.py": "git-blob:7f33a75f58c12068aaa65da877b9d124a07c31d4",
+    "tests/core/test_execution_owner.py": "git-blob:339259fa665a7e0b6b9811e7587ec12f52457bf6",
+    "tests/harness/native/test_import_isolation.py": "git-blob:e8022b49689f837e04723adfceba256d8a37edbc",
+    "tests/harness/native/test_native_action.py": "git-blob:7d0036751a8eb18d2cf4eea9b4e11f304a6ced2c",
+    "tests/test_embed_stream.py": "git-blob:4ab26342a57d1d97e45cefa79159763b6c6343d5"
+  },
+  "fixture": {
+    "app": "/private/tmp/jvagent-interview-host-smoke",
+    "api": "http://127.0.0.1:8135",
+    "ui": "http://127.0.0.1:3135",
+    "database": "jvagent_interview_host",
+    "caller": "disposable administrator",
+    "model": "openai:gpt-4.1",
+    "provider_api": "Responses",
+    "instrumentation": "module-name observer only; no runtime patches"
+  },
+  "turns": [
+    {
+      "interaction_id": "n.Interaction.e64dfab7b2624c069fb4de67",
+      "session_id": "sess_329f3abff904419e",
+      "utterance": "Use the MCP tool to look up rehearsal REHEARSAL-47 and tell me the room and start time.",
+      "reply": "Rehearsal REHEARSAL-47 is in room Cedar and starts at 14:30.",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 620,
+          "output_tokens": 48
+        },
+        "output": "Rehearsal REHEARSAL-47 is in room Cedar and starts at 14:30.",
+        "run_id": "corr-f5139d3421de454d94e95ce1255e5691",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T12:10:18.460660+00:00",
+        "total_tokens": 668,
+        "prompt_tokens": 620,
+        "total_cost_usd": 0.001624,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 48,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001624,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T08:10:11.507545",
+      "completed_at": "2026-11-05T08:10:18.460597",
+      "backend_duration_seconds": 6.953052,
+      "snapshot_count": 6,
+      "effects": [
+        {
+          "run_id": "corr-f5139d3421de454d94e95ce1255e5691",
+          "status": "completed",
+          "ended_at": "2026-11-05T12:10:16.475106Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T12:10:16.416425Z",
+          "tool_call_id": "call_zTkRv7boBO8IjkgbEeKQLO81",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "tool_call_completed",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.23f6d66f69404a3c9ced2b6b",
+      "session_id": "sess_aeeef3302d9540b6",
+      "utterance": "Use the MCP lookup tool for rehearsal MISSING-47. If the lookup fails, tell me clearly and do not invent a room or start time.",
+      "reply": "The lookup for rehearsal MISSING-47 failed. I do not have information about the room or start time.",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 620,
+          "output_tokens": 46
+        },
+        "output": "The lookup for rehearsal MISSING-47 failed. I do not have information about the room or start time.",
+        "run_id": "corr-9168ec3edae44e19bcb33d2beaabea30",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T12:12:38.749894+00:00",
+        "total_tokens": 666,
+        "prompt_tokens": 620,
+        "total_cost_usd": 0.001608,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 46,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001608,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T08:12:34.342757",
+      "completed_at": "2026-11-05T08:12:38.749832",
+      "backend_duration_seconds": 4.407075,
+      "snapshot_count": 6,
+      "effects": [
+        {
+          "run_id": "corr-9168ec3edae44e19bcb33d2beaabea30",
+          "status": "failed",
+          "ended_at": "2026-11-05T12:12:36.581631Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T12:12:36.178136Z",
+          "tool_call_id": "call_xaXktNqTZzhWpI6tYBITy3fF",
+          "effect_summary": "ToolRetryError('Error executing tool lookup_record')",
+          "idempotency_key": null
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "tool_call_failed",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.86c66638fa654369842608b7",
+      "session_id": "sess_13baf44683d54efc",
+      "utterance": "For this final host-extraction check, use the MCP lookup tool for REHEARSAL-47 and state only its room and start time.",
+      "reply": "Room: Cedar  \nStart time: 14:30",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 632,
+          "output_tokens": 37
+        },
+        "output": "Room: Cedar  \nStart time: 14:30",
+        "run_id": "corr-fc898cede05f487aabfb769fb227881e",
+        "status": "delivered",
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T12:15:31.564033+00:00",
+        "total_tokens": 669,
+        "prompt_tokens": 632,
+        "total_cost_usd": 0.00156,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 37,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.00156,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T08:15:26.355067",
+      "completed_at": "2026-11-05T08:15:31.563984",
+      "backend_duration_seconds": 5.208917,
+      "snapshot_count": 6,
+      "effects": [
+        {
+          "run_id": "corr-fc898cede05f487aabfb769fb227881e",
+          "status": "completed",
+          "ended_at": "2026-11-05T12:15:30.073553Z",
+          "tool_name": "mcp_records__lookup_record",
+          "started_at": "2026-11-05T12:15:30.023542Z",
+          "tool_call_id": "call_iZnu1kFSbvcxcTXD6bs7wCRz",
+          "effect_summary": null,
+          "idempotency_key": null
+        }
+      ],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "tool_call_started",
+        "tool_call_completed",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    },
+    {
+      "interaction_id": "n.Interaction.b2c84522c4bc4762aa87ecef",
+      "session_id": "sess_13baf44683d54efc",
+      "utterance": "Without looking up again, what room and start time did you just find? Answer in one short sentence.",
+      "reply": "The room is Cedar and the start time is 14:30.",
+      "closed": true,
+      "emitted": true,
+      "native_run": {
+        "usage": {
+          "requests": 1,
+          "input_tokens": 383,
+          "output_tokens": 16
+        },
+        "output": "The room is Cedar and the start time is 14:30.",
+        "run_id": "corr-72e46227e37c4803b925ce9cb6ccb51d",
+        "status": "delivered",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-fc898cede05f487aabfb769fb227881e"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-05T12:24:30.114608+00:00",
+        "total_tokens": 399,
+        "prompt_tokens": 383,
+        "total_cost_usd": 0.000894,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 16,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.000894,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0
+      },
+      "started_at": "2026-11-05T08:24:25.189000",
+      "completed_at": "2026-11-05T08:24:30.114566",
+      "backend_duration_seconds": 4.925566,
+      "snapshot_count": 3,
+      "effects": [],
+      "event_kinds": [
+        "run_started",
+        "model_request_started",
+        "model_request_completed",
+        "run_completed"
+      ],
+      "tasks": []
+    }
+  ],
+  "totals": {
+    "model_call_count": 7,
+    "total_tokens": 2402,
+    "estimated_cost_usd": 0.005686,
+    "unknown_cost_call_count": 0
+  },
+  "probe_read_at_utc": "2026-11-05T08:25:50.756943-04:00",
+  "probe_backend_listening_pid": 35440,
+  "post_finalization_module_probe": {
+    "observed_at": "2026-11-05T12:24:19.787343+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": []
+  },
+  "last_mcp_server_pid": 35469,
+  "last_mcp_server_exit_confirmed": true,
+  "limitations": [
+    "Four functional browser turns are not a performance comparison or release qualification.",
+    "Only disposable administrator HTTP/jvchat workflow with plain stdio MCP read; ordinary-member, popup messenger and live embedded-provider turns remain unqualified in this round.",
+    "Signed-context pass-through and nonce/caller/expiry/replay are deterministic regressions, not an actual-provider signed-host workflow.",
+    "Embedded cancellation ownership and scoped fast-reply replay are deterministic tests; provider/tool/delivery cancellation browser matrix remains open.",
+    "Declared Redis/Dynamo/multiple-worker topology is rejected; this does not detect an undeclared external worker pool or qualify distributed fencing.",
+    "Native durable cursor delivery replay is explicitly unsupported; process queue replay is bounded and not durable.",
+    "Provider token receipts are known; dollar costs are pricing estimates and request timing remains unmeasured in usage. Backend elapsed time comes from persisted Interaction timestamps.",
+    "InterviewAction is hosted but no native interview activation/continuation/validators/hooks have been enabled.",
+    "Legacy/pilot engines remain for explicit transitional configurations until migration/deletion. No enterprise qualification claimed."
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "observed_at": "2026-11-05T23:07:58.142Z",
+  "bundles": [
+    {
+      "file": "main-DIJxsOi5.js",
+      "status": 200,
+      "bytes": 142731,
+      "sha256": "sha256:192243845ced45c6c3b6ea32ea7174a960d48a9db050b46cadcfdddf0dd593d6"
+    },
+    {
+      "file": "useAuth-CRvJqlDB.js",
+      "status": 200,
+      "bytes": 1960,
+      "sha256": "sha256:0912be44f2c5d63021d448adcc8abf8bf4ff7281b13505456851896adcc52cf7"
+    },
+    {
+      "file": "ChatInterface-BYQjF87Q.js",
+      "status": 200,
+      "bytes": 622744,
+      "sha256": "sha256:ec1fe855567f22ec154c9db6bdd691789781755240de26f4817075b7b4c26ff4"
+    }
+  ]
+}

@@ -36,6 +36,33 @@ def _patch_agent(monkeypatch, alias="Ada", role="a helpful guide"):
     monkeypatch.setattr(ReplyAction, "get_agent", _agent)
 
 
+async def test_publish_forwards_stable_message_identifier_to_response_bus():
+    bus = SimpleNamespace(
+        publish=AsyncMock(return_value=SimpleNamespace(content="saved answer"))
+    )
+    interaction = SimpleNamespace(id="interaction-1", user_id="user-1")
+    visitor = SimpleNamespace(
+        interaction=interaction,
+        response_bus=bus,
+        session_id="session-1",
+        channel="default",
+        data={},
+    )
+
+    delivered = await ReplyAction().publish(
+        "saved answer",
+        visitor,
+        message_id="o.ResponseMessage.pilot_0123456789abcdef01234567",
+    )
+
+    assert delivered is True
+    assert (
+        bus.publish.call_args.kwargs["message_id"]
+        == "o.ResponseMessage.pilot_0123456789abcdef01234567"
+    )
+    assert bus.publish.call_args.kwargs["require_adapter_ack"] is True
+
+
 def _visitor_with(directives=None, parameters=None):
     """A visitor whose interaction has a realistic directive/parameter queue:
     add_directive appends, get_unexecuted_* reflect it, set_to_executed marks."""
@@ -91,6 +118,21 @@ async def test_reply_publishes_literal_no_bus():
     v = _visitor_no_bus()
     assert await ra.reply("hi there", v) is True
     assert v.interaction.response == "hi there"
+
+
+async def test_publish_reports_suppressed_bus_message_as_not_delivered():
+    ra = ReplyAction()
+    bus = SimpleNamespace(publish=AsyncMock(return_value=SimpleNamespace(content="")))
+    visitor = SimpleNamespace(
+        interaction=SimpleNamespace(id="interaction-1", user_id="user-1"),
+        response_bus=bus,
+        session_id="session-1",
+        channel="default",
+        data={},
+    )
+
+    assert await ra.publish("answer", visitor) is False
+    bus.publish.assert_awaited_once()
 
 
 async def test_reply_is_slim_with_no_shaping(monkeypatch):
@@ -234,6 +276,31 @@ async def test_respond_does_not_double_prefix(monkeypatch):
     sysprompt = model.generate.call_args.kwargs["system"]
     assert "Tell the user the order shipped." in sysprompt
     assert "Tell the user or ask the user: Tell the user" not in sysprompt
+
+
+async def test_respond_model_failure_does_not_publish_prompt_or_directives(monkeypatch):
+    """A compose failure must not leak user text or internal prompt scaffolding."""
+    ra = ReplyAction()
+    _patch_agent(monkeypatch)
+    model = MagicMock()
+    model.generate = AsyncMock(side_effect=RuntimeError("provider unavailable"))
+
+    async def _ma(self, required=False):
+        return model
+
+    monkeypatch.setattr(ReplyAction, "get_model_action", _ma)
+    v = _visitor_with(directives=[{"content": "Internal workflow instruction."}])
+    v.interaction.utterance = "Private user request text."
+
+    result = await ra.respond(
+        v.interaction, visitor=v, text="Tell the user the task completed."
+    )
+
+    assert result == "I couldn't complete that reply just now. Please try again."
+    assert v.interaction.response == result
+    assert "Private user request text" not in result
+    assert "Internal workflow instruction" not in result
+    assert "MANDATORY" not in result
 
 
 async def test_respond_composes_message_with_params_only(monkeypatch):
@@ -741,3 +808,22 @@ async def test_respond_uses_byok_primary_model(monkeypatch):
     ):
         await ra.reply("answer", v)
     assert captured.get("model") == "byok-primary"
+
+
+async def test_native_reply_refuses_second_model_call(monkeypatch):
+    import pytest
+    from jvspatial.api.exceptions import ValidationError
+
+    import jvagent.core.execution_owner as ownership
+
+    owner = object()
+    monkeypatch.setattr(ReplyAction, "get_agent", AsyncMock(return_value=owner))
+    native = AsyncMock(return_value=True)
+    monkeypatch.setattr(ownership, "uses_native_harness", native)
+    compose = AsyncMock()
+    monkeypatch.setattr(ReplyAction, "_compose_model_action", compose)
+
+    with pytest.raises(ValidationError, match="belongs to the harness"):
+        await ReplyAction(agent_id="n.Agent.native").respond(text="Fixture")
+    native.assert_awaited_once_with(owner)
+    compose.assert_not_awaited()

@@ -1,0 +1,441 @@
+{
+  "parent_revision": "git-commit:67e434d001be1473621da7c7f71e92ac58d9b475",
+  "source_blobs": {
+    "tests/harness/native/test_blocked_history.py": "git-blob:41041bde68b8091ff97d40440e0a3077d64828f0",
+    "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+    "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+    "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+    "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+    "jvagent/harness/accounting.py": "git-blob:7609d626699ca481803e37b54905bd47f7824c6a",
+    "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+    "tests/harness/native/test_accounting.py": "git-blob:0204dd4a6c2ba2a29ba0c1dd6012c4b2abd1eb71",
+    "jvagent/action/interview/engine.py": "git-blob:7b7581468efc51542c1f1b2c2f90a651092a2081",
+    "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+    "tests/harness/native/test_interview_branches.py": "git-blob:f83ae80314a5297143cf432722525fea79404756",
+    "tests/action/interview/test_native_branch_admission.py": "git-blob:e172a4dad0ec18f4c3d03e7707a4f08b3e3f7b75",
+    "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+    "jvagent/harness/native.py": "git-blob:9d99ff379919f3dda3a1968da41c60d4610f1562",
+    "jvagent/action/interview/native.py": "git-blob:6b9b1ef322c80f4760ba808226179c0ac7367947",
+    "jvagent/action/interview/native_skill/SKILL.md": "git-blob:a667624ad24050775e30c3134de7a66b1ee7fed5",
+    "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+    "jvagent/action/native_harness/native_harness_action.py": "git-blob:d8a5c8bf6db12d6013ce27ed4dce5d6c156e7101",
+    "tests/harness/native/test_interview.py": "git-blob:af45ec338dc14aeaca7acc1dab1276e128ccc2f2",
+    "tests/harness/native/test_postgres_store.py": "git-blob:0d6e24c197ce79131161ac8cf5bda3999f09cb6a"
+  },
+  "phase": "second-block",
+  "observed_at": "2026-11-05T19:15:07.138972+00:00",
+  "fixture": {
+    "app": "/private/tmp/jvagent-native-host-context-smoke",
+    "database": "jvagent_native_host_context",
+    "model": "openai:gpt-4.1",
+    "api_port": 8136,
+    "ui_port": 3136,
+    "public_entrypoint": true,
+    "skill": "---\nname: conversation\ndescription: Collect and confirm a premium or standard membership request\nextends: action:jvagent/interview\ninterview:\n  title: Membership request\n  summary: Collect and confirm a membership selection without external effects\n  confirm: manual\n  fields:\n    - key: tier\n      prompt: Premium or standard membership?\n      required: true\n      validator: text\n      branches:\n        - when: {op: equals, value: premium}\n          goto: premium_note\n      else: standard_note\n    - key: premium_note\n      prompt: What premium detail should I record?\n      required: true\n      validator: text\n      else: email\n    - key: standard_note\n      prompt: What standard detail should I record?\n      required: true\n      validator: text\n      else: email\n    - key: email\n      prompt: What email address should I record?\n      required: true\n      validator: email\n---\nUse the inherited procedure to collect and review the reachable membership fields.\nNormalize tier to lowercase premium or standard. Store explicit supplied details\nusing interview__set_fields. A correction can change the branch: follow the tool's\nreachable fields and pruned_fields, preserve the already stored shared email, and\nshow a fresh review before waiting for a new confirmation. Do not complete against\nan earlier review of different values. Do not claim to register, contact, or charge\nanyone; this is an isolated intake demonstration with no external effects.\n",
+    "patched_execution_functions": false
+  },
+  "conversations": [
+    {
+      "id": "n.Conversation.fd184c11b92946a380562c26",
+      "session_id": "sess_b4d8f23b10cf49b7",
+      "interview": null,
+      "tasks": [],
+      "budget_counters": {
+        "default|conversation|*|sess_b4d8f23b10cf49b7": {
+          "spent": {
+            "usd": "0",
+            "tokens": 0,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        },
+        "default|run|*|corr-366c82ab63d548048a5f71d71b9250ad": {
+          "spent": {
+            "usd": "0",
+            "tokens": 0,
+            "requests": 1,
+            "unpriced_requests": 0
+          },
+          "replay_markers": 1,
+          "reserve_markers": 0
+        }
+      }
+    }
+  ],
+  "interactions": [
+    {
+      "id": "n.Interaction.33cd008ec8b94b66820d34fc",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_b4d8f23b10cf49b7",
+      "utterance": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.",
+      "response": null,
+      "native_run": {
+        "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+        "status": "cancelled",
+        "history_source": {},
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-05T19:14:13.292951+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 1,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 1,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 1
+      },
+      "started_at": "2026-11-05T15:13:00.299782",
+      "completed_at": null,
+      "closed": false,
+      "emitted": false,
+      "actions": [
+        "NativeHarnessAction"
+      ],
+      "directives": [],
+      "metric_types": [
+        "model_call",
+        "model_attempt"
+      ],
+      "sdk_record_counts": {
+        "runs": 1,
+        "events": 3,
+        "snapshots": 2
+      },
+      "snapshots": [
+        {
+          "state": "complete",
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "messages": [
+            {
+              "kind": "request",
+              "parts": [
+                {
+                  "content": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.",
+                  "part_kind": "user-prompt",
+                  "timestamp": "2026-11-05T19:13:01.571627Z"
+                },
+                {
+                  "loaded": [
+                    "conversation"
+                  ],
+                  "part_kind": "capability-load-delta",
+                  "tool_call_id": null
+                }
+              ],
+              "state": "complete",
+              "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+              "metadata": null,
+              "timestamp": "2026-11-05T19:13:01.571809Z",
+              "instructions": "Answer concisely. Follow the requested format. Recall supplied conversation facts accurately. Say when a requested fact is unavailable; never invent completed work.\n\nThe following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- conversation: Collect and confirm a premium or standard membership request",
+              "conversation_id": "sess_b4d8f23b10cf49b7"
+            }
+          ],
+          "timestamp": "2026-11-05T19:13:01.573020Z",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "parent_run_id": null,
+          "conversation_id": "sess_b4d8f23b10cf49b7",
+          "idempotency_key": "0:1:complete"
+        },
+        {
+          "state": "complete",
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "messages": [
+            {
+              "kind": "request",
+              "parts": [
+                {
+                  "content": "NATIVE-NOTICE-CHECK: Do not start an interview or use any tools. Write a long 4000-word explanation of community membership programs.",
+                  "part_kind": "user-prompt",
+                  "timestamp": "2026-11-05T19:13:01.571627Z"
+                },
+                {
+                  "loaded": [
+                    "conversation"
+                  ],
+                  "part_kind": "capability-load-delta",
+                  "tool_call_id": null
+                },
+                {
+                  "part_kind": "instruction-baseline",
+                  "instructions": [
+                    {
+                      "id": "agent",
+                      "dynamic": false,
+                      "part_kind": "instruction-digest",
+                      "content_hash": "sha256:dadb8ced917dd6d71ee393923ec5c869db22b4ab34b9e9b4c472df93320bb9e9"
+                    },
+                    {
+                      "id": "capability:deferred_capabilities",
+                      "name": null,
+                      "content": "The following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- conversation: Collect and confirm a premium or standard membership request",
+                      "dynamic": true,
+                      "on_change": "append",
+                      "part_kind": "instruction"
+                    }
+                  ]
+                },
+                {
+                  "id": "capability:conversation",
+                  "content": "# Skill: conversation\n\n# Native interview procedure v1\n\nUse the interview tools for the selected skill. Activation is an explicit call to\ninterview__start with this skill's name. Loading the skill alone does not start\nor change an interview. No session means no field prompts: first activate and read\nthe returned field_reference and start_field.\n\nExtract values only from the user's latest message. Use exact field_reference keys\nin one interview__set_fields call for all supplied values. Activation stores no\nvalues. Read ok and per-field validation outcomes before proceeding; correct errors\nor ask the user rather than inventing values. Do not reuse earlier answers unless\nthe user supplies them again. Each following operation is a separate explicit tool\ncall. Call interview__next_field when more information is needed, and relay its\nquestion. Use interview__get_status for the current catalog or progress.\n\nSkip a declined optional field with interview__skip_field. For unavailable required\nfields call interview__field_unavailable; follow its reported consequence. Handle\ncorrections through interview__set_fields, cancel through interview__cancel, and\nstarting over through interview__reset. Interpret the user's intent in this SOP;\nthere is no server intent classifier.\n\nWhen collection is ready, call interview__review and show the actual review. For\nmanual confirmation, wait for the user's next message confirming that review before\ncalling interview__complete. Never confirm on the user's behalf or claim a task has\ncompleted before the tool reports completion. After cancellation or completion,\nuse interview__start again for a new interview. Plain tool results and persisted\nsession/task state are authoritative; do not claim external side effects.\n\nFor branched interviews, follow interview__next_field or inspect interview__get_status\nfor the reachable fields. A correction may prune an old branch while shared answers\nremain stored. Inspect the actual tool outcomes; never restore pruned answers from\nchat history. Review the revised values and wait for a new confirmation before\ncompletion. Do not ask again for shared values the domain session still retains.\n\nUse the inherited procedure to collect and review the reachable membership fields.\nNormalize tier to lowercase premium or standard. Store explicit supplied details\nusing interview__set_fields. A correction can change the branch: follow the tool's\nreachable fields and pruned_fields, preserve the already stored shared email, and\nshow a fresh review before waiting for a new confirmation. Do not complete against\nan earlier review of different values. Do not claim to register, contact, or charge\nanyone; this is an isolated intake demonstration with no external effects.",
+                  "base_hash": null,
+                  "part_kind": "instruction-delta"
+                }
+              ],
+              "state": "complete",
+              "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+              "metadata": null,
+              "timestamp": "2026-11-05T19:13:01.571809Z",
+              "instructions": "Answer concisely. Follow the requested format. Recall supplied conversation facts accurately. Say when a requested fact is unavailable; never invent completed work.\n\nThe following capabilities are deferred and can be loaded using the `load_capability` tool. A capability's tools stay hidden until it is loaded:\n- conversation: Collect and confirm a premium or standard membership request",
+              "conversation_id": "sess_b4d8f23b10cf49b7"
+            },
+            {
+              "kind": "response",
+              "parts": [
+                {
+                  "id": "msg_061ebfea564483f4006aecd53f96fc87d18e0a5302b6195e68",
+                  "content": "Certainly! Here is a comprehensive explanation of community membership programs. While I cannot provide a full 4000-word essay in a single response due to platform constraints, I will deliver a detailed, structured, and in-depth overview that covers all major aspects of community membership programs. If you need further expansion or specific sections elaborated, please let me know!\n\n---\n\n# Community Membership Programs: An In-Depth Exploration\n\n## Introduction\n\nCommunity membership programs are structured initiatives designed to foster engagement, loyalty, and a sense of belonging among individuals who share common interests, goals, or values. These programs are implemented by a wide range of organizations, including non-profits, professional associations, clubs, online platforms, and even businesses seeking to build brand communities. The core idea is to create a framework where members receive benefits, contribute to the community, and participate in activities that reinforce their connection to the group.\n\nThis comprehensive explanation will cover the following aspects:\n\n1. Definition and Purpose\n2. Types of Community Membership Programs\n3. Key Components and Structures\n4. Benefits for Members and Organizations\n5. Challenges and Considerations\n6. Best Practices for Successful Programs\n7. Case Studies and Examples\n8. The Future of Community Membership Programs\n\n---\n\n## 1. Definition and Purpose\n\nA community membership program is a formalized system through which individuals join a group or organization, often by meeting certain criteria or paying dues, to access exclusive benefits, resources, and opportunities for engagement. The primary purposes of such programs include:\n\n- Fostering a sense of belonging and identity\n- Encouraging active participation and contribution\n- Providing value through exclusive content, events, or services\n- Building loyalty and long-term relationships\n- Supporting the organization\u2019s mission, whether social, professional, or commercial\n\nMembership programs can be open to the public or restricted to specific groups, and they may be free or require payment.\n\n---\n\n## 2. Types of Community Membership Programs\n\nCommunity membership programs vary widely depending on the nature of the organization and its goals. Common types include:\n\n### a. Non-Profit and Civic Organizations\n\nExamples: Rotary Clubs, Lions Clubs, local community centers\n\n- Focus on service, philanthropy, and civic engagement\n- Members often participate in volunteer activities and community projects\n\n### b. Professional Associations\n\nExamples: American Bar Association, IEEE, medical societies\n\n- Serve professionals in a specific field\n- Offer networking, continuing education, certifications, and advocacy\n\n### c. Hobby and Interest Groups\n\nExamples: Book clubs, hiking groups, gaming communities\n\n- Centered around shared interests or activities\n- Provide social opportunities and resources related to the hobby\n\n### d. Online Communities and Platforms\n\nExamples: Reddit, Stack Overflow, Patreon creator communities\n\n- Digital-first, often global in reach\n- Membership may grant access to forums, exclusive content, or special features\n\n### e. Brand and Customer Loyalty Programs\n\nExamples: REI Co-op, Sephora Beauty Insider, airline frequent flyer programs\n\n- Businesses create communities around their brand\n- Members receive perks, discounts, and early access to products\n\n### f. Alumni Associations\n\nExamples: University alumni networks\n\n- Connect graduates for networking, events, and fundraising\n\n---\n\n## 3. Key Components and Structures\n\nSuccessful community membership programs typically include several core components:\n\n### a. Membership Tiers\n\n- Programs may offer different levels (e.g., standard, premium, VIP)\n- Higher tiers often provide additional benefits for increased commitment or payment\n\n### b. Application and Onboarding\n\n- Clear process for joining, which may include an application, vetting, or payment\n- Onboarding introduces new members to the community\u2019s values, rules, and opportunities\n\n### c. Member Benefits\n\n- Access to exclusive events, content, or resources\n- Discounts, merchandise, or recognition\n- Opportunities for leadership or volunteering\n\n### d. Communication Channels\n\n- Newsletters, forums, social media groups, or dedicated apps\n- Regular updates keep members informed and engaged\n\n### e. Governance and Participation\n\n- Member input through surveys, voting, or leadership roles\n- Committees or boards may be composed of members\n\n### f. Events and Activities\n\n- In-person or virtual gatherings, workshops, conferences, or social events\n- Foster networking and deeper engagement\n\n---\n\n## 4. Benefits for Members and Organizations\n\n### a. For Members\n\n- **Belonging:** A sense of identity and connection with like-minded individuals\n- **Access:** Exclusive resources, information, or opportunities\n- **Growth:** Personal or professional development through learning and networking\n- **Influence:** Ability to shape the community\u2019s direction or activities\n\n### b. For Organizations\n\n- **Loyalty:** Members are more likely to remain engaged and supportive\n- **Revenue:** Membership dues or fees can provide a stable income stream\n- **Advocacy:** Members can become ambassadors, spreading the word and recruiting others\n- **Feedback:** Direct input from members helps organizations improve and adapt\n\n---\n\n## 5. Challenges and Considerations\n\nWhile community membership programs offer",
+                  "citations": null,
+                  "part_kind": "text",
+                  "provider_name": "openai",
+                  "provider_details": null
+                }
+              ],
+              "state": "interrupted",
+              "usage": {
+                "cost": "0.0",
+                "details": {},
+                "input_tokens": 0,
+                "audio_seconds": 0.0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "input_audio_tokens": 0,
+                "output_audio_tokens": 0,
+                "cache_write_1h_tokens": 0,
+                "cache_audio_read_tokens": 0,
+                "output_reasoning_tokens": 0
+              },
+              "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+              "metadata": null,
+              "model_id": "openai:gpt-4.1",
+              "timestamp": "2026-11-05T19:13:03.239555Z",
+              "model_name": "gpt-4.1-2025-04-14",
+              "provider_url": "https://api.openai.com/v1/",
+              "finish_reason": null,
+              "provider_name": "openai",
+              "workspace_ref": {
+                "id": "/private/tmp/jvagent-native-host-context-smoke/agents/jvagent/bench/skills",
+                "provider": "local"
+              },
+              "history_digest": null,
+              "conversation_id": "sess_b4d8f23b10cf49b7",
+              "failed_attempts": null,
+              "canonical_system": "openai",
+              "provider_details": {
+                "timestamp": "2026-11-05T19:13:02Z"
+              },
+              "provider_response_id": "resp_061ebfea564483f4006aecd53ec16887d1a85cb0c34e12c7f9"
+            }
+          ],
+          "timestamp": "2026-11-05T19:13:10.112597Z",
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "parent_run_id": null,
+          "conversation_id": "sess_b4d8f23b10cf49b7",
+          "idempotency_key": "1:1:complete"
+        }
+      ],
+      "events": [
+        {
+          "kind": "run_started",
+          "error": null,
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T19:13:01.568800Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_b4d8f23b10cf49b7",
+          "idempotency_key": "0:0:run_started:"
+        },
+        {
+          "kind": "model_request_started",
+          "error": null,
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T19:13:01.597375Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 1,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_b4d8f23b10cf49b7",
+          "idempotency_key": "1:1:model_request_started:"
+        },
+        {
+          "kind": "run_failed",
+          "error": "CancelledError()",
+          "run_id": "corr-366c82ab63d548048a5f71d71b9250ad",
+          "metadata": {
+            "jv_checkpoint_policy": "accepted-input-v1"
+          },
+          "timestamp": "2026-11-05T19:13:10.149345Z",
+          "tool_name": null,
+          "agent_name": "jvagent-native",
+          "step_index": 0,
+          "tool_call_id": null,
+          "parent_run_id": null,
+          "conversation_id": "sess_b4d8f23b10cf49b7",
+          "idempotency_key": "2:0:run_failed:"
+        }
+      ],
+      "effects": []
+    },
+    {
+      "id": "n.Interaction.55f44b0a942f4511b0e4954a",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_b4d8f23b10cf49b7",
+      "utterance": "Please remember the short code JUNIPER-28.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.33cd008ec8b94b66820d34fc"
+      },
+      "usage": {
+        "last_updated": "2026-11-05T19:13:27.932602+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T15:13:27.693287",
+      "completed_at": "2026-11-05T15:13:27.932572",
+      "closed": true,
+      "emitted": true,
+      "actions": [
+        "NativeHarnessAction"
+      ],
+      "directives": [],
+      "metric_types": [],
+      "sdk_record_counts": {},
+      "snapshots": [],
+      "events": [],
+      "effects": [],
+      "duration_seconds": 0.239285
+    },
+    {
+      "id": "n.Interaction.e6ba63a27a25487b93c27cc9",
+      "user_id": "o.User.fbccc4f54abf43cd8815f6fc",
+      "session_id": "sess_b4d8f23b10cf49b7",
+      "utterance": "Please remember the short code MARIGOLD-91 too.",
+      "response": "This conversation needs recovery before another model request can run. Start a new conversation or ask an administrator to reconcile the previous turn.",
+      "native_run": {
+        "reason": "predecessor_requires_reconciliation",
+        "status": "blocked",
+        "predecessor_interaction_id": "n.Interaction.55f44b0a942f4511b0e4954a"
+      },
+      "usage": {
+        "last_updated": "2026-11-05T19:14:13.309947+00:00",
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "total_cost_usd": 0.0,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 0,
+        "completion_tokens": 0,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "model_attempt_count": 0,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 0.0,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.0,
+        "unmeasured_model_attempt_count": 0
+      },
+      "started_at": "2026-11-05T15:14:13.073046",
+      "completed_at": "2026-11-05T15:14:13.309923",
+      "closed": true,
+      "emitted": true,
+      "actions": [
+        "NativeHarnessAction"
+      ],
+      "directives": [],
+      "metric_types": [],
+      "sdk_record_counts": {},
+      "snapshots": [],
+      "events": [],
+      "effects": [],
+      "duration_seconds": 0.236877
+    }
+  ],
+  "module_observation": {
+    "source_blobs": {
+      "jvagent/action/interact/endpoints.py": "git-blob:5018117e26602dc98a86b49a64b82a2a0cd721b1",
+      "jvagent/harness/accounting.py": "git-blob:7609d626699ca481803e37b54905bd47f7824c6a",
+      "jvagent/memory/interaction.py": "git-blob:2ab5a07be007c252b012d00c32d68a76678382e7",
+      "jvagent/embed/interact.py": "git-blob:116c64ebe8d8d74c815889c65f21f9d86077423b",
+      "jvagent/action/interact/task_cleanup.py": "git-blob:7be78426f2c77c8e2a0ef3c00a3f56a442597217",
+      "jvagent/core/host_context.py": "git-blob:0e094d1c87aea6efffc1aa6675214fe826dc5203",
+      "jvagent/action/interview/session.py": "git-blob:f3c0332f493c8e2e9b7902422674dec48a694cff",
+      "jvagent/action/interview/engine.py": "git-blob:7b7581468efc51542c1f1b2c2f90a651092a2081",
+      "jvagent/action/interview/flow.py": "git-blob:77017e9abf2053ee511a1ee0b1d75449e9ab85a7",
+      "jvagent/harness/native.py": "git-blob:9d99ff379919f3dda3a1968da41c60d4610f1562",
+      "jvagent/harness/skill_assets.py": "git-blob:6cd00c8a67ed378e3c84bdb15c87047bb2fb22a0",
+      "jvagent/harness/skill_admission.py": "git-blob:a4f695fe1fe662e428f184a7048242258f360826",
+      "jvagent/harness/conversation_tools.py": "git-blob:c016ec942bb930411364d1f59b73a6e16994e626",
+      "jvagent/harness/recovery.py": "git-blob:6a73c1981319cc409dfde2189a12bb68b9aa79a8",
+      "jvagent/harness/reconciliation.py": "git-blob:459422afea893484fae4fc7385c67e203c4d8f08",
+      "jvagent/harness/spend_store.py": "git-blob:4f3352e1ecace7058f635b20a84565c133487c8a",
+      "jvagent/action/native_harness/endpoints.py": "git-blob:34dd6f69bafcfe04338e86ef4d53556bb1d26c10",
+      "jvagent/action/interview/native.py": "git-blob:6b9b1ef322c80f4760ba808226179c0ac7367947",
+      "jvagent/action/interview/native_skill/SKILL.md": "git-blob:a667624ad24050775e30c3134de7a66b1ee7fed5",
+      "jvagent/action/interview/interview_action.py": "git-blob:f5cc1374d6d5e05590100965e50dc8180cc4ce27",
+      "jvagent/action/native_harness/native_harness_action.py": "git-blob:d8a5c8bf6db12d6013ce27ed4dce5d6c156e7101"
+    },
+    "process_id": 75073,
+    "observed_at": "2026-11-05T19:12:47.342069+00:00",
+    "modules": [
+      "jvagent.action.orchestrator",
+      "jvagent.action.orchestrator.constants"
+    ],
+    "legacy_execution_modules": [],
+    "sampled_at": "2026-11-05T19:15:07.035193+00:00"
+  },
+  "snapshot_content_hash_encoding": "sha256-prefixed display; persisted SDK values unchanged"
+}

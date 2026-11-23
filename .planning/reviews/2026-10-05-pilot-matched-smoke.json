@@ -1,0 +1,53 @@
+{
+  "schema": "jvagent.pilot-matched-smoke/v1",
+  "date": "2026-10-05",
+  "qualification": "exploratory, one replicate per case",
+  "provider": "Ollama Cloud",
+  "model": "glm-5.3:cloud",
+  "common_inputs": {
+    "manifest": "tests/action/orchestrator/pilot/eval/research-cases.yaml",
+    "skill": "jvagent/skills/research/SKILL.md",
+    "source_fixture": "same synthetic Search/Fetch payloads for both drivers",
+    "model_temperature": 0.0,
+    "per_call_max_tokens": 1024
+  },
+  "pricing": {
+    "basis": "Ollama standard uncached rates, checked 2026-10-05",
+    "input_usd_per_million": 1.4,
+    "output_usd_per_million": 4.4
+  },
+  "scores": {
+    "dimensions": ["evidence_support", "citation_coverage", "calibration", "task_adherence"],
+    "scale_per_dimension": "0-2",
+    "cases": [
+      {
+        "id": "conflicting-sources",
+        "pilot": {"score": [2, 2, 2, 2], "requests": 4, "actions": 3, "tokens": 4703, "elapsed_ms": 9603.01, "estimated_cost_usd": 0.0085042, "provider_error": null},
+        "legacy": {"score": [2, 2, 2, 2], "requests": 5, "actions": 3, "tokens": 15520, "elapsed_ms": 14312.95, "estimated_cost_usd": 0.024347, "provider_error": null},
+        "notes": "Both disclose the 1984/1986 conflict and label any attempt to resolve it as inference."
+      },
+      {
+        "id": "false-premise",
+        "pilot": {"score": [2, 2, 2, 2], "requests": 4, "actions": 2, "tokens": 4597, "elapsed_ms": 8815.5, "estimated_cost_usd": 0.0081728, "provider_error": null},
+        "legacy": {"score": [2, 2, 2, 2], "requests": 4, "actions": 2, "tokens": 13748, "elapsed_ms": 26612.91, "estimated_cost_usd": 0.0241402, "provider_error": null},
+        "notes": "Both limit the result to turbidity reduction from 12 NTU to 4 NTU and state other contaminants were not tested."
+      },
+      {
+        "id": "temporal-qualification",
+        "pilot": {"score": [2, 2, 2, 2], "requests": 4, "actions": 3, "tokens": 5111, "elapsed_ms": 12610.28, "estimated_cost_usd": 0.0101884, "provider_error": null},
+        "legacy": {"score": [2, 1, 2, 2], "requests": 4, "actions": 2, "tokens": 11158, "elapsed_ms": 8919.93, "estimated_cost_usd": 0.0173492, "provider_error": null},
+        "notes": "Both give 28 Pine Avenue effective 2025-01-01 and identify the 2022 address as superseded. Legacy output did not include an explicit source ID."
+      }
+    ]
+  },
+  "totals": {
+    "pilot": {"score": 24, "max_score": 24, "requests": 12, "actions": 8, "tokens": 14411, "elapsed_ms": 31028.79, "estimated_cost_usd": 0.0268654},
+    "legacy": {"score": 23, "max_score": 24, "requests": 13, "actions": 7, "tokens": 40426, "elapsed_ms": 49845.79, "estimated_cost_usd": 0.0658364}
+  },
+  "limitations": [
+    "One replicate per case cannot establish reliability or latency distributions.",
+    "Sources are synthetic fixtures; this does not qualify live web-search relevance or source quality.",
+    "Legacy/pilot tool surfaces and orchestration prompts differ by design; only provider, skill, user prompt, and evidence payload were held constant.",
+    "Earlier exploratory model calls were partly unmetered by the initial legacy runner; conservatively reserved spend brings total estimated live-smoke spend to about USD 0.47."
+  ]
+}

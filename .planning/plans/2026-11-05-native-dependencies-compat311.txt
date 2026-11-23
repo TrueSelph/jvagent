@@ -1,0 +1,10 @@
+..s..................................................................... [ 35%]
+..................................sss.ss................................ [ 71%]
+.........................................................                [100%]
+=============================== warnings summary ===============================
+tests/action/orchestrator/pilot/test_pilot_runtime.py::test_pydantic_validation_retry_details_are_forwarded_as_text
+  /Users/eldonmarks/Briefcase/dev/jv/jvagent/tests/action/orchestrator/pilot/test_pilot_runtime.py:655: PydanticAIDeprecationWarning: `RetryPromptPart` is deprecated and will be removed in v3. Build the part the retry belongs to: `ToolReturnPart(tool_name=..., content=..., tool_call_id=..., outcome='retried')` for a retry that answers a tool call, or `RetryFeedbackPart(content=..., retry=RetryInfo(cause=...))` for one that answers none.
+    retry = RetryPromptPart(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+195 passed, 6 skipped, 1 warning in 8.02s

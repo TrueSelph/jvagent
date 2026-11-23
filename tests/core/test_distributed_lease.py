@@ -83,3 +83,30 @@ async def test_redis_lease_acquires_renews_releases(monkeypatch):
     assert counts["acquire"] >= 1
     assert counts["renew"] >= 2
     assert counts["unlock"] == 1
+
+
+async def test_redis_lease_cancels_owner_after_token_loss(monkeypatch):
+    class _FakeRedis:
+        async def set(self, name, value, nx, ex):
+            return True
+
+        async def eval(self, script, numkeys, *args):
+            return 0
+
+        async def close(self):
+            pass
+
+    fake_asyncio = types.ModuleType("redis.asyncio")
+    fake_asyncio.from_url = lambda url, decode_responses=True: _FakeRedis()
+    monkeypatch.setitem(sys.modules, "redis", types.ModuleType("redis"))
+    monkeypatch.setitem(sys.modules, "redis.asyncio", fake_asyncio)
+    monkeypatch.setenv("JVAGENT_CONVERSATION_LOCK_REDIS_URL", "redis://fake:6379")
+    monkeypatch.setattr(dl, "_lease_renew_interval", lambda ttl: 0.02)
+
+    async def hold_lease():
+        async with distributed_lease("k-lost"):
+            await asyncio.Event().wait()
+
+    owner = asyncio.create_task(hold_lease())
+    with pytest.raises(asyncio.CancelledError):
+        await owner

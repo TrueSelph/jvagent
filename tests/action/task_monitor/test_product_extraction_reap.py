@@ -29,6 +29,7 @@ async def test_tick_invokes_product_action_reap_when_present():
     product_action.reap_stale_extraction_jobs = AsyncMock(return_value=0)
 
     agent = MagicMock()
+    agent.get_actions = AsyncMock(return_value=[])
     agent.get_memory = AsyncMock(return_value=MagicMock(id="mem-1"))
     agent.get_action_by_type = AsyncMock(
         side_effect=lambda name: product_action if name == "ProductAction" else None
@@ -55,6 +56,7 @@ async def test_tick_skips_reap_when_product_action_absent():
     monitor = _monitor()
 
     agent = MagicMock()
+    agent.get_actions = AsyncMock(return_value=[])
     agent.get_memory = AsyncMock(return_value=MagicMock(id="mem-1"))
     agent.get_action_by_type = AsyncMock(return_value=None)
 

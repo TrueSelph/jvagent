@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Union
 
+from jvagent.core.host_context import HOST_CONTEXT_REPLAY_KEY
+
 logger = logging.getLogger(__name__)
 
 # Set by ``handle_start`` on activation; read by activation ``pre_processor`` hooks.
@@ -104,7 +106,9 @@ class InterviewSession:
 SESSION_KEY = "interview"
 
 # Conversation.context keys owned by the platform (not interview runtime).
-CONVERSATION_CONTEXT_PLATFORM_KEYS: FrozenSet[str] = frozenset({"new_user"})
+CONVERSATION_CONTEXT_PLATFORM_KEYS: FrozenSet[str] = frozenset(
+    {"new_user", HOST_CONTEXT_REPLAY_KEY}
+)
 
 # Additional platform-durable keys registered by the host app. These survive every
 # interview teardown (cancel/complete/reset) exactly like the built-in platform

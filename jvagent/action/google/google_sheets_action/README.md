@@ -26,7 +26,7 @@ This is an **OAuth client JSON** (client id + secret). It is **not** a service-a
    The host must match the public base URL used at runtime (for example an ngrok HTTPS origin). Do **not** use the old `/api/google/callback/` path.
 8. Click **Create**. Download the JSON (client id + secret).
 9. Put the file path or the JSON contents in `.env` as `GOOGLE_CLIENT_SECRETS_JSON`, and set `JVAGENT_PUBLIC_BASE_URL` (see below).
-10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=sheets`.
+10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=sheets`.
 
 ## Set `.env`
 
@@ -52,7 +52,7 @@ GOOGLE_SHEETS_SPREADSHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SPREAD
 | ------------------ | -------------------------------------------------------------------- | -------- |
 | `spreadsheet_url`  | Default spreadsheet URL or id when tools omit one                    | No       |
 | `worksheet_title`  | Default tab name when a range has no sheet qualifier                 | No       |
-| `auth_url`         | Set on startup to `/api/mcp/google_workspace/auth?account=integral&service=sheets` | —        |
+| `auth_url`         | Set on startup to `/api/mcp/google_workspace/auth?account=default&service=sheets` | —        |
 
 Other Google actions (Gmail, Docs, Drive, Calendar) use the same MCP login with their own `?service=`.
 
@@ -92,7 +92,7 @@ Admin REST handlers under `/actions/{action_id}/...` (read, update, append, …)
 
 ### Authorization
 
-1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=sheets`.
+1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=sheets`.
 2. Complete Google consent. The callback stores `MCPOAuthToken` and hydrates google-workspace-mcp XDG credential files.
 3. Sheets tools and the MCP stdio server both use that token. Re-auth if refresh fails.
 

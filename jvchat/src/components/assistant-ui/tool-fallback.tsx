@@ -26,6 +26,7 @@ import {
   setToolJsonExpandDepth,
 } from "@/utils/storage";
 import { useTheme } from "@/context/ThemeContext";
+import { toolPresentation } from "@/lib/toolStatus";
 
 const ANIMATION_DURATION = 200;
 
@@ -100,19 +101,27 @@ const statusIconMap: Record<ToolStatus, React.ElementType> = {
 function ToolFallbackTrigger({
   toolName,
   status,
+  unconfirmed = false,
   className,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   toolName: string;
   status?: ToolCallMessagePartStatus;
+  unconfirmed?: boolean;
 }) {
   const statusType = status?.type ?? "complete";
   const isRunning = statusType === "running";
   const isCancelled =
     status?.type === "incomplete" && status.reason === "cancelled";
 
-  const Icon = statusIconMap[statusType];
-  const label = isCancelled ? "Cancelled tool" : "Used tool";
+  const Icon = unconfirmed ? AlertCircleIcon : statusIconMap[statusType];
+  const label = unconfirmed
+    ? "Unconfirmed tool"
+    : isCancelled
+      ? "Cancelled tool"
+      : statusType === "incomplete"
+        ? "Failed tool"
+        : "Used tool";
 
   return (
     <CollapsibleTrigger
@@ -351,17 +360,24 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
   argsText,
   result,
   status,
+  isError,
 }) => {
+  const presentation = toolPresentation(status, result, isError);
+  const displayStatus = presentation.status;
   const isCancelled =
-    status?.type === "incomplete" && status.reason === "cancelled";
+    displayStatus.type === "incomplete" && displayStatus.reason === "cancelled";
 
   return (
     <ToolFallbackRoot
       className={cn(isCancelled && "border-muted-foreground/30 bg-muted/30")}
     >
-      <ToolFallbackTrigger toolName={toolName} status={status} />
+      <ToolFallbackTrigger
+        toolName={toolName}
+        status={displayStatus}
+        unconfirmed={presentation.unconfirmed}
+      />
       <ToolFallbackContent>
-        <ToolFallbackError status={status} />
+        <ToolFallbackError status={displayStatus} />
         <ToolFallbackArgs
           argsText={argsText}
           className={cn(isCancelled && "opacity-60")}

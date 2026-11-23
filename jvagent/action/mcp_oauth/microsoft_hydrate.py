@@ -43,7 +43,7 @@ def microsoft_authorize_url(tenant: Optional[str] = None) -> str:
 
 
 def mcp_microsoft_365_auth_url(
-    account: str = "integral",
+    account: str = "default",
     service: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> str:
@@ -225,7 +225,7 @@ async def apply_microsoft_365_stdio_env(
                 last = str(token_data.get("last_authorized_service") or "").strip()
                 await oauth.save_oauth_token_for_service(
                     MICROSOFT_365_SERVER,
-                    account_name or "integral",
+                    account_name or "default",
                     blob,
                     service=last or None,
                 )

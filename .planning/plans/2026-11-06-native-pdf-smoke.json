@@ -1,0 +1,705 @@
+{
+  "observed_at": "2026-11-06T14:56:46.611982+00:00",
+  "parent_revision": "git-commit:675a5ba3e5d24752d29e6f88c98b9985b03c94c9",
+  "source_blobs": {
+    "jvagent/harness/script_sandbox.py": "git-blob:467af11bbb96ec6b329aa9b043535c80d812ed07",
+    "jvagent/skills/README.md": "git-blob:92783cf4fed4a85e1730e455bed7ccb2f7f822b9",
+    "jvagent/skills/pdf-generation/SKILL.md": "git-blob:859556fda6d2425238b98742943acf648bba238b",
+    "jvagent/skills/pdf-generation/resources/requirements.txt": "git-blob:625e3058abae1b9fb10553343212aa68057c00bc",
+    "jvagent/skills/pdf-generation/scripts/render_pdf.py": "git-blob:d425e1998e7f570672ce0fcc9309331eb3b6cd90"
+  },
+  "renderer_script_unchanged_git_blob": "git-blob:d425e1998e7f570672ce0fcc9309331eb3b6cd90",
+  "fixture": {
+    "backend": 8158,
+    "ui": 3140,
+    "graph": "isolated PostgreSQL",
+    "root": "/private/tmp/jvagent-native-pdf-smoke",
+    "model": "openai:gpt-4.1",
+    "versions": {
+      "pydantic-ai-slim": "2.66.0",
+      "pydantic-ai-harness": "0.66.0",
+      "jvspatial": "0.2.4"
+    }
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.10c074c116c648f6bbbcd739",
+      "utterance": "Create a one-page PDF status memo titled JV Harness Pilot using the bundled PDF generation skill. Include these exact facts: Native execution is working. Migration and legacy removal remain open. Add a small table with rows Research: qualified local profile; Downloads: qualified local profile; Enterprise release: not yet qualified. Save it as output/harness-memo.pdf and give me an actual download link. Do not claim the project is complete.",
+      "response": "Your one-page PDF status memo titled \"JV Harness Pilot\" has been created with the requested facts and table. \n\nYou can download it here: [Download harness-memo.pdf](http://127.0.0.1:8158/api/actions/n.FileInterfaceAction.b729bac0580e406dba8023e4/downloads/[capability-redacted])",
+      "session_id": "sess_2b38e67a1ef04189",
+      "started_at": "2026-11-06T10:49:11.344503",
+      "completed_at": "2026-11-06T10:49:27.779546",
+      "duration_seconds": 16.435043,
+      "native_run": {
+        "usage": {
+          "requests": 4,
+          "input_tokens": 4369,
+          "output_tokens": 284
+        },
+        "output": "Your one-page PDF status memo titled \"JV Harness Pilot\" has been created with the requested facts and table. \n\nYou can download it here: [Download harness-memo.pdf](http://127.0.0.1:8158/api/actions/n.FileInterfaceAction.b729bac0580e406dba8023e4/downloads/[capability-redacted])",
+        "run_id": "corr-301bb8d093084b03a4a3881a942d0499",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T14:49:27.738271+00:00",
+                "total_tokens": 4653,
+                "prompt_tokens": 4369,
+                "total_cost_usd": 0.009474,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 4,
+                "completion_tokens": 284,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.009474,
+                "model_attempt_count": 4,
+                "cached_prompt_tokens": 1024,
+                "total_duration_seconds": 10.208,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 10.208,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-301bb8d093084b03a4a3881a942d0499"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "effects": [
+        {
+          "run_id": "corr-301bb8d093084b03a4a3881a942d0499",
+          "status": "completed",
+          "ended_at": "2026-11-06T14:49:19.602804Z",
+          "tool_name": "code_execution__bash",
+          "started_at": "2026-11-06T14:49:17.770964Z",
+          "tool_call_id": "call_jhIl1hi4Ckz2dy2j9JweyKQ8",
+          "effect_summary": "jv:mutation:script:v1"
+        },
+        {
+          "run_id": "corr-301bb8d093084b03a4a3881a942d0499",
+          "status": "completed",
+          "ended_at": "2026-11-06T14:49:22.941313Z",
+          "tool_name": "code_execution__bash",
+          "started_at": "2026-11-06T14:49:21.874200Z",
+          "tool_call_id": "call_HFpJZasjmgrWrU60EZ351K3N",
+          "effect_summary": "jv:mutation:script:v1"
+        },
+        {
+          "run_id": "corr-301bb8d093084b03a4a3881a942d0499",
+          "status": "completed",
+          "ended_at": "2026-11-06T14:49:24.866785Z",
+          "tool_name": "file_interface__share_file",
+          "started_at": "2026-11-06T14:49:24.751202Z",
+          "tool_call_id": "call_l4kU14qCvrBaIGIAoMP8G2Gx",
+          "effect_summary": "jv:mutation:file-share:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_028d6e66f28143ac006aede8eb235487d290179f60685f44ec",
+          "args": "{\"command\":\"cat > harness-memo.md <<'EOF'\\n# JV Harness Pilot\\n\\n**Status Memo**\\n\\n- Native execution is working.\\n- Migration and legacy removal remain open.\\n\\n| Item              | Status                    |\\n|-------------------|---------------------------|\\n| Research          | qualified local profile    |\\n| Downloads         | qualified local profile    |\\n| Enterprise release| not yet qualified         |\\n\\nEOF\",\"timeout_seconds\":20}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_jhIl1hi4Ckz2dy2j9JweyKQ8",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "(no output)",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T14:49:19.615347Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_jhIl1hi4Ckz2dy2j9JweyKQ8"
+        },
+        {
+          "id": "fc_0825ea35b7968a5b006aede8f0a86c87d2954a95e80ed2fd67",
+          "args": "{\"command\":\"python staged_skills/pdf-generation/scripts/render_pdf.py --input harness-memo.md --output output/harness-memo.pdf --title \\\"JV Harness Pilot\\\"\",\"timeout_seconds\":60}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_HFpJZasjmgrWrU60EZ351K3N",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "[stdout]\noutput/harness-memo.pdf\n",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T14:49:22.972638Z",
+          "tool_kind": null,
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_HFpJZasjmgrWrU60EZ351K3N"
+        },
+        {
+          "id": "fc_0496878a26f95f05006aede8f47f4c87d2a40790d893cc4fed",
+          "args": "{\"path\":\"output/harness-memo.pdf\"}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "file_interface__share_file",
+          "tool_call_id": "call_l4kU14qCvrBaIGIAoMP8G2Gx",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"path\": \"output/harness-memo.pdf\", \"filename\": \"harness-memo.pdf\", \"bytes\": 7677, \"sha256\": \"78dd595523bfedc0047cacf95527ec46cb355ad5dc393bc78b161cafa23f549e\", \"expires_at\": \"2026-11-06T14:59:24.861800+00:00\", \"url\": \"http://127.0.0.1:8158/api/actions/n.FileInterfaceAction.b729bac0580e406dba8023e4/downloads/[capability-redacted]\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T14:49:24.883883Z",
+          "tool_kind": null,
+          "tool_name": "file_interface__share_file",
+          "tool_call_id": "call_l4kU14qCvrBaIGIAoMP8G2Gx"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T14:49:27.779638+00:00",
+        "total_tokens": 4653,
+        "prompt_tokens": 4369,
+        "total_cost_usd": 0.009474,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 4,
+        "completion_tokens": 284,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.009474,
+        "model_attempt_count": 4,
+        "cached_prompt_tokens": 1024,
+        "total_duration_seconds": 10.208,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 10.208,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1030,
+            "prompt_tokens": 920,
+            "completion_tokens": 110,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00272,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-301bb8d093084b03a4a3881a942d0499",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-301bb8d093084b03a4a3881a942d0499:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1092,
+            "prompt_tokens": 1040,
+            "completion_tokens": 52,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002496,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-301bb8d093084b03a4a3881a942d0499",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-301bb8d093084b03a4a3881a942d0499:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1132,
+            "prompt_tokens": 1109,
+            "completion_tokens": 23,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002402,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-301bb8d093084b03a4a3881a942d0499",
+          "native_step_index": 3,
+          "native_receipt_key": "spend:default|run|*|corr-301bb8d093084b03a4a3881a942d0499:3",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1399,
+            "prompt_tokens": 1300,
+            "completion_tokens": 99,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1024
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001856,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-301bb8d093084b03a4a3881a942d0499",
+          "native_step_index": 4,
+          "native_receipt_key": "spend:default|run|*|corr-301bb8d093084b03a4a3881a942d0499:4",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.5accfbb9ffee4655a64a7839",
+      "utterance": "Without rendering or modifying anything, share the existing output/harness-memo.pdf with expires_in 3600 and give me its actual download link. Briefly repeat the enterprise-release caveat from our memo.",
+      "response": "Here is your requested file: [Download harness-memo.pdf](http://127.0.0.1:8158/api/actions/n.FileInterfaceAction.b729bac0580e406dba8023e4/downloads/[capability-redacted]) (link valid for 1 hour).\n\nReminder: The enterprise release is not yet qualified, as noted in the memo.",
+      "session_id": "sess_2b38e67a1ef04189",
+      "started_at": "2026-11-06T10:52:03.182935",
+      "completed_at": "2026-11-06T10:52:08.838155",
+      "duration_seconds": 5.65522,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 3086,
+          "output_tokens": 126
+        },
+        "output": "Here is your requested file: [Download harness-memo.pdf](http://127.0.0.1:8158/api/actions/n.FileInterfaceAction.b729bac0580e406dba8023e4/downloads/[capability-redacted]) (link valid for 1 hour).\n\nReminder: The enterprise release is not yet qualified, as noted in the memo.",
+        "run_id": "corr-2de577aea82f41dbb33d795a439fa5ff",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T14:52:08.813935+00:00",
+                "total_tokens": 3212,
+                "prompt_tokens": 3086,
+                "total_cost_usd": 0.003148,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 126,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003148,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 2688,
+                "total_duration_seconds": 3.134,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.134,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-2de577aea82f41dbb33d795a439fa5ff"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-301bb8d093084b03a4a3881a942d0499"
+        },
+        "usage_complete": true
+      },
+      "effects": [
+        {
+          "run_id": "corr-2de577aea82f41dbb33d795a439fa5ff",
+          "status": "completed",
+          "ended_at": "2026-11-06T14:52:06.771091Z",
+          "tool_name": "file_interface__share_file",
+          "started_at": "2026-11-06T14:52:06.708244Z",
+          "tool_call_id": "call_asHc3rak5nvP1ydYN5Nm79er",
+          "effect_summary": "jv:mutation:file-share:v1"
+        }
+      ],
+      "current_tool_parts": [
+        {
+          "id": "fc_09a1e9383376d356006aede99683d887d2926514e944f8d7c9",
+          "args": "{\"path\":\"output/harness-memo.pdf\",\"expires_in\":3600}",
+          "part_kind": "tool-call",
+          "tool_kind": null,
+          "tool_name": "file_interface__share_file",
+          "tool_call_id": "call_asHc3rak5nvP1ydYN5Nm79er",
+          "provider_name": "openai",
+          "provider_details": null
+        },
+        {
+          "retry": null,
+          "content": "{\"ok\": true, \"path\": \"output/harness-memo.pdf\", \"filename\": \"harness-memo.pdf\", \"bytes\": 7677, \"sha256\": \"78dd595523bfedc0047cacf95527ec46cb355ad5dc393bc78b161cafa23f549e\", \"expires_at\": \"2026-11-06T15:52:06.768581+00:00\", \"url\": \"http://127.0.0.1:8158/api/actions/n.FileInterfaceAction.b729bac0580e406dba8023e4/downloads/[capability-redacted]\"}",
+          "outcome": "success",
+          "metadata": null,
+          "part_kind": "tool-return",
+          "timestamp": "2026-11-06T14:52:06.782831Z",
+          "tool_kind": null,
+          "tool_name": "file_interface__share_file",
+          "tool_call_id": "call_asHc3rak5nvP1ydYN5Nm79er"
+        }
+      ],
+      "usage": {
+        "last_updated": "2026-11-06T14:52:08.838202+00:00",
+        "total_tokens": 3212,
+        "prompt_tokens": 3086,
+        "total_cost_usd": 0.003148,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 126,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.003148,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 2688,
+        "total_duration_seconds": 3.134,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.134,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1475,
+            "prompt_tokens": 1446,
+            "completion_tokens": 29,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1280
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001204,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-2de577aea82f41dbb33d795a439fa5ff",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-2de577aea82f41dbb33d795a439fa5ff:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1737,
+            "prompt_tokens": 1640,
+            "completion_tokens": 97,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1408
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001944,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-2de577aea82f41dbb33d795a439fa5ff",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-2de577aea82f41dbb33d795a439fa5ff:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ]
+    }
+  ],
+  "conversation": {
+    "id": "n.Conversation.e6c5a3232b934935a23c7628",
+    "session_id": "sess_2b38e67a1ef04189",
+    "spend": {
+      "usd": "0.012622",
+      "tokens": 7865,
+      "requests": 6,
+      "unpriced_requests": 0
+    },
+    "script_policy": {
+      "assets": {
+        "staged_skills/pdf-generation/scripts/render_pdf.py": "sha256:abeef6a5fd242f1982175ba68410af147725a1f61481403e2be23944bb3ea090"
+      },
+      "storage": {
+        "gid": 20,
+        "uid": 501,
+        "kind": "local-user-bind-v1",
+        "root": "/private/tmp/jvagent-native-pdf-smoke/files/n.Agent.5c9986e094434e479d68d31e/o.User.8c2022607fff498e9f0b262f",
+        "inode": 19,
+        "device": 16777258,
+        "filesystem_bytes": 67067904
+      },
+      "user_id": "o.User.8c2022607fff498e9f0b262f",
+      "version": "sdk-docker-user-files-v2",
+      "agent_id": "n.Agent.5c9986e094434e479d68d31e",
+      "session_id": "sess_2b38e67a1ef04189",
+      "configuration": {
+        "image": "sha256:86f4588095da37242ffdc617b53dc9bbdf7c4f63450cd8a9799573534d9b21c4",
+        "timeout": 60.0,
+        "max_output_chars": 64000
+      }
+    },
+    "task_count": 0
+  },
+  "image": {
+    "id": "sha256:86f4588095da37242ffdc617b53dc9bbdf7c4f63450cd8a9799573534d9b21c4",
+    "size_bytes": 254186115,
+    "packages": {
+      "pip": "24.0",
+      "packaging": "26.3",
+      "setuptools": "79.0.1",
+      "wheel": "0.46.3",
+      "pyphen": "0.18.1",
+      "cffi": "2.1.1",
+      "zopfli": "0.4.3",
+      "pydyf": "0.13.0",
+      "pycparser": "3.12",
+      "brotli": "1.2.1",
+      "tinyhtml5": "2.1.0",
+      "Markdown": "3.10.3",
+      "pillow": "13.0.0",
+      "cssselect2": "0.10.1",
+      "webencodings": "0.6.1",
+      "tinycss2": "1.5.1",
+      "weasyprint": "70.0",
+      "fonttools": "4.68.0"
+    },
+    "dockerfile_git_blob": "git-blob:56fa86fbcd95ae2a809cf19609d14f1c312ae853"
+  },
+  "containers": [
+    {
+      "Image": "sha256:86f4588095da37242ffdc617b53dc9bbdf7c4f63450cd8a9799573534d9b21c4",
+      "Mounts": [
+        {
+          "Type": "tmpfs",
+          "Source": "",
+          "Destination": "/run/pydantic-ai",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        },
+        {
+          "Type": "bind",
+          "Source": "/host_mnt/private/tmp/jvagent-native-pdf-smoke/files/n.Agent.5c9986e094434e479d68d31e/o.User.8c2022607fff498e9f0b262f",
+          "Destination": "/workspace",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        }
+      ],
+      "container_id_prefix": "8a14118c5986",
+      "user": "501:20",
+      "network_mode": "none",
+      "readonly_root": true,
+      "memory": 536870912,
+      "pids_limit": 128
+    }
+  ],
+  "pdf": {
+    "bytes": 7677,
+    "sha256": "sha256:78dd595523bfedc0047cacf95527ec46cb355ad5dc393bc78b161cafa23f549e",
+    "inspection": {
+      "pages": 1,
+      "text": "JV Harness Pilot\nStatus Memo\nNative execution is working.\nMigration and legacy removal remain open.\nItem\nStatus\nResearch\nqualified local profile\nDownloads\nqualified local profile\nEnterprise release not yet qualified\n\u2022 \n\u2022 \n",
+      "metadata": {
+        "format": "PDF 1.7",
+        "title": "JV Harness Pilot",
+        "author": "",
+        "subject": "",
+        "keywords": "",
+        "creator": "",
+        "producer": "WeasyPrint 70.0",
+        "creationDate": "",
+        "modDate": "",
+        "trapped": "",
+        "encryption": null
+      }
+    }
+  },
+  "headers": {
+    "observed_at": "2026-11-06T14:50:04.870422+00:00",
+    "proof": {
+      "status": 200,
+      "bytes": 7677,
+      "sha256": "sha256:78dd595523bfedc0047cacf95527ec46cb355ad5dc393bc78b161cafa23f549e",
+      "content_disposition": "attachment; filename*=UTF-8''harness-memo.pdf",
+      "content_type": "application/octet-stream",
+      "cache_control": "no-store",
+      "nosniff": "nosniff",
+      "content_security_policy": "default-src 'self'; frame-ancestors 'none'",
+      "bearer_or_cookie_sent": false
+    }
+  },
+  "wheel": {
+    "wheel": "jvagent-0.1.8rc20-py3-none-any.whl",
+    "wheel_sha256": "sha256:a357772fd72bc0aee544c98bc86167fc331abe717753e6eb41ea34a3c80abee3",
+    "assets": {
+      "SKILL.md": "git-blob:859556fda6d2425238b98742943acf648bba238b",
+      "scripts/render_pdf.py": "git-blob:d425e1998e7f570672ce0fcc9309331eb3b6cd90",
+      "resources/requirements.txt": "git-blob:625e3058abae1b9fb10553343212aa68057c00bc"
+    },
+    "build": "clean staged-source export; no stale local build directory"
+  },
+  "restart_restore": {
+    "label": "restored",
+    "interaction_hashes": {
+      "n.Interaction.10c074c116c648f6bbbcd739": "sha256:1148a39c84b811fb64c9dd53628d65616b5bcbbc6421a0804b1d9f5f50a2f891"
+    },
+    "interaction_count": 1,
+    "registration_count": 1,
+    "conversations": {
+      "n.Conversation.e6c5a3232b934935a23c7628": {
+        "native_spend_digest": "sha256:514e4afa6a7fdfb5c8c75f49973c144048d31da8b6b2b2873c2ed1b43c298f53",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_2b38e67a1ef04189": {
+            "spent": {
+              "usd": "0.009474",
+              "tokens": 4653,
+              "requests": 4,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T14:49:26.781308+00:00"
+          },
+          "default|run|*|corr-301bb8d093084b03a4a3881a942d0499": {
+            "spent": {
+              "usd": "0.009474",
+              "tokens": 4653,
+              "requests": 4,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T14:49:26.781308+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "cache_restore": {
+    "label": "restored",
+    "interaction_hashes": {
+      "n.Interaction.5accfbb9ffee4655a64a7839": "sha256:abd83fb773db3983c80a107222354882d95ca8ec8ac5369b075e0e29adb4493e",
+      "n.Interaction.10c074c116c648f6bbbcd739": "sha256:1148a39c84b811fb64c9dd53628d65616b5bcbbc6421a0804b1d9f5f50a2f891"
+    },
+    "interaction_count": 2,
+    "registration_count": 2,
+    "conversations": {
+      "n.Conversation.e6c5a3232b934935a23c7628": {
+        "native_spend_digest": "sha256:eca3f4fd09edcb0ef7c77f1ebd80b07eb022065d711418e45d6dc60fff440070",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_2b38e67a1ef04189": {
+            "spent": {
+              "usd": "0.012622",
+              "tokens": 7865,
+              "requests": 6,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T14:52:08.436452+00:00"
+          },
+          "default|run|*|corr-2de577aea82f41dbb33d795a439fa5ff": {
+            "spent": {
+              "usd": "0.003148",
+              "tokens": 3212,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T14:52:08.436452+00:00"
+          },
+          "default|run|*|corr-301bb8d093084b03a4a3881a942d0499": {
+            "spent": {
+              "usd": "0.009474",
+              "tokens": 4653,
+              "requests": 4,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T14:49:26.781308+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "runtime_observer": {
+    "process_id": 22378,
+    "observed_at": "2026-11-06T14:56:45.767117+00:00",
+    "source_blobs": {
+      "jvagent/harness/script_sandbox.py": "git-blob:467af11bbb96ec6b329aa9b043535c80d812ed07",
+      "jvagent/skills/README.md": "git-blob:92783cf4fed4a85e1730e455bed7ccb2f7f822b9",
+      "jvagent/skills/pdf-generation/SKILL.md": "git-blob:859556fda6d2425238b98742943acf648bba238b",
+      "jvagent/skills/pdf-generation/resources/requirements.txt": "git-blob:625e3058abae1b9fb10553343212aa68057c00bc",
+      "jvagent/skills/pdf-generation/scripts/render_pdf.py": "git-blob:d425e1998e7f570672ce0fcc9309331eb3b6cd90"
+    },
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "totals": {
+    "turns": 2,
+    "delivered": 2,
+    "provider_requests": 6,
+    "provider_reported_tokens": 7865,
+    "estimated_cost_usd": "0.012622",
+    "unknown_cost_calls": 0
+  },
+  "limits": [
+    "Local reviewed image and basic one-page Markdown/table only; no LaTeX, multilingual/font matrix, long/hostile documents, other render engines or production supply-chain qualification.",
+    "A dirty local wheel build retained stale old-folder assets; clean staged-source export passed canonical-only asset inspection.",
+    "The legacy host renderer test skipped because its host has no PDF engine; actual native Docker rendering succeeded.",
+    "Distribution dependencies are recorded from the qualified image; base/direct packages are pinned, system/transitive resolution is not a reproducible production lock.",
+    "No performance improvement or enterprise release claim; migration, old runtime deletion and broader recovery/deployment remain open."
+  ]
+}

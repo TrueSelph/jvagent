@@ -1,0 +1,1762 @@
+{
+  "observed_at": "2026-11-06T13:05:11.269771+00:00",
+  "parent_revision": "git-commit:b6f24b0739519c538523d92f9111527c9ce2cf5d",
+  "source_blobs": {
+    "jvagent/action/file_interface/_core.py": "git-blob:e9db34ae0f04b02f9b9da5d25d398ec8c244791e",
+    "jvagent/core/sandbox.py": "git-blob:c20bbd3a82f8aa115e4bcecd4a23e8760a596257",
+    "jvagent/harness/script_files.py": "git-blob:c561447c517f3e4632a5f43bbf3ea9358a705c60",
+    "jvagent/harness/script_sandbox.py": "git-blob:a16e7bb508760a49437626ce316895d867c576b4",
+    "jvagent/memory/lock_manager.py": "git-blob:4a5212f8a43f368006276a5aa17d97ff2ce408f3"
+  },
+  "observer": {
+    "process_id": 7477,
+    "observed_at": "2026-11-06T13:05:11.014140+00:00",
+    "source_blobs": {
+      "jvagent/action/file_interface/_core.py": "git-blob:e9db34ae0f04b02f9b9da5d25d398ec8c244791e",
+      "jvagent/core/sandbox.py": "git-blob:c20bbd3a82f8aa115e4bcecd4a23e8760a596257",
+      "jvagent/harness/script_files.py": "git-blob:c561447c517f3e4632a5f43bbf3ea9358a705c60",
+      "jvagent/harness/script_sandbox.py": "git-blob:a16e7bb508760a49437626ce316895d867c576b4",
+      "jvagent/memory/lock_manager.py": "git-blob:4a5212f8a43f368006276a5aa17d97ff2ce408f3"
+    },
+    "file_interface_loaded": true,
+    "legacy_execution_modules": [],
+    "runtime_functions_patched": false
+  },
+  "fixture": {
+    "root": "/private/tmp/jvagent-native-user-files-smoke",
+    "backend": 8155,
+    "ui": 3140,
+    "model": "openai:gpt-4.1",
+    "database": "isolated PostgreSQL",
+    "filesystem_bytes": 67067904
+  },
+  "interactions": [
+    {
+      "id": "n.Interaction.9f21d3e521484774909c403c",
+      "scenario": "file_service_write",
+      "utterance": "Use file_interface__write_file to save exactly HOST-SEED-86 to seed.txt. Confirm the actual file acknowledgement. Do not use the script tool for this request.",
+      "response": "File seed.txt was saved with the exact content \"HOST-SEED-86\". Acknowledgement: 12 bytes written, SHA-256 hash 0ecb4657d755cea1c881bdb34ba624b48b8e06d1f0dc900c033a32866e9ca226.",
+      "session_id": "sess_f7d3c90f27bb4239",
+      "started_at": "2026-11-06T08:53:50.634168",
+      "completed_at": "2026-11-06T08:53:55.770115",
+      "duration_seconds": 5.135947,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1826,
+          "output_tokens": 97
+        },
+        "output": "File seed.txt was saved with the exact content \"HOST-SEED-86\". Acknowledgement: 12 bytes written, SHA-256 hash 0ecb4657d755cea1c881bdb34ba624b48b8e06d1f0dc900c033a32866e9ca226.",
+        "run_id": "corr-50bd0d7d091b493e86a56428cd4aaf7c",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T12:53:55.746791+00:00",
+                "total_tokens": 1923,
+                "prompt_tokens": 1826,
+                "total_cost_usd": 0.004428,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 97,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.004428,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 3.481,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.481,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-50bd0d7d091b493e86a56428cd4aaf7c"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T12:53:55.770160+00:00",
+        "total_tokens": 1923,
+        "prompt_tokens": 1826,
+        "total_cost_usd": 0.004428,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 97,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004428,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 3.481,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.481,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 892,
+            "prompt_tokens": 865,
+            "completion_tokens": 27,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001946,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-50bd0d7d091b493e86a56428cd4aaf7c",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-50bd0d7d091b493e86a56428cd4aaf7c:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1031,
+            "prompt_tokens": 961,
+            "completion_tokens": 70,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002482,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-50bd0d7d091b493e86a56428cd4aaf7c",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-50bd0d7d091b493e86a56428cd4aaf7c:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-50bd0d7d091b493e86a56428cd4aaf7c",
+          "tool_name": "file_interface__write_file",
+          "tool_call_id": "call_lj7xvP43CnaBcClA1QcFSpa4",
+          "status": "completed",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "started_at": "2026-11-06T12:53:53.600862Z",
+          "ended_at": "2026-11-06T12:53:53.626565Z"
+        }
+      ],
+      "workspace_refs": [],
+      "sdk_digest": "sha256:27d724ec1bd56be57ab62bf896fb89d894b7df029d40990060e698265be56c9d",
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "file_interface__write_file",
+          "tool_call_id": "call_lj7xvP43CnaBcClA1QcFSpa4",
+          "error": null,
+          "timestamp": "2026-11-06T12:53:53.606184Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "file_interface__write_file",
+          "tool_call_id": "call_lj7xvP43CnaBcClA1QcFSpa4",
+          "error": null,
+          "timestamp": "2026-11-06T12:53:53.633555Z"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.1fe280cd9e3e42fc8a0adb60",
+      "scenario": "sdk_read_and_triage",
+      "utterance": "Use code_execution__bash to read seed.txt and show its exact content. Then run the bundled triage ranking script using its documented example input. Save a file proof.txt containing exactly SDK-OUTPUT-86 in the shared workspace. Report the actual script outcome and the seed content.",
+      "response": "- The exact content of seed.txt is: HOST-SEED-86\n- The triage ranking script output (ranked.json) is:\n  ```\n  [\n    {\n      \"title\": \"DB down\",\n      \"severity\": 5\n    },\n    {\n      \"title\": \"typo\",\n      \"severity\": 1\n    }\n  ]\n  ```\n- File proof.txt was saved with exactly \"SDK-OUTPUT-86\" (13 bytes, SHA-256: a0ec55341ba901a80aa27f3c20339de1a107dbca209c1571a63231239bae98c9).",
+      "session_id": "sess_f7d3c90f27bb4239",
+      "started_at": "2026-11-06T08:57:08.101610",
+      "completed_at": "2026-11-06T08:57:14.587361",
+      "duration_seconds": 6.485751,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 2448,
+          "output_tokens": 276
+        },
+        "output": "- The exact content of seed.txt is: HOST-SEED-86\n- The triage ranking script output (ranked.json) is:\n  ```\n  [\n    {\n      \"title\": \"DB down\",\n      \"severity\": 5\n    },\n    {\n      \"title\": \"typo\",\n      \"severity\": 1\n    }\n  ]\n  ```\n- File proof.txt was saved with exactly \"SDK-OUTPUT-86\" (13 bytes, SHA-256: a0ec55341ba901a80aa27f3c20339de1a107dbca209c1571a63231239bae98c9).",
+        "run_id": "corr-02654518bc3c4129bcb0e6fb712b1f85",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T12:57:14.559240+00:00",
+                "total_tokens": 2724,
+                "prompt_tokens": 2448,
+                "total_cost_usd": 0.005568,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 276,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005568,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 1024,
+                "total_duration_seconds": 3.928,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.928,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-02654518bc3c4129bcb0e6fb712b1f85"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-50bd0d7d091b493e86a56428cd4aaf7c"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T12:57:14.587403+00:00",
+        "total_tokens": 2724,
+        "prompt_tokens": 2448,
+        "total_cost_usd": 0.005568,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 276,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005568,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 1024,
+        "total_duration_seconds": 3.928,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.928,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1234,
+            "prompt_tokens": 1093,
+            "completion_tokens": 141,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.003314,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-02654518bc3c4129bcb0e6fb712b1f85",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-02654518bc3c4129bcb0e6fb712b1f85:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1490,
+            "prompt_tokens": 1355,
+            "completion_tokens": 135,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1024
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002254,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-02654518bc3c4129bcb0e6fb712b1f85",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-02654518bc3c4129bcb0e6fb712b1f85:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-02654518bc3c4129bcb0e6fb712b1f85",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_LKqd80bvLajMGPPRVup9fPZn",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T12:57:10.661000Z",
+          "ended_at": "2026-11-06T12:57:11.911855Z"
+        },
+        {
+          "run_id": "corr-02654518bc3c4129bcb0e6fb712b1f85",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_JxfGO2IxbbotxuhojTzNgRk3",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T12:57:10.699354Z",
+          "ended_at": "2026-11-06T12:57:12.025749Z"
+        },
+        {
+          "run_id": "corr-02654518bc3c4129bcb0e6fb712b1f85",
+          "tool_name": "file_interface__write_file",
+          "tool_call_id": "call_75SqlGnF0IF7SoQbd7YEETRq",
+          "status": "completed",
+          "effect_summary": "jv:mutation:file-write:v1",
+          "started_at": "2026-11-06T12:57:12.041150Z",
+          "ended_at": "2026-11-06T12:57:12.068981Z"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-46bf2cba0915",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:c0b6d2c6bf757f06fd65f5ca9a69d4a135a73c9c6d4c5bfcfa301b6769efe2f0",
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_LKqd80bvLajMGPPRVup9fPZn",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:10.681741Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_JxfGO2IxbbotxuhojTzNgRk3",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:10.706392Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_LKqd80bvLajMGPPRVup9fPZn",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:11.917670Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_JxfGO2IxbbotxuhojTzNgRk3",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:12.031011Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "file_interface__write_file",
+          "tool_call_id": "call_75SqlGnF0IF7SoQbd7YEETRq",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:12.045745Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "file_interface__write_file",
+          "tool_call_id": "call_75SqlGnF0IF7SoQbd7YEETRq",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:12.073724Z"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.da0e7f81b2a54eb4a57f9635",
+      "scenario": "sdk_write",
+      "utterance": "Use only code_execution__bash for this turn. Run Python to write exactly SCRIPT-WROTE-86 to script-only.txt. Also read ranked.json and show it. Do not use file_interface__write_file.",
+      "response": "- ranked.json content:\n  ```\n  [\n    {\n      \"title\": \"DB down\",\n      \"severity\": 5\n    },\n    {\n      \"title\": \"typo\",\n      \"severity\": 1\n    }\n  ]\n  ```\n- Python wrote exactly SCRIPT-WROTE-86 to script-only.txt.",
+      "session_id": "sess_f7d3c90f27bb4239",
+      "started_at": "2026-11-06T08:57:25.284970",
+      "completed_at": "2026-11-06T08:57:30.188367",
+      "duration_seconds": 4.903397,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 3175,
+          "output_tokens": 115
+        },
+        "output": "- ranked.json content:\n  ```\n  [\n    {\n      \"title\": \"DB down\",\n      \"severity\": 5\n    },\n    {\n      \"title\": \"typo\",\n      \"severity\": 1\n    }\n  ]\n  ```\n- Python wrote exactly SCRIPT-WROTE-86 to script-only.txt.",
+        "run_id": "corr-579d087564524666b4d22ff80a657bbf",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T12:57:30.160012+00:00",
+                "total_tokens": 3290,
+                "prompt_tokens": 3175,
+                "total_cost_usd": 0.005158,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 115,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.005158,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 1408,
+                "total_duration_seconds": 3.001,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.001,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-579d087564524666b4d22ff80a657bbf"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-02654518bc3c4129bcb0e6fb712b1f85"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T12:57:30.188405+00:00",
+        "total_tokens": 3290,
+        "prompt_tokens": 3175,
+        "total_cost_usd": 0.005158,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 115,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.005158,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 1408,
+        "total_duration_seconds": 3.001,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.001,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1586,
+            "prompt_tokens": 1539,
+            "completion_tokens": 47,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1408
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001342,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-579d087564524666b4d22ff80a657bbf",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-579d087564524666b4d22ff80a657bbf:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1704,
+            "prompt_tokens": 1636,
+            "completion_tokens": 68,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.003816,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-579d087564524666b4d22ff80a657bbf",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-579d087564524666b4d22ff80a657bbf:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-579d087564524666b4d22ff80a657bbf",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_kWRkwsRI6GBTeSxvIUQy6VA3",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T12:57:27.727286Z",
+          "ended_at": "2026-11-06T12:57:28.473982Z"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-46bf2cba0915",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:2017e1fdd3b6cb02ac55fb136962b31130c6a40ca5f0f39214631a72f006592c",
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_kWRkwsRI6GBTeSxvIUQy6VA3",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:27.733547Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_kWRkwsRI6GBTeSxvIUQy6VA3",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:28.481618Z"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.05b8cb15db884926b216baca",
+      "scenario": "file_service_read_sdk_output",
+      "utterance": "Use only file_interface__read_file to read script-only.txt and ranked.json. Report their actual contents. Do not use the script tool and do not write anything.",
+      "response": "script-only.txt content:\nSCRIPT-WROTE-86\n\nranked.json content:\n[\n  {\n    \"title\": \"DB down\",\n    \"severity\": 5\n  },\n  {\n    \"title\": \"typo\",\n    \"severity\": 1\n  }\n]",
+      "session_id": "sess_f7d3c90f27bb4239",
+      "started_at": "2026-11-06T08:57:41.251638",
+      "completed_at": "2026-11-06T08:57:45.565636",
+      "duration_seconds": 4.313998,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 3632,
+          "output_tokens": 114
+        },
+        "output": "script-only.txt content:\nSCRIPT-WROTE-86\n\nranked.json content:\n[\n  {\n    \"title\": \"DB down\",\n    \"severity\": 5\n  },\n  {\n    \"title\": \"typo\",\n    \"severity\": 1\n  }\n]",
+        "run_id": "corr-aec03254f363429cadd7d7073e803391",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T12:57:45.525008+00:00",
+                "total_tokens": 3746,
+                "prompt_tokens": 3632,
+                "total_cost_usd": 0.003568,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 114,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.003568,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 3072,
+                "total_duration_seconds": 3.058,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 3.058,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-aec03254f363429cadd7d7073e803391"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-579d087564524666b4d22ff80a657bbf"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T12:57:45.565680+00:00",
+        "total_tokens": 3746,
+        "prompt_tokens": 3632,
+        "total_cost_usd": 0.003568,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 114,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.003568,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 3072,
+        "total_duration_seconds": 3.058,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 3.058,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1798,
+            "prompt_tokens": 1743,
+            "completion_tokens": 55,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1408
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001814,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-aec03254f363429cadd7d7073e803391",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-aec03254f363429cadd7d7073e803391:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1948,
+            "prompt_tokens": 1889,
+            "completion_tokens": 59,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1664
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001754,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-aec03254f363429cadd7d7073e803391",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-aec03254f363429cadd7d7073e803391:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-aec03254f363429cadd7d7073e803391",
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_7jNVebFjtRvTNJMY9EjFuZoR",
+          "status": "completed",
+          "effect_summary": null,
+          "started_at": "2026-11-06T12:57:43.989382Z",
+          "ended_at": "2026-11-06T12:57:44.016072Z"
+        },
+        {
+          "run_id": "corr-aec03254f363429cadd7d7073e803391",
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_ghcKZNJq8zeYpyaYmClaqM3L",
+          "status": "completed",
+          "effect_summary": null,
+          "started_at": "2026-11-06T12:57:44.034764Z",
+          "ended_at": "2026-11-06T12:57:44.052483Z"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-46bf2cba0915",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:8ac5fe6badfaa1056a63d48d23f25a0e0e0c909217b934323a5f8281b8d9b38e",
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_7jNVebFjtRvTNJMY9EjFuZoR",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:43.995778Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_7jNVebFjtRvTNJMY9EjFuZoR",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:44.022639Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_ghcKZNJq8zeYpyaYmClaqM3L",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:44.041386Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "file_interface__read_file",
+          "tool_call_id": "call_ghcKZNJq8zeYpyaYmClaqM3L",
+          "error": null,
+          "timestamp": "2026-11-06T12:57:44.057806Z"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.20db82f8bfc24a2c858c37f0",
+      "scenario": "pre_fix_stopped_container_failure",
+      "utterance": "Use only code_execution__bash to read script-only.txt and seed.txt without writing either file. Report the actual contents.",
+      "response": "The model request could not complete. Please check the service configuration.",
+      "session_id": "sess_f7d3c90f27bb4239",
+      "started_at": "2026-11-06T08:58:14.554662",
+      "completed_at": "2026-11-06T08:58:16.890518",
+      "duration_seconds": 2.335856,
+      "native_run": {
+        "run_id": "corr-23debbdd688c420db234b7053d0298e1",
+        "status": "failed",
+        "failure_type": "WorkspaceUnavailableError",
+        "failure_origin": "_backend.py:414:_exec",
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-aec03254f363429cadd7d7073e803391"
+        },
+        "usage_complete": false
+      },
+      "usage": {
+        "last_updated": "2026-11-06T12:58:16.890564+00:00",
+        "total_tokens": 2000,
+        "prompt_tokens": 1978,
+        "total_cost_usd": 0.001828,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 1,
+        "completion_tokens": 22,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.001828,
+        "model_attempt_count": 1,
+        "cached_prompt_tokens": 1536,
+        "total_duration_seconds": 0.928,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 0.928,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 2000,
+            "prompt_tokens": 1978,
+            "completion_tokens": 22,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1536
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001828,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-23debbdd688c420db234b7053d0298e1",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-23debbdd688c420db234b7053d0298e1:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-23debbdd688c420db234b7053d0298e1",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_A6R3Okk8MIqLyNOLaeFtyjTO",
+          "status": "started",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T12:58:16.346360Z",
+          "ended_at": null
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-46bf2cba0915",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:7673aef8bc6bbff7fc6d49b7bb48acf09842bf811bb7906525573317c4bedb92",
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_A6R3Okk8MIqLyNOLaeFtyjTO",
+          "error": null,
+          "timestamp": "2026-11-06T12:58:16.356075Z"
+        },
+        {
+          "kind": "run_failed",
+          "tool_name": null,
+          "tool_call_id": null,
+          "error": "WorkspaceUnavailableError('Docker workspace pydantic-ai-46bf2cba0915 is unavailable: cannot write /run/pydantic-ai/c25fbe7af458e65d.pid, which stops the command on a timeout: /run/pydantic-ai must be writable')",
+          "timestamp": "2026-11-06T12:58:16.693631Z"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.e6b8209d4f544e10a565a2e5",
+      "scenario": "new_conversation_existing_user_files",
+      "utterance": "Use only code_execution__bash in this new conversation to read script-only.txt and seed.txt. Do not write either file. Report actual contents.",
+      "response": "Contents of script-only.txt:\nSCRIPT-WROTE-86\n\nContents of seed.txt:\nHOST-SEED-86",
+      "session_id": "sess_7dc7ae69804b4295",
+      "started_at": "2026-11-06T09:01:40.235167",
+      "completed_at": "2026-11-06T09:01:45.524458",
+      "duration_seconds": 5.289291,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 1790,
+          "output_tokens": 79
+        },
+        "output": "Contents of script-only.txt:\nSCRIPT-WROTE-86\n\nContents of seed.txt:\nHOST-SEED-86",
+        "run_id": "corr-3b99ffddec4b4298add22cd5320a405d",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:01:45.504086+00:00",
+                "total_tokens": 1869,
+                "prompt_tokens": 1790,
+                "total_cost_usd": 0.004212,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 79,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.004212,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.541,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.541,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-3b99ffddec4b4298add22cd5320a405d"
+        },
+        "history_source": {},
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T13:01:45.524509+00:00",
+        "total_tokens": 1869,
+        "prompt_tokens": 1790,
+        "total_cost_usd": 0.004212,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 79,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004212,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.541,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.541,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 914,
+            "prompt_tokens": 860,
+            "completion_tokens": 54,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002152,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-3b99ffddec4b4298add22cd5320a405d",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-3b99ffddec4b4298add22cd5320a405d:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 955,
+            "prompt_tokens": 930,
+            "completion_tokens": 25,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00206,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-3b99ffddec4b4298add22cd5320a405d",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-3b99ffddec4b4298add22cd5320a405d:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-3b99ffddec4b4298add22cd5320a405d",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_VoR73qI8IgVvNJ998yG2kdql",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T13:01:42.472392Z",
+          "ended_at": "2026-11-06T13:01:43.942307Z"
+        },
+        {
+          "run_id": "corr-3b99ffddec4b4298add22cd5320a405d",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_T4iGXBxAI8HW4z5IxgiJustw",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T13:01:42.475398Z",
+          "ended_at": "2026-11-06T13:01:43.945313Z"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-098682a7c70d",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:5a91fc5be2ac3b0882a6db15b658bddfcb4964e39ea3b15c528a8bef63ad1c64",
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_VoR73qI8IgVvNJ998yG2kdql",
+          "error": null,
+          "timestamp": "2026-11-06T13:01:42.476594Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_T4iGXBxAI8HW4z5IxgiJustw",
+          "error": null,
+          "timestamp": "2026-11-06T13:01:42.482155Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_VoR73qI8IgVvNJ998yG2kdql",
+          "error": null,
+          "timestamp": "2026-11-06T13:01:43.948014Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_T4iGXBxAI8HW4z5IxgiJustw",
+          "error": null,
+          "timestamp": "2026-11-06T13:01:43.953068Z"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.eb0b04ab741b4ec49f47084b",
+      "scenario": "repeat_read_without_container_stop",
+      "utterance": "Use only code_execution__bash to read script-only.txt and seed.txt again without writing. Return their actual contents.",
+      "response": "Contents of script-only.txt:\nSCRIPT-WROTE-86\n\nContents of seed.txt:\nHOST-SEED-86",
+      "session_id": "sess_7dc7ae69804b4295",
+      "started_at": "2026-11-06T09:02:19.397768",
+      "completed_at": "2026-11-06T09:02:23.548010",
+      "duration_seconds": 4.150242,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 2038,
+          "output_tokens": 79
+        },
+        "output": "Contents of script-only.txt:\nSCRIPT-WROTE-86\n\nContents of seed.txt:\nHOST-SEED-86",
+        "run_id": "corr-1b3e3c08480947e9bb3e44bafe8af10c",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:02:23.521765+00:00",
+                "total_tokens": 2117,
+                "prompt_tokens": 2038,
+                "total_cost_usd": 0.004708,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 79,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.004708,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 0,
+                "total_duration_seconds": 2.325,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.325,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-1b3e3c08480947e9bb3e44bafe8af10c"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-3b99ffddec4b4298add22cd5320a405d"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T13:02:23.548063+00:00",
+        "total_tokens": 2117,
+        "prompt_tokens": 2038,
+        "total_cost_usd": 0.004708,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 79,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.004708,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 0,
+        "total_duration_seconds": 2.325,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.325,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1038,
+            "prompt_tokens": 984,
+            "completion_tokens": 54,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.0024,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-1b3e3c08480947e9bb3e44bafe8af10c",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-1b3e3c08480947e9bb3e44bafe8af10c:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1079,
+            "prompt_tokens": 1054,
+            "completion_tokens": 25,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 0
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.002308,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-1b3e3c08480947e9bb3e44bafe8af10c",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-1b3e3c08480947e9bb3e44bafe8af10c:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-1b3e3c08480947e9bb3e44bafe8af10c",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_JCOsrfsGx7pweZF4WFrVMPnh",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T13:02:21.406208Z",
+          "ended_at": "2026-11-06T13:02:22.111017Z"
+        },
+        {
+          "run_id": "corr-1b3e3c08480947e9bb3e44bafe8af10c",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_Hb4ABG0ntolzAUMmKS5EEL5X",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T13:02:21.409667Z",
+          "ended_at": "2026-11-06T13:02:22.113958Z"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-098682a7c70d",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:d2dd15abd8ba7c5334276a344d73f2b733374e76f2fcb21595704e07ba563f57",
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_JCOsrfsGx7pweZF4WFrVMPnh",
+          "error": null,
+          "timestamp": "2026-11-06T13:02:21.410327Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_Hb4ABG0ntolzAUMmKS5EEL5X",
+          "error": null,
+          "timestamp": "2026-11-06T13:02:21.414896Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_JCOsrfsGx7pweZF4WFrVMPnh",
+          "error": null,
+          "timestamp": "2026-11-06T13:02:22.116332Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_Hb4ABG0ntolzAUMmKS5EEL5X",
+          "error": null,
+          "timestamp": "2026-11-06T13:02:22.120236Z"
+        }
+      ]
+    },
+    {
+      "id": "n.Interaction.c0f18b31403842c9bc3d29ee",
+      "scenario": "post_fix_stopped_container_read",
+      "utterance": "Use only code_execution__bash to read script-only.txt and seed.txt once more. This is a read request; do not write files. Return actual contents.",
+      "response": "Contents of script-only.txt:\nSCRIPT-WROTE-86\n\nContents of seed.txt:\nHOST-SEED-86",
+      "session_id": "sess_7dc7ae69804b4295",
+      "started_at": "2026-11-06T09:02:48.845214",
+      "completed_at": "2026-11-06T09:02:53.689186",
+      "duration_seconds": 4.843972,
+      "native_run": {
+        "usage": {
+          "requests": 2,
+          "input_tokens": 2304,
+          "output_tokens": 79
+        },
+        "output": "Contents of script-only.txt:\nSCRIPT-WROTE-86\n\nContents of seed.txt:\nHOST-SEED-86",
+        "run_id": "corr-bfc12c82f189482299a471cec0ad1716",
+        "status": "delivered",
+        "delivery": {
+          "channel": "default",
+          "version": 1,
+          "metadata": {
+            "is_proactive": false,
+            "native_replay": false,
+            "observability": {
+              "model": "gpt-4.1-2025-04-14",
+              "usage": {
+                "last_updated": "2026-11-06T13:02:53.667034+00:00",
+                "total_tokens": 2383,
+                "prompt_tokens": 2304,
+                "total_cost_usd": 0.002168,
+                "litellm_cost_usd": 0.0,
+                "model_call_count": 2,
+                "completion_tokens": 79,
+                "reported_cost_usd": 0.0,
+                "cache_write_tokens": 0,
+                "estimated_cost_usd": 0.002168,
+                "model_attempt_count": 2,
+                "cached_prompt_tokens": 2048,
+                "total_duration_seconds": 2.395,
+                "unknown_cost_call_count": 0,
+                "failed_model_attempt_count": 0,
+                "cancelled_model_attempt_count": 0,
+                "model_attempt_duration_seconds": 2.395,
+                "unmeasured_model_attempt_count": 0
+              }
+            }
+          },
+          "message_id": "o.ResponseMessage.corr-bfc12c82f189482299a471cec0ad1716"
+        },
+        "history_source": {
+          "frontier": "delivered",
+          "source_run_id": "corr-1b3e3c08480947e9bb3e44bafe8af10c"
+        },
+        "usage_complete": true
+      },
+      "usage": {
+        "last_updated": "2026-11-06T13:02:53.689262+00:00",
+        "total_tokens": 2383,
+        "prompt_tokens": 2304,
+        "total_cost_usd": 0.002168,
+        "litellm_cost_usd": 0.0,
+        "model_call_count": 2,
+        "completion_tokens": 79,
+        "reported_cost_usd": 0.0,
+        "cache_write_tokens": 0,
+        "estimated_cost_usd": 0.002168,
+        "model_attempt_count": 2,
+        "cached_prompt_tokens": 2048,
+        "total_duration_seconds": 2.395,
+        "unknown_cost_call_count": 0,
+        "failed_model_attempt_count": 0,
+        "cancelled_model_attempt_count": 0,
+        "model_attempt_duration_seconds": 2.395,
+        "unmeasured_model_attempt_count": 0
+      },
+      "receipts": [
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1171,
+            "prompt_tokens": 1117,
+            "completion_tokens": 54,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1024
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.00113,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-bfc12c82f189482299a471cec0ad1716",
+          "native_step_index": 1,
+          "native_receipt_key": "spend:default|run|*|corr-bfc12c82f189482299a471cec0ad1716:1",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        },
+        {
+          "model": "gpt-4.1-2025-04-14",
+          "usage": {
+            "total_tokens": 1212,
+            "prompt_tokens": 1187,
+            "completion_tokens": 25,
+            "cache_write_tokens": 0,
+            "cached_prompt_tokens": 1024
+          },
+          "provider": "openai",
+          "cost_record": {
+            "amount": 0.001038,
+            "source": "pydantic_ai_pricing",
+            "currency": "USD",
+            "estimated": true,
+            "pricing_version": null
+          },
+          "usage_status": "provider_reported",
+          "native_run_id": "corr-bfc12c82f189482299a471cec0ad1716",
+          "native_step_index": 2,
+          "native_receipt_key": "spend:default|run|*|corr-bfc12c82f189482299a471cec0ad1716:2",
+          "native_spend_receipt": true,
+          "native_receipt_origin": "spend_snapshot"
+        }
+      ],
+      "effects": [
+        {
+          "run_id": "corr-bfc12c82f189482299a471cec0ad1716",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_KxWslnjm0BIH8dYkebeO90Ks",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T13:02:51.355734Z",
+          "ended_at": "2026-11-06T13:02:52.173585Z"
+        },
+        {
+          "run_id": "corr-bfc12c82f189482299a471cec0ad1716",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_xf16plUb5PaVNYw1MylwyhuI",
+          "status": "completed",
+          "effect_summary": "jv:mutation:script:v1",
+          "started_at": "2026-11-06T13:02:51.357770Z",
+          "ended_at": "2026-11-06T13:02:52.176286Z"
+        }
+      ],
+      "workspace_refs": [
+        {
+          "id": "pydantic-ai-098682a7c70d",
+          "provider": "docker"
+        }
+      ],
+      "sdk_digest": "sha256:072b50478850128e976d15f49fe089c81d85b9701e13dd22b40b23cce9a32d57",
+      "tool_events": [
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_KxWslnjm0BIH8dYkebeO90Ks",
+          "error": null,
+          "timestamp": "2026-11-06T13:02:51.361018Z"
+        },
+        {
+          "kind": "tool_call_started",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_xf16plUb5PaVNYw1MylwyhuI",
+          "error": null,
+          "timestamp": "2026-11-06T13:02:51.366906Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_KxWslnjm0BIH8dYkebeO90Ks",
+          "error": null,
+          "timestamp": "2026-11-06T13:02:52.178320Z"
+        },
+        {
+          "kind": "tool_call_completed",
+          "tool_name": "code_execution__bash",
+          "tool_call_id": "call_xf16plUb5PaVNYw1MylwyhuI",
+          "error": null,
+          "timestamp": "2026-11-06T13:02:52.183788Z"
+        }
+      ]
+    }
+  ],
+  "conversations": [
+    {
+      "id": "n.Conversation.b69401b715f04ff689fc05b2",
+      "session_id": "sess_f7d3c90f27bb4239",
+      "native_script_policy": {
+        "assets": {
+          "staged_skills/triage/scripts/prioritize.py": "sha256:2ec678d2efb699e590f74374ba3358ad0145bed57d563a50ea7472157c8fe2b3"
+        },
+        "storage": {
+          "gid": 20,
+          "uid": 501,
+          "kind": "local-user-bind-v1",
+          "root": "/private/tmp/jvagent-native-user-files-smoke/files/n.Agent.fee34a78198c4aeb95087af9/o.User.a995030e15024cc1a198b005",
+          "inode": 19,
+          "device": 16777250,
+          "filesystem_bytes": 67067904
+        },
+        "user_id": "o.User.a995030e15024cc1a198b005",
+        "version": "sdk-docker-user-files-v2",
+        "agent_id": "n.Agent.fee34a78198c4aeb95087af9",
+        "session_id": "sess_f7d3c90f27bb4239",
+        "configuration": {
+          "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+          "timeout": 60.0,
+          "max_output_chars": 64000
+        }
+      },
+      "spend": {
+        "usd": "0.020550",
+        "tokens": 13683,
+        "requests": 9,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    },
+    {
+      "id": "n.Conversation.63aa29bbd5104b0c86ee0fa5",
+      "session_id": "sess_7dc7ae69804b4295",
+      "native_script_policy": {
+        "assets": {
+          "staged_skills/triage/scripts/prioritize.py": "sha256:2ec678d2efb699e590f74374ba3358ad0145bed57d563a50ea7472157c8fe2b3"
+        },
+        "storage": {
+          "gid": 20,
+          "uid": 501,
+          "kind": "local-user-bind-v1",
+          "root": "/private/tmp/jvagent-native-user-files-smoke/files/n.Agent.fee34a78198c4aeb95087af9/o.User.a995030e15024cc1a198b005",
+          "inode": 19,
+          "device": 16777250,
+          "filesystem_bytes": 67067904
+        },
+        "user_id": "o.User.a995030e15024cc1a198b005",
+        "version": "sdk-docker-user-files-v2",
+        "agent_id": "n.Agent.fee34a78198c4aeb95087af9",
+        "session_id": "sess_7dc7ae69804b4295",
+        "configuration": {
+          "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+          "timeout": 60.0,
+          "max_output_chars": 64000
+        }
+      },
+      "spend": {
+        "usd": "0.011088",
+        "tokens": 6369,
+        "requests": 6,
+        "unpriced_requests": 0
+      },
+      "task_count": 0
+    }
+  ],
+  "files": {
+    "seed.txt": {
+      "text": "HOST-SEED-86",
+      "digest": "sha256:0ecb4657d755cea1c881bdb34ba624b48b8e06d1f0dc900c033a32866e9ca226"
+    },
+    "script-only.txt": {
+      "text": "SCRIPT-WROTE-86",
+      "digest": "sha256:3d3450dea70fd74c83caa9ee0955cf6cb5bb6c68cbddf3a07d01b634833d3b62"
+    },
+    "ranked.json": {
+      "text": "[\n  {\n    \"title\": \"DB down\",\n    \"severity\": 5\n  },\n  {\n    \"title\": \"typo\",\n    \"severity\": 1\n  }\n]",
+      "digest": "sha256:46119064d4e1d2b95d9a2869d8a39b2bba7ef9d43b557604952111a0f1e50079"
+    },
+    "proof.txt": {
+      "text": "SDK-OUTPUT-86",
+      "digest": "sha256:a0ec55341ba901a80aa27f3c20339de1a107dbca209c1571a63231239bae98c9"
+    }
+  },
+  "resources": [
+    {
+      "ref": "pydantic-ai-098682a7c70d",
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 92010,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-11-06T13:02:51.4502085Z",
+        "FinishedAt": "2026-11-06T13:02:48.090131305Z"
+      },
+      "mounts": [
+        {
+          "Type": "tmpfs",
+          "Source": "",
+          "Destination": "/run/pydantic-ai",
+          "Mode": "",
+          "RW": true,
+          "Propagation": ""
+        },
+        {
+          "Type": "bind",
+          "Source": "/host_mnt/private/tmp/jvagent-native-user-files-smoke/files/n.Agent.fee34a78198c4aeb95087af9/o.User.a995030e15024cc1a198b005",
+          "Destination": "/workspace",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        }
+      ],
+      "host_config": {
+        "Mounts": [
+          {
+            "Type": "tmpfs",
+            "Target": "/run/pydantic-ai",
+            "TmpfsOptions": {
+              "Mode": 1023
+            }
+          },
+          {
+            "Type": "bind",
+            "Source": "/host_mnt/private/tmp/jvagent-native-user-files-smoke/files/n.Agent.fee34a78198c4aeb95087af9/o.User.a995030e15024cc1a198b005",
+            "Target": "/workspace"
+          }
+        ],
+        "Tmpfs": {
+          "/run/pydantic-ai": "",
+          "/tmp": "rw,nosuid,nodev,size=16m,mode=1777"
+        },
+        "ReadonlyRootfs": true,
+        "NetworkMode": "none",
+        "Memory": 536870912,
+        "PidsLimit": 128,
+        "NanoCpus": 1000000000,
+        "CapDrop": [
+          "ALL"
+        ],
+        "SecurityOpt": [
+          "no-new-privileges"
+        ]
+      },
+      "user": "501:20"
+    },
+    {
+      "ref": "pydantic-ai-46bf2cba0915",
+      "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 87931,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-11-06T12:58:16.443249304Z",
+        "FinishedAt": "2026-11-06T12:58:13.892660511Z"
+      },
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/private/tmp/jvagent-native-user-files-smoke/files/n.Agent.fee34a78198c4aeb95087af9/o.User.a995030e15024cc1a198b005",
+          "Destination": "/workspace",
+          "Mode": "",
+          "RW": true,
+          "Propagation": "rprivate"
+        }
+      ],
+      "host_config": {
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/private/tmp/jvagent-native-user-files-smoke/files/n.Agent.fee34a78198c4aeb95087af9/o.User.a995030e15024cc1a198b005",
+            "Target": "/workspace"
+          }
+        ],
+        "Tmpfs": {
+          "/run/pydantic-ai": "",
+          "/tmp": "rw,nosuid,nodev,size=16m,mode=1777"
+        },
+        "ReadonlyRootfs": true,
+        "NetworkMode": "none",
+        "Memory": 536870912,
+        "PidsLimit": 128,
+        "NanoCpus": 1000000000,
+        "CapDrop": [
+          "ALL"
+        ],
+        "SecurityOpt": [
+          "no-new-privileges"
+        ]
+      },
+      "user": "501:20"
+    }
+  ],
+  "cache_restore": {
+    "label": "restored",
+    "interaction_hashes": {
+      "n.Interaction.20db82f8bfc24a2c858c37f0": "sha256:3c4b35bae080c04aebcfa349194e460d8abce0e8d0979d621f5a973f9405505e",
+      "n.Interaction.9f21d3e521484774909c403c": "sha256:7cdd3c70707fe9e73e8445282c9606f443c40521cd4ce65572e47feb9efe8eb4",
+      "n.Interaction.eb0b04ab741b4ec49f47084b": "sha256:50f2fab052aa0f94eea88001d7ff8ff1f4bde08c29ea4145e84d27ba62bfa03f",
+      "n.Interaction.1fe280cd9e3e42fc8a0adb60": "sha256:47f5ebb437238788a981518f0037d9162b9bec95627d21586cd740e779a88e9c",
+      "n.Interaction.c0f18b31403842c9bc3d29ee": "sha256:c8a4ca4db3033dfdd851ff85175f64e06391a5f96d0c720d6bda4d2bf52d6b42",
+      "n.Interaction.da0e7f81b2a54eb4a57f9635": "sha256:0cd669970509d498d130df21b5aa6d88fc330a0e26b8d78972132227991dd21b",
+      "n.Interaction.e6b8209d4f544e10a565a2e5": "sha256:6818c231ff98cb20fe59c8298b91ba5a1465f876dd3a0761c75912b796f4c96e",
+      "n.Interaction.05b8cb15db884926b216baca": "sha256:1e1b2e617d5f139cb0bd80ddf0febb0eb592f71f3630a661814ae3fbc48ef565"
+    },
+    "interaction_count": 8,
+    "registration_count": 8,
+    "conversations": {
+      "n.Conversation.b69401b715f04ff689fc05b2": {
+        "native_spend_digest": "sha256:4751729818ee8e886b8cb09f670c2900cf4d9c49ffd23b6a2341b5f2544d790f",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_f7d3c90f27bb4239": {
+            "spent": {
+              "usd": "0.020550",
+              "tokens": 13683,
+              "requests": 9,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T12:58:16.283714+00:00"
+          },
+          "default|run|*|corr-02654518bc3c4129bcb0e6fb712b1f85": {
+            "spent": {
+              "usd": "0.005568",
+              "tokens": 2724,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T12:57:14.257397+00:00"
+          },
+          "default|run|*|corr-23debbdd688c420db234b7053d0298e1": {
+            "spent": {
+              "usd": "0.001828",
+              "tokens": 2000,
+              "requests": 1,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T12:58:16.283714+00:00"
+          },
+          "default|run|*|corr-50bd0d7d091b493e86a56428cd4aaf7c": {
+            "spent": {
+              "usd": "0.004428",
+              "tokens": 1923,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T12:53:55.361592+00:00"
+          },
+          "default|run|*|corr-579d087564524666b4d22ff80a657bbf": {
+            "spent": {
+              "usd": "0.005158",
+              "tokens": 3290,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T12:57:29.804744+00:00"
+          },
+          "default|run|*|corr-aec03254f363429cadd7d7073e803391": {
+            "spent": {
+              "usd": "0.003568",
+              "tokens": 3746,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T12:57:45.191159+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      },
+      "n.Conversation.63aa29bbd5104b0c86ee0fa5": {
+        "native_spend_digest": "sha256:7d1a33886e9917f7719912303b329574ba5252e9bb126052207cb2f1f858eb5c",
+        "native_plan_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "import_status": null,
+        "native_spend": {
+          "default|conversation|*|sess_7dc7ae69804b4295": {
+            "spent": {
+              "usd": "0.011088",
+              "tokens": 6369,
+              "requests": 6,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-12-06T13:02:53.341714+00:00"
+          },
+          "default|run|*|corr-1b3e3c08480947e9bb3e44bafe8af10c": {
+            "spent": {
+              "usd": "0.004708",
+              "tokens": 2117,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:02:23.150701+00:00"
+          },
+          "default|run|*|corr-3b99ffddec4b4298add22cd5320a405d": {
+            "spent": {
+              "usd": "0.004212",
+              "tokens": 1869,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:01:45.194508+00:00"
+          },
+          "default|run|*|corr-bfc12c82f189482299a471cec0ad1716": {
+            "spent": {
+              "usd": "0.002168",
+              "tokens": 2383,
+              "requests": 2,
+              "unpriced_requests": 0
+            },
+            "expires_at": "2026-11-07T13:02:53.341714+00:00"
+          }
+        },
+        "legacy_ledger": null,
+        "task_count": 0
+      }
+    },
+    "original_interactions_unchanged": true,
+    "original_imports_unchanged": true,
+    "readback_unchanged": true
+  },
+  "storage_probe": {
+    "image": "python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+    "uid": 501,
+    "gid": 20,
+    "filesystem_bytes": 67067904,
+    "host_input_read_by_sdk": true,
+    "sdk_output_read_by_existing_file_interface": true,
+    "output_survives_sdk_container_destruction_and_recreation": true,
+    "quota_probe_stdout": "QUOTA 28\n",
+    "refs": [
+      {
+        "provider": "docker",
+        "id": "pydantic-ai-bbc2d679d0f2"
+      }
+    ]
+  },
+  "totals": {
+    "model_turns": 8,
+    "positive_workflows": 7,
+    "retained_pre_fix_failures": 1,
+    "provider_requests": 15,
+    "provider_reported_tokens": 20052,
+    "estimated_cost_usd": "0.031638",
+    "unknown_cost_calls": 0
+  },
+  "limits": [
+    "Ordinary member login succeeds but admin-only agent listing returns 403; no member model call was made.",
+    "Failed pre-fix script effect remains started and is not automatically replayed or manually rewritten.",
+    "Shared filesystem ceiling is not a reserved independent quota per user.",
+    "Full Docker-daemon/OS restart, hostile host races, aggregate cleanup, destroyed-ref continuation, S3 and artifact delivery remain unqualified.",
+    "Initial full suite had four ENOSPC admission failures on the reused quota-probe filesystem; rerun uses a fresh bounded test-only filesystem and cleans test roots.",
+    "One extra repeat read ran before the fixed container was actually stopped; separately counted, not represented as restart proof."
+  ]
+}

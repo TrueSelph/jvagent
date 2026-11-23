@@ -26,7 +26,7 @@ This is an **OAuth client JSON** (client id + secret). It is **not** a service-a
    The host must match the public base URL used at runtime (for example an ngrok HTTPS origin). Do **not** use the old `/api/google/callback/` path.
 8. Click **Create**. Download the JSON (client id + secret).
 9. Put the file path or the JSON contents in `.env` as `GOOGLE_CLIENT_SECRETS_JSON`, and set `JVAGENT_PUBLIC_BASE_URL` (see below).
-10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=calendar`.
+10. Authorize at `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=calendar`.
 
 ## Set `.env`
 
@@ -73,7 +73,7 @@ Admin REST handlers under `/actions/{action_id}/...` authenticate with the MCP O
 
 ### Authorization
 
-1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=integral&service=calendar`.
+1. Open `{JVAGENT_PUBLIC_BASE_URL}/api/mcp/google_workspace/auth?account=default&service=calendar`.
 2. Complete Google consent. The callback stores `MCPOAuthToken`.
 3. Calendar tools use that token. Re-auth if refresh fails.
 
