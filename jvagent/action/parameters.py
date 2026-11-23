@@ -203,6 +203,19 @@ INTERNALS_DEFLECTION = (
 
 CORE_PARAMETERS: List[Dict[str, Any]] = [
     {
+        "key": "reply.handoff_sentence",
+        "inviolable": True,
+        "enforcement": ENFORCEMENT_GUARD,
+        "detector": "missing_handoff_sentence",
+        "scope": SCOPE_RESPONSE,
+        "response": (
+            "When this turn's directive says hand-off is complete (first "
+            "statement), say in one sentence that the request is with the "
+            "sales team before anything else. Do not require that sentence on "
+            "already-stated or follow-up update turns."
+        ),
+    },
+    {
         "key": "identity.self_disclosure",
         "inviolable": True,
         "enforcement": ENFORCEMENT_SCRUB,

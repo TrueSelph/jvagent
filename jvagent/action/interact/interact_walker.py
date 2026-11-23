@@ -548,7 +548,10 @@ class InteractWalker(Walker):
                 events.append(
                     {
                         "action_name": "harness",
-                        "content": f"correlation_id={self.correlation_id}",
+                        "content": (
+                            "internal turn correlation (not a request_id): "
+                            f"{self.correlation_id}"
+                        ),
                     }
                 )
                 self.interaction.events = events

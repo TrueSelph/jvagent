@@ -12,10 +12,9 @@ from jvagent.action.leadgen.engine import (
     canonicalize_fields,
     handle_capture,
     merge_spec_with_action_defaults,
-    next_ask,
 )
 from jvagent.action.leadgen.leadgen_action import LeadGenAction
-from jvagent.action.leadgen.spec import FieldDef, GapFillDef, LeadGenSpec, SyncDef
+from jvagent.action.leadgen.spec import FieldDef, HandlersDef, LeadGenSpec, SyncDef
 
 
 @pytest.fixture
@@ -35,28 +34,6 @@ def leadgen_action_with_spec():
     return action, spec
 
 
-def test_next_ask_follows_priority_order():
-    spec = LeadGenSpec(
-        name="t",
-        fields=[FieldDef(key="name"), FieldDef(key="phone"), FieldDef(key="email")],
-        gap_fill=GapFillDef(priority=["name", "phone", "email"]),
-    )
-    # phone outranks email in priority
-    assert next_ask(spec, ["email", "phone"]) == "phone"
-    assert next_ask(spec, ["email"]) == "email"
-
-
-def test_next_ask_none_when_complete():
-    spec = LeadGenSpec(name="t", gap_fill=GapFillDef(priority=["name"]))
-    assert next_ask(spec, []) is None
-
-
-def test_next_ask_falls_back_to_first_missing():
-    spec = LeadGenSpec(name="t", gap_fill=GapFillDef(priority=["name"]))
-    # field not in priority list → fall back to first missing
-    assert next_ask(spec, ["budget"]) == "budget"
-
-
 def test_action_sync_config_applies_when_skill_has_none():
     """Sync config on the action (agent.yaml) governs when the skill declares none."""
     action = LeadGenAction()
@@ -74,6 +51,9 @@ def test_action_sync_config_applies_when_skill_has_none():
     assert merged.sync.mode == "on_complete"
     assert merged.sync.min_fields == ["name", "email"]
     assert merged.sync.require_any == ["phone"]
+    action.sales_contact = "555-0100"
+    merged = merge_spec_with_action_defaults(action, spec)
+    assert merged.sync.sales_contact == "555-0100"
 
 
 def test_skill_sync_wins_over_action_sync():
@@ -100,8 +80,9 @@ def test_canonicalize_aliases():
         name="t",
         fields=[FieldDef(key="name", aliases=["full_name"])],
     )
-    out = canonicalize_fields({"full_name": "Jane"}, spec)
+    out, unknown = canonicalize_fields({"full_name": "Jane", "nickname": "JJ"}, spec)
     assert out["name"] == "Jane"
+    assert unknown == ["nickname"]
 
 
 @pytest.mark.asyncio
@@ -184,7 +165,6 @@ async def test_capture_result_includes_merged_fields():
             ),
             FieldDef(key="interested_products", required=False),
         ],
-        gap_fill=GapFillDef(priority=["name", "email", "phone", "organization"]),
         sync=SyncDef(mode="manual"),
     )
     action._registry._specs[spec.name] = spec
@@ -239,7 +219,31 @@ async def test_capture_result_includes_merged_fields():
         "organization",
     }
     assert second["missing_fields"] == []
-    assert second["next_ask"] is None
+    assert "next_ask" not in second
+    assert second.get("next_optional") in (
+        None,
+        "project_description",
+        "project_location",
+        "contact_role",
+    )
+    assert "next_project_optional" not in second
+    assert "must_ask" not in second
+    assert "open_fields" not in second
+    assert second["next_required"] is None
+    assert second["optional_fields"] == []
+    assert "directive" not in second
+    assert "no optional field is open" in second["response_directive"]
+    assert "gap_fill_priority" not in second
+    # The catalogue keeps filled fields, in declaration order, so the model can
+    # correct a stored value without a second list.
+    assert [e["key"] for e in second["field_reference"]] == [
+        "name",
+        "email",
+        "phone",
+        "organization",
+        "interested_products",
+    ]
+    assert second["field_reference"][0]["required"] is True
     assert second["fields"]["interested_products"] == products
     assert second["fields"]["name"] == "Tharick Jairam"
     assert second["fields"]["email"] == "tharick@example.com"
@@ -262,7 +266,6 @@ async def test_deduplicated_capture_still_returns_the_record():
             FieldDef(key="name", required=True, validator="person_name"),
             FieldDef(key="interested_products", required=False),
         ],
-        gap_fill=GapFillDef(priority=["name"]),
         sync=SyncDef(mode="manual"),
     )
     action._registry._specs[spec.name] = spec
@@ -305,4 +308,218 @@ async def test_deduplicated_capture_still_returns_the_record():
     assert repeated["fields"] == written["fields"]
     assert repeated["fields"]["interested_products"] == "mesh"
     assert repeated["missing_fields"] == []
-    assert repeated["next_ask"] is None
+    assert "next_ask" not in repeated
+    assert "must_ask" not in repeated
+    assert "open_fields" not in repeated
+    assert repeated["next_required"] is None
+    assert repeated["optional_fields"] == []
+    assert "gap_fill_priority" not in repeated
+
+
+@pytest.mark.asyncio
+async def test_unknown_field_is_reported_and_known_values_are_kept():
+    action = LeadGenAction()
+    spec = LeadGenSpec(
+        name="quote_leads",
+        fields=[FieldDef(key="name", required=True, validator="person_name")],
+        sync=SyncDef(mode="manual"),
+    )
+    action._registry._specs[spec.name] = spec
+    record = _FakeLeadRecord(required_fields=["name"])
+    user = SimpleNamespace(user_id="u1", name=None)
+    interaction = SimpleNamespace(channel="default")
+    visitor = SimpleNamespace(interaction=interaction)
+
+    with (
+        patch(
+            "jvagent.action.leadgen.engine.get_user_and_interaction",
+            return_value=(user, interaction),
+        ),
+        patch(
+            "jvagent.action.leadgen.engine.LeadRecord.get_or_create_for_user",
+            return_value=record,
+        ),
+        patch("jvagent.action.leadgen.engine._LAST_CAPTURE", {}),
+    ):
+        result = json.loads(
+            await handle_capture(
+                action,
+                skill="quote_leads",
+                visitor=visitor,
+                name="Ann",
+                nickname="AJ",
+            )
+        )
+
+    assert result["status"] == "updated"
+    assert result["fields"]["name"] == "Ann"
+    assert "nickname" not in result["fields"]
+    assert result["validation_errors"]["nickname"] == "unknown field"
+
+
+@pytest.mark.asyncio
+async def test_failed_handoff_names_configured_contact_only():
+    action = LeadGenAction()
+    spec = LeadGenSpec(
+        name="quote_leads",
+        fields=[FieldDef(key="name", required=True, validator="person_name")],
+        sync=SyncDef(
+            mode="on_capture",
+            min_fields=["name"],
+            require_any=[],
+            sales_contact="555-0199",
+        ),
+    )
+    action._registry._specs[spec.name] = spec
+    record = _FakeLeadRecord(required_fields=["name"])
+    user = SimpleNamespace(user_id="u1", name=None)
+    interaction = SimpleNamespace(channel="default")
+    visitor = SimpleNamespace(interaction=interaction)
+
+    with (
+        patch(
+            "jvagent.action.leadgen.engine.get_user_and_interaction",
+            return_value=(user, interaction),
+        ),
+        patch(
+            "jvagent.action.leadgen.engine.LeadRecord.get_or_create_for_user",
+            return_value=record,
+        ),
+        patch("jvagent.action.leadgen.engine._LAST_CAPTURE", {}),
+    ):
+        result = json.loads(
+            await handle_capture(
+                action, skill="quote_leads", visitor=visitor, name="Ann"
+            )
+        )
+
+    assert "directive" not in result
+    assert "555-0199" in result["response_directive"]
+    assert "saved but not yet sent" in result["response_directive"]
+    assert "592" not in result["response_directive"]
+
+
+@pytest.mark.asyncio
+async def test_handoff_sentence_returns_when_the_snapshot_changes():
+    action = LeadGenAction()
+    spec = LeadGenSpec(
+        name="quote_leads",
+        fields=[
+            FieldDef(key="name", required=True, validator="person_name"),
+            FieldDef(key="project_description"),
+            FieldDef(key="note"),
+        ],
+        sync=SyncDef(mode="on_capture"),
+    )
+    action._registry._specs[spec.name] = spec
+    record = _FakeLeadRecord(required_fields=["name"])
+    user = SimpleNamespace(user_id="u1", name=None)
+    interaction = SimpleNamespace(channel="default")
+    visitor = SimpleNamespace(interaction=interaction)
+
+    async def _synced(*_args, **_kwargs):
+        return {"status": "sync-complete", "results": []}
+
+    with (
+        patch(
+            "jvagent.action.leadgen.engine.get_user_and_interaction",
+            return_value=(user, interaction),
+        ),
+        patch(
+            "jvagent.action.leadgen.engine.LeadRecord.get_or_create_for_user",
+            return_value=record,
+        ),
+        patch("jvagent.action.leadgen.engine.maybe_auto_sync", new=_synced),
+        patch("jvagent.action.leadgen.engine._LAST_CAPTURE", {}),
+    ):
+        first = json.loads(
+            await handle_capture(
+                action,
+                skill="quote_leads",
+                visitor=visitor,
+                name="Ann",
+                project_description="roof",
+            )
+        )
+        second = json.loads(
+            await handle_capture(
+                action,
+                skill="quote_leads",
+                visitor=visitor,
+                note="call after 4",
+            )
+        )
+        record._data.pop("project_description")
+        third = json.loads(
+            await handle_capture(
+                action,
+                skill="quote_leads",
+                visitor=visitor,
+                project_description="new job",
+            )
+        )
+
+    assert first["directive"] == "Hand-off is complete."
+    assert first["response_directive"].startswith("Tell the user or ask the user:")
+    assert "Hand-off is complete" not in first["response_directive"]
+    assert (
+        "ask no further field" in first["response_directive"]
+        or "ask for" in first["response_directive"]
+    )
+    assert "do not repeat" not in first["response_directive"].casefold()
+    assert second["directive"] == "Hand-off already stated."
+    assert "do not repeat" in second["response_directive"].casefold()
+    assert "Hand-off already stated" not in second["response_directive"]
+    assert second["response_directive"].startswith("Tell the user or ask the user:")
+    assert third["directive"] == "Hand-off is complete."
+    assert "do not repeat" not in third["response_directive"].casefold()
+    assert third["response_directive"].startswith("Tell the user or ask the user:")
+    assert "Hand-off is complete" not in third["response_directive"]
+
+
+@pytest.mark.asyncio
+async def test_qualify_blocked_saves_locally_and_returns_failed_handoff_directive():
+    """CRM qualify block: persist the capture, do not sync, hand the model a
+    failed-hand-off directive (with response_directive for Reply)."""
+    action = LeadGenAction()
+    spec = LeadGenSpec(
+        name="quote_leads",
+        fields=[FieldDef(key="name", required=True, validator="person_name")],
+        sync=SyncDef(mode="manual", sales_contact="555-0199"),
+        handlers=HandlersDef(qualify="block_handoff"),
+    )
+    action._registry._specs[spec.name] = spec
+    record = _FakeLeadRecord(required_fields=["name"])
+    user = SimpleNamespace(user_id="u1", name=None)
+    interaction = SimpleNamespace(channel="default")
+    visitor = SimpleNamespace(interaction=interaction)
+
+    async def _block_hook(_spec, _handler, ctx):
+        ctx.block_sync("crm_handoff_blocked")
+        return ctx
+
+    with (
+        patch(
+            "jvagent.action.leadgen.engine.get_user_and_interaction",
+            return_value=(user, interaction),
+        ),
+        patch(
+            "jvagent.action.leadgen.engine.LeadRecord.get_or_create_for_user",
+            return_value=record,
+        ),
+        patch("jvagent.action.leadgen.engine.call_hook", side_effect=_block_hook),
+        patch("jvagent.action.leadgen.engine._LAST_CAPTURE", {}),
+    ):
+        result = json.loads(
+            await handle_capture(
+                action, skill="quote_leads", visitor=visitor, name="Ann"
+            )
+        )
+
+    assert result["status"] == "blocked"
+    assert result["reason"] == "crm_handoff_blocked"
+    assert record.get_yaml().get("name") == "Ann"
+    assert "directive" not in result
+    assert "555-0199" in result["response_directive"]
+    assert "saved but not yet sent" in result["response_directive"]
+    assert result["response_directive"].startswith("Tell the user or ask the user:")

@@ -36,6 +36,7 @@ TICK_METHODS = (
     "_run_loop",
     "_tick",
     "_tick_final",
+    "_finish_empty_final",
     "_tick_tool",
     "_guarded_siblings",
     "_dispatch_batch",

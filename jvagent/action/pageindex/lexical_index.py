@@ -31,6 +31,13 @@ _POSTINGS_COLLECTION = "lexical_postings"
 _STATS_COLLECTION = "lexical_stats"
 _MAX_POSTINGS_PER_TERM = 2000
 
+#: A term is distinctive when the corpus uses it in at most this many nodes.
+_RARE_DF = 2
+#: When unknown terms reach this share of the distinctive terms, the query is
+#: about a concept the corpus does not cover: callers should use their
+#: not-found path instead of receiving a match to a neighbouring question.
+_UNKNOWN_TERM_RATIO = 0.5
+
 
 def _posting_id(collection_name: str, term: str) -> str:
     return f"lp.{collection_name}.{term}"
@@ -313,6 +320,22 @@ async def search(
             postings_map[term] = postings
 
     if not postings_map:
+        return []
+
+    # Coverage floor: when unknown terms are at least half of the query's
+    # distinctive terms, every remaining match answers a neighbouring
+    # question. Return no candidates so callers use their not-found path.
+    rare_terms = [term for term in unique_terms if term_df_map.get(term, 0) <= _RARE_DF]
+    unknown_terms = [term for term in rare_terms if term_df_map.get(term, 0) == 0]
+    if rare_terms and len(unknown_terms) / len(rare_terms) >= _UNKNOWN_TERM_RATIO:
+        logger.debug(
+            "Lexical index: %d of %d distinctive terms unknown in collection %s "
+            "(%s); returning no candidates",
+            len(unknown_terms),
+            len(rare_terms),
+            collection_name,
+            unknown_terms,
+        )
         return []
 
     ranked = bm25_score(

@@ -39,3 +39,10 @@ allowed-tools:
 ```bash
 jvagent skill create-leadgen <namespace/agent> <skill_name>
 ```
+
+## Agent-agnostic tips
+
+- Declare `sync.min_fields` / `require_any` explicitly; core defaults are empty.
+- Override `messages` for non-sales hand-off wording (`handoff_team`, `contact_label`).
+- Set `channel_defaults: {}` when the skill has no contact fields to autofill.
+- Refusals: the model sends the sentinel `decline_value` (any language); do not rely on English phrase lists.

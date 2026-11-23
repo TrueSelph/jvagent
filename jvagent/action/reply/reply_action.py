@@ -822,18 +822,24 @@ class ReplyAction(Action):
     def _compose_parameters_text(
         self, parameters: Optional[List[Any]], interaction: Any
     ) -> str:
-        """The response-parameter set rendered for a compose: this action's native
-        response core (the baseline) merged with explicit + interaction-pooled
-        params, filtered to response scope and de-duplicated.
+        """The response-parameter set rendered for a compose: the framework
+        response core (always, when ``apply_reply_rules``) merged with this
+        action's ``parameters``, explicit + interaction-pooled params, filtered
+        to response scope and de-duplicated.
 
-        The Orchestrator pools every action's response params onto the
-        interaction; this action's own native core is added too (so a standalone
-        reply, with no orchestrator accumulation, is still hardened). Only
-        ``response``-scoped rules render here — orchestration params stay in the
-        loop prompt.
+        Always unioning ``reply_core_parameters()`` mirrors ``_reply_pool`` /
+        the orchestrator ``_parameter_pool``: an agent.yaml that replaces
+        ``ReplyAction.parameters`` with a custom list must not drop identity,
+        hand-off, closers, or grounding from the compose prompt. Keyed
+        operator rules still win via ``resolve_parameters``; inviolable core
+        cannot be weakened. Only ``response``-scoped rules render here —
+        orchestration params stay in the loop prompt.
         """
         merged: List[Any] = []
         if self.apply_reply_rules:
+            # Framework baseline first — not ``self.parameters`` alone — so a
+            # YAML replacement of the attribute cannot wipe core RESPONSE RULES.
+            merged.extend(reply_core_parameters())
             merged.extend(self.parameters or [])
         if parameters:
             merged.extend(parameters)

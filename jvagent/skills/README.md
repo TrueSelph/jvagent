@@ -76,8 +76,9 @@ Two parts: YAML frontmatter (between `---`) and a Markdown SOP body.
 ---
 name: research                 # lowercase, numbers, hyphens (Claude rule)
 description: >-
-  Investigate a topic with evidence-first synthesis and citations. Include
-  what it does AND when to use it (third person — it's injected into the prompt).
+  Investigate a topic with evidence-first synthesis and citations. Use when
+  the visitor asks for researched answers with sources. Not for greetings,
+  small talk, or live catalogue facts owned by a sibling skill.
 spec: jv                       # jv (default) | claude
 allowed-tools:
   - web_search__search
@@ -87,18 +88,35 @@ metadata:
   tags: [research]
 ---
 
+## When to use
+
+- Research questions that need evidence and citations.
+
+## Do not use
+
+- Greetings or small talk with no research ask.
+- Work owned by a sibling skill (name it).
+
 ## Workflow
 1. Clarify the question and success criteria.
 2. Search, then read top sources in full with web_fetch__fetch.
 3. Reconcile conflicts and synthesize a cited answer.
 ```
 
+**Selection contract (description):** Before activation the model sees only
+`name: description`. Keep the description ≤ ~60 words, third person, derived from
+`## When to use` / `## Do not use` — trigger categories plus named exclusions
+(sibling skills). Catch-all / faq / fallback skills must exclude greetings, small
+talk, and bare acks in the description itself; do not rely on body text or
+`system_prompt_extra` alone. House Coder authors: follow
+`~/.config/kilo/skills/coder-prompt/references/writing-descriptions.md`.
+
 ## Frontmatter keys
 
 | Key | Specs | Notes |
 |-----|-------|-------|
 | `name` | both | Lowercase letters, numbers, hyphens (Claude rule); defaults to folder name. |
-| `description` | both | Drives discovery; third person; what it does + when to use it. |
+| `description` | both | Selection cue before activation; third person; what it does + when to use + Not for exclusions (≤ ~60 words). |
 | `spec` | both | `jv` (default) or `claude`. Unknown values fall back to `jv`. |
 | `allowed-tools` | mostly JV | Runtime tool names the SOP uses (e.g. `gmail__send_email`, `web_fetch__fetch`, `code_execution__bash`). Surfaced into the visible set on activation. |
 | `requires-actions` | JV | Action class names that must resolve (enabled) on the agent, each with an **optional inline version constraint** (PEP 508-style — the comparison operator is the delimiter): `CodeExecutionAction`, `PageIndexAction>=2.0`, `WebFetchAction==1.4.0`, `GmailAction>=1.0,<2.0`. **Hard gate, enforced:** if any declared type is absent — or its `get_version()` doesn't satisfy the constraint — the orchestrator hides the skill entirely for that turn (not listed, found, activated, or always-active-pinned). Replaces the old `requires-action-versions` map. **Not lifecycle binding:** listing multiple actions (e.g. `InterviewAction` + `ZoonAPIAction`) gates on all of them; which Action runs `on_skill_activate` / `prepare_task_lock_turn` is resolved separately (see below). |
