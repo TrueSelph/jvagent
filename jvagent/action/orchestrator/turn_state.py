@@ -143,3 +143,6 @@ class TurnState:
     model_failures: int = 0
     # Ticks that dispatched more than one tool call (max_concurrent_tools > 1).
     parallel_batches: int = 0
+    # Empty-final deflections this turn: an empty final answer is never
+    # delivered, so it is nudged once before a lawful fallback is sent.
+    empty_final_deflections: int = 0

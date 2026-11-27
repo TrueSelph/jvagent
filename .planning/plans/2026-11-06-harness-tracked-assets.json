@@ -12,7 +12,7 @@
       {
         "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/example_leadgen/SKILL.md",
         "scope": "app-example",
-        "sha256": "sha256:de520833cf56e3e747f2a4ae534cdbf995da6212648c97a0855cf829d1497128",
+        "sha256": "sha256:b8a19a4eaad41c64317d9d86f2be48cdd850c4f10f227530b052f0c0643c04c8",
         "name": "example_leadgen",
         "spec": null,
         "extends": "action:jvagent/leadgen",
@@ -94,7 +94,7 @@
       {
         "path": "examples/jvagent_app/agents/jvagent/leadgen_agent/skills/product_inquiry_leads/SKILL.md",
         "scope": "app-example",
-        "sha256": "sha256:e342e973c6ce9fd6ce2d0430adac37da8dba85138db6d7b552d8389a9c64d060",
+        "sha256": "sha256:0603c34934fc834d456c42bc4b4a8bdc855b058d18f5296c9db80b705c588f65",
         "name": "product_inquiry_leads",
         "spec": null,
         "extends": "action:jvagent/leadgen",
@@ -513,7 +513,7 @@
       {
         "path": "jvagent/action/leadgen/SKILL.md",
         "scope": "package",
-        "sha256": "sha256:02e3de03fbdf06772cddb2ebf5290d7c09ba6f60de0b6997c5362690386cf6cd",
+        "sha256": "sha256:4a34f16549137f67b758678e2c2017a63469872be9b8e2a4526e328585d601da",
         "name": "leadgen_base",
         "spec": null,
         "extends": null,
@@ -533,12 +533,12 @@
           "name"
         ],
         "tracked_directory_files": 20,
-        "tracked_directory_digest": "sha256:1a6be2ca8095118e4a399620db144ee69aee850d362076f215effad8e5b3d19e"
+        "tracked_directory_digest": "sha256:bff8a7b802a133457e3892a47d8110d6ccbad32cbbc2c64895b6233eb32f6c2b"
       },
       {
         "path": "jvagent/action/leadgen/examples/example_leadgen/SKILL.md",
         "scope": "package",
-        "sha256": "sha256:019976d27a37192f030568a838d61931c83a8e5a8e502b35ac2752c71cd261c3",
+        "sha256": "sha256:e0410e232030480d882fa87b1f5fd96c066c4cb0f79f15b6ada4a9f5196baf63",
         "name": "example_leadgen",
         "spec": null,
         "extends": "action:jvagent/leadgen",
@@ -1291,7 +1291,7 @@
         "name": "jvagent/handoff_action",
         "archetype": "HandoffAction",
         "tracked_directory_files": 4,
-        "tracked_directory_digest": "sha256:5f8d9c9a8c9b5b7cac0cafa61eff1edcb4f618f960126708e6463daadf78deaa"
+        "tracked_directory_digest": "sha256:0514274e3bc852c9b17d03de09adb00c0fcef0c461b29c5f173b3227c2d92050"
       },
       {
         "path": "jvagent/action/interview/info.yaml",
@@ -1309,7 +1309,7 @@
         "name": "jvagent/intro_interact_action",
         "archetype": "IntroInteractAction",
         "tracked_directory_files": 3,
-        "tracked_directory_digest": "sha256:1f53c59c6e160931fbe0aac2e8302077800dc3b388939b7cc42288c4613fade2"
+        "tracked_directory_digest": "sha256:750df6352ea0626c8583342d38b2fffa98a598731ddbac6986356edcedea5aee"
       },
       {
         "path": "jvagent/action/leadgen/info.yaml",
@@ -1318,7 +1318,7 @@
         "name": "jvagent/leadgen",
         "archetype": "LeadGenAction",
         "tracked_directory_files": 20,
-        "tracked_directory_digest": "sha256:1e7d64246b31b1775e2f4694a0d129aa282d6fa656a5f14f88271653088242a4"
+        "tracked_directory_digest": "sha256:24407f59c36f85142c8fe6c0191a0fbf6dde482c8b6ac84fe83df6de880cb856"
       },
       {
         "path": "jvagent/action/mcp/info.yaml",
@@ -1326,8 +1326,8 @@
         "sha256": "sha256:556282e31e4399046a4d081db544a51a5012f7437e0d3a087c7b08473037def0",
         "name": "jvagent/mcp",
         "archetype": "MCPAction",
-        "tracked_directory_files": 8,
-        "tracked_directory_digest": "sha256:8a1cbe7486e365c139c2400c1a995cca2b7c4f820baa79d514050b74f118f039"
+        "tracked_directory_files": 11,
+        "tracked_directory_digest": "sha256:574ca7485fd0c8a1572bb9de12573bcb65763a173aa1ac60e6d204ab1e6590bb"
       },
       {
         "path": "jvagent/action/mcp_oauth/info.yaml",
@@ -1335,8 +1335,8 @@
         "sha256": "sha256:c7e662950af0eedd604ed2d4f6c5f508e7d8d14a1245f6f2ed0e0bbcb50c455f",
         "name": "jvagent/mcp_oauth",
         "archetype": "MCPOAuthAction",
-        "tracked_directory_files": 8,
-        "tracked_directory_digest": "sha256:5071e9a1657a37d9330af66bbb2c754d070ce9e669e4507e6f89b8b5f093bade"
+        "tracked_directory_files": 9,
+        "tracked_directory_digest": "sha256:4d5e8be9344c181ae4c2a91e2c9374086776299b4f6443149886616c6e38065f"
       },
       {
         "path": "jvagent/action/microsoft/microsoft_excel_action/info.yaml",
@@ -1489,7 +1489,7 @@
         "name": "jvagent/orchestrator",
         "archetype": "OrchestratorInteractAction",
         "tracked_directory_files": 32,
-        "tracked_directory_digest": "sha256:3a09e66b9885fd063026b799ee38a977a8af36ff862c75b9ed794bab90dfc215"
+        "tracked_directory_digest": "sha256:729f3b3bb16e88c37d18e2b052be25533f1071b74f5f53d9631bb5fc940e4a93"
       },
       {
         "path": "jvagent/action/page_context/info.yaml",
@@ -1516,7 +1516,7 @@
         "name": "jvagent/pageindex_google_drive_sync_action",
         "archetype": "PageIndexGoogleDriveSyncAction",
         "tracked_directory_files": 7,
-        "tracked_directory_digest": "sha256:314daafbdb6059d9f3230bf3555084310f6d16012d0063eb7d54fd63c5e678a6"
+        "tracked_directory_digest": "sha256:b3fee5529d8ef16a9ef5d271cb4fab753cc25a2ab8779e3d86ce69eafa7ce79f"
       },
       {
         "path": "jvagent/action/pageindex_read/info.yaml",
@@ -1543,7 +1543,7 @@
         "name": "jvagent/reply",
         "archetype": "ReplyAction",
         "tracked_directory_files": 3,
-        "tracked_directory_digest": "sha256:4efe3cc77e7614415192293d6d66f2a1a7bb610eb05f0890c21bb8db7c957f34"
+        "tracked_directory_digest": "sha256:494b814f4c0a795c01fb999935414e7fb299bb4ffd7ae591dd3b07ff7fff5dbe"
       },
       {
         "path": "jvagent/action/sentdm_broadcast/info.yaml",
@@ -1615,7 +1615,7 @@
         "name": "jvagent/elevenlabs_tts",
         "archetype": "ElevenLabsTTSAction",
         "tracked_directory_files": 2,
-        "tracked_directory_digest": "sha256:0486050f24c4817cc8ed221ff8a0c3e70e31641e69f5b52a96cc037a0140ca6f"
+        "tracked_directory_digest": "sha256:affa7b96fc536e44da4fb8aae8a5d60c9ac7c91d3b7689c1006eabb573804a77"
       },
       {
         "path": "jvagent/action/ui/info.yaml",
@@ -1696,7 +1696,7 @@
         "name": "jvagent/whatsapp_action",
         "archetype": "WhatsAppAction",
         "tracked_directory_files": 29,
-        "tracked_directory_digest": "sha256:91b3f52eb6e45de0df83d18ba3eb6629aa8da34913d1f4606edcb2b4bf2393e2"
+        "tracked_directory_digest": "sha256:d107c5381d332ee31097cc187e74f104162cb1edf510370b97d4f8117b6e49c0"
       },
       {
         "path": "jvagent/action/whatsapp_voice/info.yaml",
@@ -1756,7 +1756,7 @@
           }
         ],
         "tracked_directory_files": 11,
-        "tracked_directory_digest": "sha256:89ad2c0a2b659fce3b43117200f6c6471b803d6519d5f146bdd440caf80bbcbe"
+        "tracked_directory_digest": "sha256:e5ad944ce4b0fea366233fbe1dbf6767fa9a90c3c10bd3e9a8410252a67eeb68"
       },
       {
         "path": "examples/jvagent_app/agents/jvagent/orchestrator_agent/agent.yaml",

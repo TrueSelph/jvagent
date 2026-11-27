@@ -226,12 +226,25 @@ def salvage_partial_answer(observations: Any) -> str:
     return ""
 
 
+def _guard_missing_handoff_sentence(text: str, context: dict) -> str:
+    """A hand-off turn must say the request is with sales."""
+    if not context.get("handoff_required"):
+        return ""
+    if "sales team" in (text or "").casefold():
+        return ""
+    return (
+        "This turn completes a hand-off: state in one sentence that the request "
+        "is with the sales team, then the rest of the reply."
+    )
+
+
 def register_orchestrator_guard_detectors() -> None:
     """Register the loop's guard detectors with the parameter subsystem."""
     from jvagent.action.parameters import register_guard_detector
 
     register_guard_detector("unsupported_source_claim", _guard_unsupported_source_claim)
     register_guard_detector("unsupported_specifics", _guard_unsupported_specifics)
+    register_guard_detector("missing_handoff_sentence", _guard_missing_handoff_sentence)
 
 
 register_orchestrator_guard_detectors()

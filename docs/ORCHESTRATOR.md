@@ -273,7 +273,10 @@ Interaction `[EVENT]` lines are omitted from loop history by default
 (ADR-0041) — they cost ~100+ tokens/tick when resent. Set `with_event: true`
 when the loop must know what the agent did out of band in earlier turns
 (ADR-0053); each line is then capped by `history_statement_max_chars` like any
-other replayed statement. Bench a realistic turn with `--history N`.
+other replayed statement. Harness correlation events (`action_name=harness` /
+`corr-*`) stay out by default via `hide_correlation: true`; set
+`hide_correlation: false` to include them. Bench a realistic turn with
+`--history N`.
 
 **4. Cache accounting.** OpenAI caches long prefixes automatically and reports
 hits in `usage.prompt_tokens_details.cached_tokens`; Anthropic caches only up to

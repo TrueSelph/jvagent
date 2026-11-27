@@ -151,8 +151,34 @@ class OrchestratorLoopMixin:
             parts.append(str(obs.get("args", "")))
         return "\n".join(parts)
 
+    @staticmethod
+    def _handoff_in_observations(observations) -> bool:
+        """True only on the first hand-off statement this turn.
+
+        ``Hand-off already stated`` must not arm the sales-sentence guard —
+        follow-up optional captures acknowledge the new detail without
+        restating that the request is with the team. The engine now marks those
+        directives explicitly, so a sync observation earlier in the same turn
+        cannot re-arm the guard against the capture that just ran.
+        """
+        from jvagent.action.leadgen.engine import HANDOFF_ALREADY_STATED_MARKER
+
+        texts = []
+        for obs in observations or ():
+            text = str(obs.get("observation", "") if isinstance(obs, dict) else obs)
+            texts.append(text)
+        # Marker may appear alone on observation ``directive`` (no trailing space).
+        if any(HANDOFF_ALREADY_STATED_MARKER in text for text in texts):
+            return False
+        return any("Hand-off is complete" in text for text in texts)
+
     def _grounding_deflection(
-        self, text: str, substantive_tool_calls: int, corpus: str = "", visitor=None
+        self,
+        text: str,
+        substantive_tool_calls: int,
+        corpus: str = "",
+        visitor=None,
+        handoff_required: bool = False,
     ):
         """Guard observation from any ``enforcement: guard`` parameter in force.
 
@@ -172,6 +198,7 @@ class OrchestratorLoopMixin:
         context = {
             "substantive_tool_calls": substantive_tool_calls,
             "corpus": corpus,
+            "handoff_required": bool(handoff_required),
         }
         for param in parameters_with_enforcement(pool, ENFORCEMENT_GUARD):
             for detector in detectors_for(param, ENFORCEMENT_GUARD):
@@ -1050,6 +1077,7 @@ class OrchestratorLoopMixin:
                     str(get_prompt_cache().get("identity") or ""),
                 ),
                 visitor,
+                handoff_required=self._handoff_in_observations(state.observations),
             )
             if nudge is not None:
                 state.grounding_deflections += 1
@@ -1057,7 +1085,40 @@ class OrchestratorLoopMixin:
                 return TickOutcome.CONTINUE_
         if answer:
             await self._maybe_emit_final(visitor, answer)
+            return TickOutcome.done("final")
+        return await self._finish_empty_final(visitor, state)
+
+    async def _finish_empty_final(
+        self, visitor: "InteractWalker", state: TurnState
+    ) -> TickOutcome:
+        """An empty final is never delivered: nudge once, then clarify.
+
+        The model can stall on contradicting instructions (a directive that
+        forbids the sales sentence while turn context requires it). Deflect once
+        so it composes from the tools' directives; if it stalls again, send the
+        clarify line rather than ending the customer's turn with nothing.
+        """
+        if state.empty_final_deflections < 1:
+            state.empty_final_deflections += 1
+            state.observations.append(self._empty_final_nudge())
+            return TickOutcome.CONTINUE_
+        await self._maybe_emit_final(visitor, self.clarify_text)
         return TickOutcome.done("final")
+
+    @staticmethod
+    def _empty_final_nudge() -> Dict[str, Any]:
+        """Observation telling the model its empty final is not deliverable."""
+        return {
+            "tool": "(guard)",
+            "guard": "empty_final",
+            "args": {},
+            "observation": (
+                "(Your last message was empty and nothing was sent to the "
+                "customer. Compose the reply now from the directive still in "
+                "context: one sentence carrying substance, never an empty "
+                "message.)"
+            ),
+        }
 
     async def _tick_tool(
         self,
@@ -1299,6 +1360,7 @@ class OrchestratorLoopMixin:
                     str(get_prompt_cache().get("identity") or ""),
                 ),
                 visitor,
+                handoff_required=self._handoff_in_observations(state.observations),
             )
             if nudge is not None:
                 state.grounding_deflections += 1

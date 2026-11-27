@@ -744,7 +744,18 @@ class OrchestratorInteractAction(
             "agent did in earlier turns at the cost of resending those lines "
             "on every tick; history_statement_max_chars caps each line. The "
             "current interaction's events are never included — it is excluded "
-            "from its own history."
+            "from its own history. When with_event is true, hide_correlation "
+            "(default true) omits harness correlation [EVENT] lines."
+        ),
+    )
+    hide_correlation: bool = attribute(
+        default=True,
+        description=(
+            "When with_event is true, omit harness correlation [EVENT] lines "
+            "(action_name=harness / corr-*). Default true keeps product "
+            "side-effect events without turn-correlation noise. Set false to "
+            "include correlation events. Ignored when with_event is false. "
+            "Channel-overridable."
         ),
     )
 
@@ -5844,6 +5855,11 @@ class OrchestratorInteractAction(
                     formatted=True,
                     with_event=bool(
                         self._channel_cfg(visitor, "with_event", self.with_event)
+                    ),
+                    hide_correlation=bool(
+                        self._channel_cfg(
+                            visitor, "hide_correlation", self.hide_correlation
+                        )
                     ),
                     max_statement_length=(
                         int(self.history_statement_max_chars)

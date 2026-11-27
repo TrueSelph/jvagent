@@ -186,7 +186,10 @@ class MCPClientWrapper:
                     if self._http_client is not None
                     else streamable_http_client(self._url)
                 )
-                async with transport_ctx as (read_stream, write_stream, _session_id):
+                async with transport_ctx as streams:
+                    # mcp SDK yields (read, write[, get_session_id]); accept both
+                    # shapes so the transport works across SDK versions.
+                    read_stream, write_stream = streams[0], streams[1]
                     self._read_stream = read_stream
                     self._write_stream = write_stream
                     async with ClientSession(read_stream, write_stream) as session:

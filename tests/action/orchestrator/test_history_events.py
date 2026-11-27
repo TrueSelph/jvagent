@@ -18,23 +18,29 @@ async def test_history_omits_events_by_default_and_honors_with_event_knob(
     ex = OrchestratorInteractAction()
     ex.history_limit = 20
     assert ex.with_event is False
+    assert ex.hide_correlation is True
 
     visitor = make_visitor()
     await ex._history(visitor)
 
     visitor.conversation.get_interaction_history.assert_awaited_once()
-    assert (
-        visitor.conversation.get_interaction_history.call_args.kwargs["with_event"]
-        is False
-    )
+    kwargs = visitor.conversation.get_interaction_history.call_args.kwargs
+    assert kwargs["with_event"] is False
+    assert kwargs["hide_correlation"] is True
 
     ex.with_event = True
     visitor = make_visitor()
     await ex._history(visitor)
-    assert (
-        visitor.conversation.get_interaction_history.call_args.kwargs["with_event"]
-        is True
-    )
+    kwargs = visitor.conversation.get_interaction_history.call_args.kwargs
+    assert kwargs["with_event"] is True
+    assert kwargs["hide_correlation"] is True
+
+    ex.hide_correlation = False
+    visitor = make_visitor()
+    await ex._history(visitor)
+    kwargs = visitor.conversation.get_interaction_history.call_args.kwargs
+    assert kwargs["with_event"] is True
+    assert kwargs["hide_correlation"] is False
 
 
 @pytest.mark.asyncio
@@ -101,6 +107,26 @@ async def test_with_event_honours_channel_override(make_visitor):
     await ex._history(visitor)
     kwargs = visitor.conversation.get_interaction_history.call_args.kwargs
     assert kwargs["with_event"] is False
+
+
+@pytest.mark.asyncio
+async def test_hide_correlation_honours_channel_override(make_visitor):
+    ex = OrchestratorInteractAction()
+    ex.with_event = True
+    ex.hide_correlation = True
+    ex.channel_overrides = {"whatsapp": {"hide_correlation": False}}
+
+    visitor = make_visitor()
+    visitor.channel = "whatsapp"
+    await ex._history(visitor)
+    kwargs = visitor.conversation.get_interaction_history.call_args.kwargs
+    assert kwargs["hide_correlation"] is False
+
+    visitor = make_visitor()
+    visitor.channel = "web"
+    await ex._history(visitor)
+    kwargs = visitor.conversation.get_interaction_history.call_args.kwargs
+    assert kwargs["hide_correlation"] is True
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,9 @@
 """IntroInteractAction for welcoming first-time users.
 
 This module provides IntroInteractAction, an InteractAction that detects
-first-time users and adds an introductory response-shaping parameter for
-ReplyAction to weave into the first reply.
+first-time users and adds an introductory parameter for both the orchestrator
+(so it authors the first reply with the custom intro) and ReplyAction (so
+compose can still weave the greeting if a bare directive slips through).
 """
 
 import logging
@@ -12,11 +13,14 @@ from jvspatial.core.annotations import attribute
 
 from jvagent.action.interact.base import InteractAction
 from jvagent.action.interact.interact_walker import InteractWalker
+from jvagent.action.parameters import SCOPE_ORCHESTRATION, SCOPE_RESPONSE
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+_INTRO_PARAM_KEY = "intro.first_message"
 
 
 class IntroInteractAction(InteractAction):
@@ -24,8 +28,9 @@ class IntroInteractAction(InteractAction):
 
     IntroInteractAction:
     1. Checks if the user is a first-time visitor to this agent (``visitor.new_user``)
-    2. Adds an introductory response-shaping parameter for the responder
-       (ReplyAction) to weave into the reply
+    2. Publishes the intro as orchestration-scoped and response-scoped parameters
+       so the executive sees the custom intro when authoring the reply, and
+       ReplyAction can still weave it at compose time
     3. Only runs on first engagement with this agent (memory-scoped ``new_user``;
        skipped when resuming a session or when the user already exists under Memory)
 
@@ -44,9 +49,10 @@ class IntroInteractAction(InteractAction):
             "or provider."
         ),
         description=(
-            "First-message self-introduction. Applied as a response-shaping "
-            "parameter (HOW) so the greeting is woven into the same reply as any "
-            "substantive answer, rather than emitted as a separate directive."
+            "First-message self-introduction. Applied as orchestration- and "
+            "response-scoped parameters (HOW) so the executive authors the intro "
+            "into the reply and compose can still weave it — rather than emitting "
+            "a separate directive."
         ),
     )
 
@@ -66,14 +72,14 @@ class IntroInteractAction(InteractAction):
     )
 
     async def execute(self, visitor: "InteractWalker") -> None:
-        """Add a first-message self-introduction as a response-shaping parameter.
+        """Publish the first-message intro as orchestration + response parameters.
 
-        Runs at weight -300 (before the executive/router), so its parameter is on
-        the interaction before any downstream action queues an answer directive.
-        Contributing a *parameter* (HOW) rather than a *directive* (WHAT) lets the
-        single ReplyAction compose weave the greeting into the same reply as the
-        substantive answer, instead of emitting the intro as a separate mandated
-        section that reads as a second, disjoint blob.
+        Runs at weight -300 (before the executive/router), so both parameters are
+        on the interaction before any downstream action queues an answer
+        directive. Orchestration scope reaches the executive system prompt;
+        response scope reaches ReplyAction compose. Contributing a *parameter*
+        (HOW) rather than a *directive* (WHAT) lets one reply weave the greeting
+        into the substantive answer instead of a separate mandated section.
 
         Args:
             visitor: The InteractWalker visiting this action
@@ -101,11 +107,24 @@ class IntroInteractAction(InteractAction):
                 await visitor.unrecord_action_execution()
                 return
 
-            # Contribute the intro as a response-shaping parameter (not a
-            # directive) so it modulates HOW the reply opens rather than adding a
-            # separate mandated content section. Interaction-scoped, so it only
-            # affects this first reply. add_parameter sets action_name + saves.
-            await visitor.add_parameter({"response": self.directive})
+            # Dual-scope: executive authors the intro into the reply directive;
+            # compose can still weave it if a bare greeting slips through.
+            # Interaction-scoped only for this first reply. add_parameter sets
+            # action_name + saves.
+            await visitor.add_parameter(
+                {
+                    "key": _INTRO_PARAM_KEY,
+                    "scope": SCOPE_ORCHESTRATION,
+                    "response": self.directive,
+                }
+            )
+            await visitor.add_parameter(
+                {
+                    "key": _INTRO_PARAM_KEY,
+                    "scope": SCOPE_RESPONSE,
+                    "response": self.directive,
+                }
+            )
 
         except Exception as e:
             logger.error(

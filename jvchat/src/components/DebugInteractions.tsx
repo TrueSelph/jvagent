@@ -420,7 +420,8 @@ export function DebugInteractions({
       .map((log: any) => {
         const interactionData = log.log_data?.interaction_data || {};
         const metrics = (interactionData.observability_metrics || []).filter(
-          (m: any) => !isHarnessJournalMetric(m),
+          (m: any) =>
+            !isHarnessJournalMetric(m) && m?.event_type !== "model_attempt",
         );
         const utterance = interactionData.utterance;
         const conversationHistory =

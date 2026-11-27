@@ -482,6 +482,25 @@ async def test_orchestration_scoped_params_do_not_reach_reply(monkeypatch):
     assert "invitation closers" in text  # native response core present
 
 
+def test_custom_reply_parameters_still_surface_core_in_compose():
+    """Replacing ReplyAction.parameters (as agent.yaml does) must not drop the
+    framework RESPONSE RULES from compose — same union as _reply_pool."""
+    ra = ReplyAction()
+    ra.parameters = [
+        {
+            "scope": "response",
+            "response": "Custom agent voice: keep replies short.",
+        }
+    ]
+    text = ra._compose_parameters_text(None, None)
+    assert "Custom agent voice: keep replies short." in text
+    # Core hand-off + identity hardening still present despite YAML replacement
+    assert "sales team" in text
+    assert "hand-off is complete" in text
+    assert "invitation closers" in text
+    assert "knowledge or training cutoff" in text
+
+
 async def test_publish_scrubs_composed_leak(monkeypatch):
     """A model-composed reply that appends a self-identity leak is scrubbed at
     the egress choke point before it reaches the user."""

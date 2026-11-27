@@ -61,6 +61,40 @@ def _orchestrator():
     return OrchestratorInteractAction()
 
 
+def test_handoff_in_observations_only_on_first_complete():
+    """Already-stated must not arm the sales-sentence guard."""
+    ex = _orchestrator()
+    assert ex._handoff_in_observations(
+        [{"observation": '{"directive": "Hand-off is complete."}'}]
+    )
+    assert not ex._handoff_in_observations(
+        [
+            {
+                "observation": (
+                    "Do not repeat the hand-off sentence. Briefly acknowledge "
+                    "the detail just captured."
+                )
+            }
+        ]
+    )
+    assert not ex._handoff_in_observations([])
+    assert not ex._handoff_in_observations(
+        [{"observation": '{"directive": "Hand-off already stated."}'}]
+    )
+
+
+def test_already_stated_capture_disarms_an_earlier_complete_observation():
+    """A sync observation earlier in the turn must not re-arm the guard."""
+    ex = _orchestrator()
+    observations = [
+        {"observation": '{"directive": "Hand-off is complete."}'},
+        {"observation": '{"directive": "Hand-off already stated."}'},
+    ]
+    assert not ex._handoff_in_observations(observations)
+    # The first-hand-off turn (no already-stated marker) still arms it.
+    assert ex._handoff_in_observations(observations[:1])
+
+
 def test_guard_fires_only_when_no_substantive_tool_ran():
     ex = _orchestrator()
     claim = "Yes, that was retrieved from the knowledge base."

@@ -30,10 +30,10 @@ def test_sheets_and_drive_tools_build_two_dicts():
     callback = f"{BASE}/api/mcp/google_workspace/auth/callback"
     assert {item["redirect_uri"] for item in setup} == {callback}
     assert setup[0]["auth_url"] == (
-        f"{BASE}/api/mcp/google_workspace/auth?account=default&service=sheets"
+        f"{BASE}/api/mcp/google_workspace/auth?account=integral&service=sheets"
     )
     assert setup[1]["auth_url"] == (
-        f"{BASE}/api/mcp/google_workspace/auth?account=default&service=drive"
+        f"{BASE}/api/mcp/google_workspace/auth?account=integral&service=drive"
     )
     assert all(item["server"] == "google_workspace" for item in setup)
 
@@ -75,7 +75,7 @@ def test_unconfigured_google_workspace_is_generic_entry():
     assert setup[0]["server"] == "google_workspace"
     assert "service" not in setup[0]
     assert setup[0]["auth_url"] == (
-        f"{BASE}/api/mcp/google_workspace/auth?account=default"
+        f"{BASE}/api/mcp/google_workspace/auth?account=integral"
     )
 
 
@@ -125,7 +125,7 @@ def test_sheets_scopes_do_not_bind_drive():
         "google_workspace",
         [
             {
-                "account_name": "default",
+                "account_name": "integral",
                 "token": {"email": "ops@example.com", "scopes": SHEETS_SCOPES},
             }
         ],
@@ -141,7 +141,7 @@ def test_drive_scope_binds_drive_and_email_from_payload():
         "google_workspace",
         [
             {
-                "account_name": "default",
+                "account_name": "integral",
                 "token": {"email": "ops@example.com", "scopes": scopes},
             }
         ],
@@ -186,15 +186,15 @@ def test_microsoft_files_scope_binds_onedrive_and_excel():
 
 
 def test_mcp_oauth_state_action_id_roundtrip():
-    assert mcp_oauth_state_action_id("default", "sheets") == (
-        "mcp_oauth:default:sheets"
+    assert mcp_oauth_state_action_id("integral", "sheets") == (
+        "mcp_oauth:integral:sheets"
     )
-    assert parse_mcp_oauth_state_action_id("mcp_oauth:default:sheets") == (
-        "default",
+    assert parse_mcp_oauth_state_action_id("mcp_oauth:integral:sheets") == (
+        "integral",
         "sheets",
     )
-    assert parse_mcp_oauth_state_action_id("mcp_oauth:default") == ("default", "")
-    assert parse_mcp_oauth_state_action_id("") == ("default", "")
+    assert parse_mcp_oauth_state_action_id("mcp_oauth:integral") == ("integral", "")
+    assert parse_mcp_oauth_state_action_id("") == ("integral", "")
 
 
 def test_empty_mcp_services_does_not_reclaim_sheets_from_scopes():
@@ -424,7 +424,7 @@ def test_gmail_does_not_use_sheets_only_token():
         }
     ]
     account, token, _node = token_row_for_service(
-        rows, "google_workspace", "gmail", "default"
+        rows, "google_workspace", "gmail", "integral"
     )
     assert account is None
     assert token is None
@@ -446,7 +446,7 @@ def test_poisoned_merged_token_is_not_used_for_gmail():
         }
     ]
     account, token, _node = token_row_for_service(
-        rows, "google_workspace", "gmail", "default"
+        rows, "google_workspace", "gmail", "integral"
     )
     assert account is None
     assert token is None
@@ -474,13 +474,13 @@ def test_token_row_returns_service_blob_not_sibling():
     }
     rows = [{"account_name": "a@example.com", "token": parent, "node": None}]
     account, sheets, _node = token_row_for_service(
-        rows, "google_workspace", "sheets", "default"
+        rows, "google_workspace", "sheets", "integral"
     )
     assert account == "a@example.com"
     assert sheets["refresh_token"] == "rt-sheets"
     assert sheets["client_id"] == "cid"
     assert "https://www.googleapis.com/auth/spreadsheets" in sheets["scopes"]
-    _, gmail, _ = token_row_for_service(rows, "google_workspace", "gmail", "default")
+    _, gmail, _ = token_row_for_service(rows, "google_workspace", "gmail", "integral")
     assert gmail["refresh_token"] == "rt-gmail"
     assert gmail["scopes"] == ["https://www.googleapis.com/auth/gmail.send"]
 
@@ -517,3 +517,60 @@ def test_same_email_microsoft_keeps_outlook_and_onedrive_tokens():
     assert tok["service_tokens"]["onedrive"]["refresh_token"] == "rt-files"
     assert "Files.ReadWrite.All" not in tok["service_tokens"]["outlook"]["scopes"]
     assert "Mail.Send" not in tok["service_tokens"]["onedrive"]["scopes"]
+
+
+async def test_integral_exchange_stores_resolved_identity(monkeypatch):
+    from types import SimpleNamespace
+
+    from jvagent.action.mcp_oauth import endpoints as ep
+
+    async def fake_mcp_url():
+        return "https://core.example.com/api/mcp/integral_core"
+
+    async def fake_discover(**kwargs):
+        return {
+            "issuer": "https://core.example.com",
+            "token_endpoint": "https://core.example.com/api/oauth/token",
+        }
+
+    async def fake_client(server):
+        return SimpleNamespace(client_id="cid")
+
+    async def fake_exchange(meta, **kwargs):
+        return {"access_token": "tok", "expires_in": 3600}
+
+    async def fake_identity(mcp_url, access_token, meta=None):
+        assert access_token == "tok"
+        return {"email": "admin@integral.com"}
+
+    async def fake_auth_cfg():
+        return {}
+
+    def fake_scopes(cfg):
+        return ""
+
+    saved = {}
+
+    class FakeAction:
+        async def save_oauth_token(self, server, account, payload):
+            saved.update(server=server, account=account, payload=payload)
+
+    monkeypatch.setattr(ep, "_integral_mcp_url", fake_mcp_url)
+    monkeypatch.setattr(ep, "discover_authorization_server", fake_discover)
+    monkeypatch.setattr(ep, "load_registered_client", fake_client)
+    monkeypatch.setattr(ep, "exchange_authorization_code", fake_exchange)
+    monkeypatch.setattr(ep, "resolve_token_identity", fake_identity)
+    monkeypatch.setattr(ep, "_integral_auth_cfg", fake_auth_cfg)
+    monkeypatch.setattr(ep, "resolve_scopes_from_auth", fake_scopes)
+
+    record = SimpleNamespace(code_verifier="v", redirect_uri="https://a/cb")
+    account, label = await ep._exchange_integral_code(
+        FakeAction(), "code", record, "integral"
+    )
+
+    assert saved["server"] == "integral_core"
+    assert saved["account"] == "integral"
+    assert saved["payload"]["email"] == "admin@integral.com"
+    assert "display_name" not in saved["payload"]
+    assert account == "admin@integral.com"
+    assert label == "Integral"

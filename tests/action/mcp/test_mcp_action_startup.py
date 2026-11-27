@@ -36,10 +36,7 @@ async def test_on_startup_rebuilds_server_registry():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("auth_type", ["oauth", "service_key"])
-async def test_unsupported_http_auth_profile_fails_before_connect(
-    auth_type: str,
-) -> None:
+async def test_unknown_http_auth_profile_fails_before_connect() -> None:
     action = MCPAction(
         sandbox_mode=False,
         servers=[
@@ -47,7 +44,7 @@ async def test_unsupported_http_auth_profile_fails_before_connect(
                 "name": "external",
                 "transport": "streamable_http",
                 "url": "https://example.test/mcp",
-                "auth": {"type": auth_type},
+                "auth": {"type": "mystery"},
             }
         ],
     )

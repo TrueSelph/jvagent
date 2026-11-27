@@ -17,6 +17,54 @@ logger = logging.getLogger(__name__)
 _OIDC_SCOPES = frozenset({"openid", "profile", "email"})
 
 
+class GoogleAuthRequiredError(ValueError):
+    """An MCP OAuth credential exists but cannot be used for this Google API.
+
+    Callers distinguish the three states that used to share one opaque
+    ``ValueError`` message: no credential at all, a credential whose granted
+    scopes cannot serve this action, and a refresh Google rejected.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        service: str = "",
+        auth_url: str = "",
+        reason: str = "not_connected",
+        missing_scopes: Optional[List[str]] = None,
+    ) -> None:
+        # Every argument goes to BaseException.args so pickle and copy.copy
+        # can rebuild the instance. str() stays the human message.
+        scopes = list(missing_scopes or [])
+        super().__init__(message, service, auth_url, reason, scopes)
+        self.service = service
+        self.auth_url = auth_url
+        self.reason = reason
+        self.missing_scopes = scopes
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ""
+
+
+def _granted_scopes(token_data: Optional[Dict[str, Any]]) -> List[str]:
+    """Raw granted scopes from a stored token blob (string or list form)."""
+    raw = (token_data or {}).get("scopes")
+    if isinstance(raw, str) and raw.strip():
+        return raw.split()
+    if isinstance(raw, list):
+        return [str(s).strip() for s in raw if str(s).strip()]
+    return []
+
+
+def _api_scopes(granted: List[str]) -> List[str]:
+    """Granted scopes that map to a Google API call (drops OIDC scopes)."""
+    return [
+        s
+        for s in granted
+        if s.startswith("https://www.googleapis.com/auth/") and s not in _OIDC_SCOPES
+    ]
+
+
 def _normalize_expiry(value: Any) -> Optional[str]:
     """Coerce a stored expiry into the naive-UTC ISO form google-auth parses.
 
@@ -190,24 +238,13 @@ class GoogleAction(Action):
 
     def _scopes_for_refresh(self, token_data: Optional[Dict[str, Any]]) -> List[str]:
         """This action's granted API scopes only (no OIDC / extra APIs)."""
-        raw = (token_data or {}).get("scopes")
-        granted: List[str] = []
-        if isinstance(raw, str) and raw.strip():
-            granted = raw.split()
-        elif isinstance(raw, list):
-            granted = [str(s).strip() for s in raw if str(s).strip()]
-        if not granted:
+        api = _api_scopes(_granted_scopes(token_data))
+        if not api:
             return []
-        api = {
-            s
-            for s in granted
-            if s.startswith("https://www.googleapis.com/auth/")
-            and s not in _OIDC_SCOPES
-        }
         wanted = [s for s in (self.SCOPES or []) if s]
         if wanted:
             return [s for s in wanted if s in api]
-        return [s for s in granted if s in api]
+        return api
 
     def _credentials_from_mcp_payload(self, token_data: Dict[str, Any]) -> Any:
         env_secret = self._resolve_client_secret_from_env()
@@ -231,9 +268,13 @@ class GoogleAction(Action):
         account_name, token_data, _node = await self._load_mcp_token()
         label = self.__class__.__name__
         auth = self._mcp_auth_url()
+        service = self._MCP_SERVICE or ""
         if not token_data or not token_data.get("refresh_token"):
-            raise ValueError(
-                f"No valid MCP OAuth credentials for {label}. Authorize at {auth}"
+            raise GoogleAuthRequiredError(
+                f"Google credential for {label} is not connected. Authorize at {auth}",
+                service=service,
+                auth_url=auth,
+                reason="not_connected",
             )
 
         refresh_scopes = self._scopes_for_refresh(token_data)
@@ -264,14 +305,45 @@ class GoogleAction(Action):
                     client_id_hint=getattr(creds, "client_id", None),
                     extra_details={"error_type": type(e).__name__},
                 )
-                raise ValueError(
+                raise GoogleAuthRequiredError(
                     f"OAuth2 credentials for {label} expired and could not "
-                    f"be refreshed. Re-authorize at {auth}"
+                    f"be refreshed. Re-authorize at {auth}",
+                    service=service,
+                    auth_url=auth,
+                    reason="refresh_failed",
                 ) from e
             return creds
-        raise ValueError(
-            f"No valid MCP OAuth credentials for {label}. Authorize at {auth}"
+
+        # Expired (or unusable) with nothing safe to refresh with. When the
+        # stored grant is the cause, say which scope is missing: a partial
+        # consent still produces a refresh token, so "not authorized" alone
+        # sends the operator looking in the wrong place.
+        api = _api_scopes(_granted_scopes(token_data))
+        missing = [s for s in (self.SCOPES or []) if s and s not in api]
+        if missing:
+            raise GoogleAuthRequiredError(
+                f"Google credential for {label} is missing required scope(s): "
+                f"{', '.join(missing)}. Re-authorize at {auth} and keep the "
+                "matching permission checked.",
+                service=service,
+                auth_url=auth,
+                reason="missing_scope",
+                missing_scopes=missing,
+            )
+        raise GoogleAuthRequiredError(
+            f"No valid MCP OAuth credentials for {label}. Authorize at {auth}",
+            service=service,
+            auth_url=auth,
+            reason="not_connected",
         )
+
+    async def assert_authorized(self) -> Any:
+        """Return usable credentials or raise ``GoogleAuthRequiredError``.
+
+        Callers that must not start work on an unusable credential use this
+        instead of catching a generic error from ``get_service``.
+        """
+        return await self._get_credentials()
 
     async def _load_credentials(self) -> Any:
         """Alias for Docs and other callers that still use this name."""

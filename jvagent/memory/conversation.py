@@ -43,6 +43,22 @@ def _cap_event_entries(events: Any, max_event_length: Optional[int]) -> Any:
     return capped
 
 
+def _events_for_history(events: Any, *, hide_correlation: bool = True) -> Any:
+    """Return events for LLM/history replay, optionally dropping harness lines.
+
+    Harness correlation (``action_name == \"harness\"``) is persisted for debug
+    but is not needed in model context. Default ``hide_correlation=True`` omits
+    those entries; set ``hide_correlation=False`` to keep them.
+    """
+    if not hide_correlation or not isinstance(events, list):
+        return events
+    return [
+        event
+        for event in events
+        if not (isinstance(event, dict) and event.get("action_name") == "harness")
+    ]
+
+
 # Compound field names are model fields (``session_id``); jvspatial maps them to
 # ``context.<name>`` in MongoDB. A ``context.`` prefix on the model field becomes
 # ``context.context.*``.
@@ -809,6 +825,7 @@ class Conversation(DeferredSaveMixin, Node):
         with_response: bool = True,
         with_interpretation: bool = False,
         with_event: bool = False,
+        hide_correlation: bool = True,
         with_posture: bool = False,
         max_statement_length: Optional[int] = None,
         max_event_length: Optional[int] = None,
@@ -824,6 +841,9 @@ class Conversation(DeferredSaveMixin, Node):
             with_response: If True, include AI responses as assistant messages
             with_interpretation: If True, include interpretations as system messages
             with_event: If True, include events as system messages
+            hide_correlation: When ``with_event`` is true, omit harness
+                correlation events (``action_name == \"harness\"`` / ``corr-*``).
+                Default True; set False to include them with other events.
             with_posture: If True, prepend SUPPRESS/DEFER system messages when response_posture is set
             max_statement_length: Optional maximum length for utterance and response strings.
                 If provided and content exceeds this length, it will be truncated with "..." appended.
@@ -924,7 +944,9 @@ class Conversation(DeferredSaveMixin, Node):
             # Events ignore ``max_statement_length`` by contract; they honour the
             # explicit ``max_event_length`` cap when the caller sets one.
             if with_event and interaction.events:
-                for event in interaction.events:
+                for event in _events_for_history(
+                    interaction.events, hide_correlation=hide_correlation
+                ):
                     # Extract content from event dict structure
                     if isinstance(event, dict):
                         event_str = event.get("content", str(event))
@@ -950,6 +972,7 @@ class Conversation(DeferredSaveMixin, Node):
         with_response: bool = True,
         with_interpretation: bool = False,
         with_event: bool = False,
+        hide_correlation: bool = True,
         with_posture: bool = False,
         formatted: bool = True,
         max_statement_length: Optional[int] = None,
@@ -970,6 +993,8 @@ class Conversation(DeferredSaveMixin, Node):
             with_response: If True, include AI responses (default: True)
             with_interpretation: If True, include interpretations (default: False)
             with_event: If True, include events (default: False)
+            hide_correlation: When ``with_event`` is true, omit harness correlation
+                events (``action_name == \"harness\"`` / ``corr-*``). Default True.
             with_posture: If True, include response_posture (SUPPRESS/DEFER) as system messages
             formatted: If True, format as role/content pairs for language models.
                 If False, return raw format with metadata. Default: True.
@@ -1026,6 +1051,7 @@ class Conversation(DeferredSaveMixin, Node):
                 with_response=with_response,
                 with_interpretation=with_interpretation,
                 with_event=with_event,
+                hide_correlation=hide_correlation,
                 with_posture=with_posture,
                 max_statement_length=max_statement_length,
                 max_event_length=max_event_length,
@@ -1067,7 +1093,11 @@ class Conversation(DeferredSaveMixin, Node):
                     # Events ignore ``max_statement_length`` by contract; they
                     # honour ``max_event_length`` when the caller sets one.
                     entry["events"] = _cap_event_entries(
-                        interaction.events, max_event_length
+                        _events_for_history(
+                            interaction.events,
+                            hide_correlation=hide_correlation,
+                        ),
+                        max_event_length,
                     )
 
                 if with_posture and getattr(interaction, "response_posture", None):

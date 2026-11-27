@@ -191,6 +191,43 @@ async def test_search_empty_index(pageindex_temp_db):
 
 
 @pytest.mark.asyncio
+async def test_search_unknown_concept_returns_nothing(pageindex_temp_db):
+    """Half the distinctive terms unknown means the corpus cannot answer it."""
+    await index_node("n1", "doc_a", "cov_col", title="Delivery coverage")
+    await index_node("n2", "doc_a", "cov_col", title="Delivery times")
+
+    assert await search("helicopter delivery policy", "cov_col") == []
+
+
+@pytest.mark.asyncio
+async def test_search_keeps_hits_when_unknown_terms_are_a_minority(
+    pageindex_temp_db,
+):
+    """One stray word must not empty a query the corpus can answer."""
+    await index_node(
+        "n1",
+        "doc_a",
+        "known_col",
+        title="Payment terms",
+        text="We accept bank transfer, cash, cheques and payment methods.",
+    )
+
+    results = await search(
+        "payment terms methods bank transfer cash cheques balance due",
+        "known_col",
+    )
+
+    assert results
+
+
+@pytest.mark.asyncio
+async def test_search_single_unknown_term_returns_nothing(pageindex_temp_db):
+    await index_node("n1", "doc_a", "single_col", title="Delivery coverage")
+
+    assert await search("brochure", "single_col") == []
+
+
+@pytest.mark.asyncio
 async def test_search_filters_by_doc_name(pageindex_temp_db):
     await index_node("n1", "doc_a", "col", title="Finance report")
     await index_node("n2", "doc_b", "col", title="Finance analysis")

@@ -18,11 +18,27 @@ def _skill_dir_for_agent(agent_dir: Path, skill_name: str) -> Path:
 
 
 def _build_skill_stub(skill_name: str, description: str) -> str:
+    # Description is the pre-activation selection cue (≤60 words): scope +
+    # when to use + Not for exclusions (siblings, greetings/acks for catch-alls).
+    desc = (description or "").strip() or (
+        f"Handle {skill_name.replace('-', ' ')} requests for this agent. "
+        "Not for greetings, small talk, or work owned by sibling skills."
+    )
     return f"""---
 name: {skill_name}
-description: {description}
+description: >-
+  {desc}
 allowed-tools: []
 ---
+
+## When to use
+
+- Trigger categories that should select this skill (category rules, not example lists).
+
+## Do not use
+
+- Greetings, small talk, or bare thanks/ok with no task for this skill.
+- Work owned by a sibling skill (name the sibling).
 
 ## Workflow
 
