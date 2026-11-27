@@ -148,6 +148,28 @@ def test_directive_acknowledges_then_asks_the_required_field():
     assert "would you like to continue or cancel" not in directive
 
 
+def test_directive_names_the_decline_value_for_a_declinable_required_field():
+    directive = next_ask_directive("organization", [], next_decline_value="Personal")
+    assert "`organization`" in directive
+    assert "`Personal`" in directive
+    assert "Never store a refusal" not in directive
+
+
+def test_capture_state_passes_the_next_decline_value():
+    spec = LeadGenSpec(
+        name="t",
+        fields=[
+            FieldDef(key="full_name", required=True),
+            FieldDef(key="organization", required=True, decline_value="Personal"),
+        ],
+        sync=SyncDef(mode="manual"),
+    )
+    state = capture_state(_Record({"full_name": "Ann"}, missing=["organization"]), spec)
+    assert "`organization`" in state["response_directive"]
+    assert "`Personal`" in state["response_directive"]
+    assert "Never store a refusal" not in state["response_directive"]
+
+
 def test_required_refusal_sentence_names_the_refused_field():
     directive = next_ask_directive(
         "phone", [], ask_label="phone number", refused_label="the email address"

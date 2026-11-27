@@ -583,6 +583,7 @@ def next_ask_directive(
     visitor: str = "visitor",
     refused_label: str = "",
     declined_label: str = "",
+    next_decline_value: str = "",
 ) -> str:
     """The ask for this reply. Business close wording stays on the skill."""
     ent = str(entity or "request").strip() or "request"
@@ -608,10 +609,17 @@ def next_ask_directive(
             f"not say {declined_label} is needed to file the {entity}."
         )
     if next_required:
+        if next_decline_value:
+            refusal = (
+                f"If the visitor declines `{next_required}`, store its decline "
+                f"value `{next_decline_value}` — never the refusal sentence."
+            )
+        else:
+            refusal = "Never store a refusal as the value."
         return (
             "Ask only for "
             f"`{next_required}` in this reply; do not ask any other field. "
-            "Never store a refusal as the value."
+            f"{refusal}"
         )
     if just_declined:
         return (
@@ -699,6 +707,8 @@ def capture_state(
         "stop_optional": bool(stop_optional),
         "field_reference": fields_reference(spec),
     }
+    next_field = spec.get_field(next_required) if next_required else None
+    next_decline_value = str(getattr(next_field, "decline_value", "") or "")
     attach_reply_directives(
         state,
         next_ask_directive(
@@ -711,6 +721,7 @@ def capture_state(
             visitor=msgs.visitor,
             refused_label=_visitor_label(spec, blocking_key),
             declined_label=_visitor_label(spec, declined_key),
+            next_decline_value=next_decline_value,
         ),
     )
     return state
