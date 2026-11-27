@@ -43,13 +43,38 @@ def validate_phone_e164(raw: str, **_: Any) -> Tuple[Optional[str], Optional[str
     return _result(cleaned, None)
 
 
-def validate_phone_gy(raw: str, **_: Any) -> Tuple[Optional[str], Optional[str]]:
+def validate_phone_gy(
+    raw: str,
+    *,
+    format: str = "house",
+    **_: Any,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Normalize a Guyanese phone number.
+
+    ``format`` selects the stored form:
+    - ``house`` (default): ``+592 643 1530`` — grouped, space-separated.
+    - ``e164``: ``+5926431530`` — country code then digits, no spaces.
+    - ``digits``: ``5926431530`` — digits only, no spaces, no symbols.
+    """
     if not raw or not raw.strip():
         return _result(None, "Phone number cannot be empty.")
     cleaned = re.sub(r"[^\d+]", "", raw.strip())
     digits = re.sub(r"[^\d]", "", cleaned)
     if len(digits) < 7:
         return _result(None, f"Invalid phone '{raw.strip()}': need at least 7 digits.")
+    # Resolve to full digits (Guyana country code 592).
+    if len(digits) == 7:
+        full = f"592{digits}"
+    elif len(digits) == 10 and digits.startswith("592"):
+        full = digits
+    else:
+        full = digits
+    fmt = str(format or "house").strip().lower()
+    if fmt in ("digits", "numbers", "plain"):
+        return _result(full, None)
+    if fmt in ("e164", "compact"):
+        return _result(f"+{full}", None)
+    # house form
     if len(digits) == 7:
         return _result(f"+592 {digits[:3]} {digits[3:]}", None)
     if len(digits) == 10 and digits.startswith("592"):
@@ -63,6 +88,7 @@ def validate_person_name(
     raw: str,
     *,
     min_length: int = 2,
+    min_words: int = 1,
     max_words: int = 4,
     **_: Any,
 ) -> Tuple[Optional[str], Optional[str]]:
@@ -74,12 +100,19 @@ def validate_person_name(
     except (TypeError, ValueError):
         min_len = 2
     try:
+        min_w = int(min_words)
+    except (TypeError, ValueError):
+        min_w = 1
+    try:
         max_w = int(max_words)
     except (TypeError, ValueError):
         max_w = 4
     if len(name) < min_len:
         return _result(None, "Name is too short.")
-    if max_w > 0 and len(name.split()) > max_w:
+    words = name.split()
+    if min_w > 1 and len(words) < min_w:
+        return _result(None, "Name needs a first and last name.")
+    if max_w > 0 and len(words) > max_w:
         return _result(None, "Name has too many words.")
     return _result(name, None)
 
