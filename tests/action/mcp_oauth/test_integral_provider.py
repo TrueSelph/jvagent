@@ -4,6 +4,8 @@ import json
 
 import pytest
 
+from jvagent.action.mcp import integral_oauth_auth as ioa
+from jvagent.action.mcp_oauth import endpoints
 from jvagent.action.mcp_oauth import integral_provider as ip
 from jvagent.action.mcp_oauth.mcp_oauth_action import build_oauth_setup
 
@@ -377,3 +379,103 @@ async def test_resolve_token_identity_falls_back_on_error(monkeypatch):
 
     monkeypatch.setattr(ip.httpx, "AsyncClient", _Boom)
     assert await ip.resolve_token_identity(MCP_URL, "tok", AS_META) == {}
+
+
+# ---------------------------------------------------------------------------
+# Reconnect self-healing
+# ---------------------------------------------------------------------------
+
+
+class _TokenNode:
+    def __init__(self, token_json: str):
+        self.token_json = token_json
+        self.updated = None
+        self.saved = False
+
+    async def save(self) -> None:
+        self.saved = True
+
+
+async def test_stored_token_from_other_core_is_discarded(monkeypatch):
+    payload = {
+        "access_token": "at_old",
+        "token_uri": "http://127.0.0.1:9010/api/oauth/token",
+        "expiry": "2099-01-01T00:00:00+00:00",
+    }
+    node = _TokenNode(json.dumps(payload))
+
+    async def _load(server_name, account_name):
+        return node, payload
+
+    monkeypatch.setattr(ioa, "_load_token_node", _load)
+    auth = ioa.IntegralOAuthAuth(
+        server_name=ip.INTEGRAL_SERVER,
+        account_name=ip.DEFAULT_ACCOUNT,
+        mcp_url="http://127.0.0.1:9007/api/mcp/",
+    )
+
+    with pytest.raises(ioa.IntegralOAuthNotConnectedError):
+        await auth._valid_token()
+
+    assert node.token_json == ""
+    assert node.saved is True
+
+
+async def test_stored_token_from_current_core_is_used(monkeypatch):
+    payload = {
+        "access_token": "at_current",
+        "token_uri": "http://127.0.0.1:9007/api/oauth/token",
+        "expiry": "2099-01-01T00:00:00+00:00",
+    }
+    node = _TokenNode(json.dumps(payload))
+
+    async def _load(server_name, account_name):
+        return node, payload
+
+    monkeypatch.setattr(ioa, "_load_token_node", _load)
+    auth = ioa.IntegralOAuthAuth(
+        server_name=ip.INTEGRAL_SERVER,
+        account_name=ip.DEFAULT_ACCOUNT,
+        mcp_url="http://127.0.0.1:9007/api/mcp/",
+    )
+
+    assert await auth._valid_token() == "at_current"
+    assert node.token_json == json.dumps(payload)
+
+
+async def test_integral_auth_start_forces_fresh_dcr(monkeypatch):
+    calls = {}
+
+    async def _cfg():
+        return {}
+
+    async def _mcp_url():
+        return MCP_URL
+
+    async def _ensure(**kwargs):
+        calls.update(kwargs)
+        return "cid", AS_META
+
+    async def _state(**kwargs):
+        return "state"
+
+    async def _grant(*args, **kwargs):
+        return "ok"
+
+    monkeypatch.setattr(endpoints, "_integral_auth_cfg", _cfg)
+    monkeypatch.setattr(endpoints, "_integral_mcp_url", _mcp_url)
+    monkeypatch.setattr(endpoints, "ensure_registered_client", _ensure)
+    monkeypatch.setattr(endpoints, "create_oauth_state", _state)
+    monkeypatch.setattr(endpoints, "_grant_html", _grant)
+
+    result = await endpoints._integral_auth_page(
+        None,
+        account="integral",
+        service="",
+        redirect_uri=f"{BASE}/api/mcp/integral_core/auth/callback",
+    )
+
+    assert result == "ok"
+    assert calls["force"] is True
+    assert calls["mcp_url"] == MCP_URL
+    assert calls["server_name"] == ip.INTEGRAL_SERVER

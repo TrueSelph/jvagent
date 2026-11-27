@@ -635,11 +635,15 @@ async def _integral_auth_page(
     scope = resolve_scopes_from_auth(await _integral_auth_cfg())
     mcp_url = await _integral_mcp_url()
     try:
+        # A reconnect is an explicit recovery action: always issue a fresh DCR
+        # client so a rebuilt Core (same or different origin) cannot leave the
+        # agent holding a cached client_id the server no longer knows.
         client_id, meta = await ensure_registered_client(
             server_name=INTEGRAL_SERVER,
             redirect_uri=redirect_uri,
             scope=scope,
             mcp_url=mcp_url,
+            force=True,
         )
     except Exception as exc:
         logger.error("Integral OAuth client registration failed: %s", exc)

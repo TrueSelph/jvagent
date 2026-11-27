@@ -1327,7 +1327,7 @@
         "name": "jvagent/mcp",
         "archetype": "MCPAction",
         "tracked_directory_files": 11,
-        "tracked_directory_digest": "sha256:c54bb47f607f69572fdeb0bc23755e7eb391920c0c94af1181fc3038c20767c6"
+        "tracked_directory_digest": "sha256:574ca7485fd0c8a1572bb9de12573bcb65763a173aa1ac60e6d204ab1e6590bb"
       },
       {
         "path": "jvagent/action/mcp_oauth/info.yaml",
@@ -1336,7 +1336,7 @@
         "name": "jvagent/mcp_oauth",
         "archetype": "MCPOAuthAction",
         "tracked_directory_files": 9,
-        "tracked_directory_digest": "sha256:79805a8c9b64fae3ffe3651fb491b406b24a0c5fb262c7f3c5c4a52604778b47"
+        "tracked_directory_digest": "sha256:4d5e8be9344c181ae4c2a91e2c9374086776299b4f6443149886616c6e38065f"
       },
       {
         "path": "jvagent/action/microsoft/microsoft_excel_action/info.yaml",

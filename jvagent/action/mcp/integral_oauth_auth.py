@@ -37,6 +37,7 @@ from jvagent.action.mcp_oauth.integral_provider import (
     normalize_token_payload,
     payload_is_expired,
     refresh_access_token,
+    resolve_mcp_url,
     resolve_scope,
 )
 
@@ -155,6 +156,32 @@ class IntegralOAuthAuth(httpx.Auth):
             expiry = expiry.replace(tzinfo=timezone.utc)
         return expiry
 
+    def _token_origin_matches(self, payload: Dict[str, Any]) -> bool:
+        """True when the stored token was issued by the configured Core origin."""
+        token_origin = origin_of(str(payload.get("token_uri") or ""))
+        if token_origin is None:
+            return True
+        target_origin = origin_of(self._issuer or resolve_mcp_url(self._mcp_url))
+        if target_origin is None:
+            return True
+        return token_origin == target_origin
+
+    async def _discard_stale_token(self, node: Any) -> None:
+        """Clear a token that belongs to a different Core origin."""
+        self._cached_token = ""
+        self._cached_expiry = None
+        if node is None:
+            return
+        node.token_json = ""
+        node.updated = datetime.now(timezone.utc)
+        await node.save()
+        logger.warning(
+            "Discarded Integral OAuth token for %s/%s: token origin does not "
+            "match the configured Core",
+            self._server_name,
+            self._account_name,
+        )
+
     async def _valid_token(self) -> str:
         async with self._lock:
             if self._cache_valid():
@@ -162,6 +189,12 @@ class IntegralOAuthAuth(httpx.Auth):
             node, payload = await _load_token_node(
                 self._server_name, self._account_name
             )
+            if payload and not self._token_origin_matches(payload):
+                await self._discard_stale_token(node)
+                raise IntegralOAuthNotConnectedError(
+                    "Stored Integral OAuth token belongs to a different Core "
+                    "origin. Reconnect via the agent's MCPs panel."
+                )
             if payload and not payload_is_expired(payload):
                 self._cached_token = str(
                     payload.get("access_token") or payload.get("token") or ""
